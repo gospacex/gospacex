@@ -1,0 +1,15 @@
+package repository
+
+import (
+	"context"
+	"{{ .ModuleName }}/domain/entity"
+)
+
+// OrderRepository 订单仓储接口
+type OrderRepository interface {
+	Save(ctx context.Context, order *entity.Order) error
+	FindByID(ctx context.Context, id int64) (*entity.Order, error)
+	FindByUserID(ctx context.Context, userID int64) ([]*entity.Order, error)
+	Update(ctx context.Context, order *entity.Order) error
+	Delete(ctx context.Context, id int64) error
+}

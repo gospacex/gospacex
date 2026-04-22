@@ -1,0 +1,103 @@
+package test
+
+import (
+	"testing"
+
+	"{{.AppName}}/{{.SrvDirName}}/internal/model"
+)
+
+// Test{{.UpperModule}}Model_TableName 测试模型表名
+func Test{{.UpperModule}}Model_TableName(t *testing.T) {
+	m := model.{{.UpperModule}}{}
+	expected := "{{.TableName}}"
+	if m.TableName() != expected {
+		t.Errorf("expected table name %s, got %s", expected, m.TableName())
+	}
+}
+
+// Test{{.UpperModule}}Service_Create 测试 {{.Module}} 创建接口
+func Test{{.UpperModule}}Service_Create(t *testing.T) {
+	// TODO: 初始化 mock DB
+	// repo := repository.New{{.UpperModule}}Repo(mockDB)
+	// svc := service.New{{.UpperModule}}Service(repo)
+	// h := handler.New{{.UpperModule}}Handler(mockDB)
+
+	// req := &{{.Module}}.Create{{.UpperModule}}Req{
+{{range .CreateFields}}		// {{.ProtoGoName}}: {{.ZeroValue}},
+{{end}}	// }
+	// resp, err := h.Create(context.Background(), req)
+	// if err != nil {
+	// 	t.Fatalf("Create failed: %v", err)
+	// }
+	// if resp.{{.PKProtoGoName}} == 0 {
+	// 	t.Error("expected non-zero ID")
+	// }
+
+	t.Logf("{{.Module}} Create test - implement with mock DB")
+}
+
+// Test{{.UpperModule}}Service_Get 测试 {{.Module}} 查询接口
+func Test{{.UpperModule}}Service_Get(t *testing.T) {
+	// req := &{{.Module}}.Get{{.UpperModule}}Req{ {{.PKProtoGoName}}: 1 }
+	// resp, err := h.Get(context.Background(), req)
+	// if err != nil {
+	// 	t.Fatalf("Get failed: %v", err)
+	// }
+
+	t.Logf("{{.Module}} Get test - implement with mock DB")
+}
+
+// Test{{.UpperModule}}Service_List 测试 {{.Module}} 列表接口
+func Test{{.UpperModule}}Service_List(t *testing.T) {
+	// req := &{{.Module}}.List{{.UpperModule}}Req{}
+	// resp, err := h.List(context.Background(), req)
+	// if err != nil {
+	// 	t.Fatalf("List failed: %v", err)
+	// }
+	// if len(resp.Items) == 0 {
+	// 	t.Log("no items returned (may be expected with empty mock DB)")
+	// }
+
+	t.Logf("{{.Module}} List test - implement with mock DB")
+}
+
+// Test{{.UpperModule}}Service_Update 测试 {{.Module}} 更新接口
+func Test{{.UpperModule}}Service_Update(t *testing.T) {
+	// req := &{{.Module}}.Update{{.UpperModule}}Req{
+{{range .UpdateFields}}		// {{.ProtoGoName}}: {{.ZeroValue}},
+{{end}}	// }
+	// resp, err := h.Update(context.Background(), req)
+	// if err != nil {
+	// 	t.Fatalf("Update failed: %v", err)
+	// }
+	// if !resp.Success {
+	// 	t.Error("expected success")
+	// }
+
+	t.Logf("{{.Module}} Update test - implement with mock DB")
+}
+
+// Test{{.UpperModule}}Service_Delete 测试 {{.Module}} 删除接口
+func Test{{.UpperModule}}Service_Delete(t *testing.T) {
+	// req := &{{.Module}}.Delete{{.UpperModule}}Req{ {{.PKProtoGoName}}: 1 }
+	// resp, err := h.Delete(context.Background(), req)
+	// if err != nil {
+	// 	t.Fatalf("Delete failed: %v", err)
+	// }
+	// if !resp.Success {
+	// 	t.Error("expected success")
+	// }
+
+	t.Logf("{{.Module}} Delete test - implement with mock DB")
+}
+
+// Test{{.UpperModule}}GRPCHandler 测试 gRPC Handler
+func Test{{.UpperModule}}GRPCHandler(t *testing.T) {
+	// TODO: 使用 bufconn 创建内存 gRPC 服务端进行测试
+	// lis := bufconn.Listen(1024 * 1024)
+	// s := grpc.NewServer()
+	// {{.Module}}.Register{{.UpperModule}}ServiceServer(s, handler.New{{.UpperModule}}Handler(mockDB))
+	// go s.Serve(lis)
+
+	t.Logf("{{.Module}} gRPC handler test - implement with bufconn")
+}

@@ -1,0 +1,8 @@
+module {{.ModuleName}}
+
+go {{ default .GoVersion "1.26.2" }}
+
+require (
+	github.com/redis/go-redis/v9 v9.3.0
+	gopkg.in/yaml.v3 v3.0.1
+)

@@ -1,0 +1,83 @@
+package commands
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"strconv"
+
+	"{{.ProjectName}}/internal/model"
+	"{{.ProjectName}}/internal/service"
+	"github.com/spf13/cobra"
+)
+
+var (
+	articleName string
+	articleData string
+)
+
+// ebArticleCmd 文章事件命令
+var ebArticleCmd = &cobra.Command{
+	Use:   "article",
+	Short: "文章事件管理命令 - 用于测试 Elasticsearch 数据同步",
+	Long:  `文章事件命令 - 将文章索引到 Elasticsearch`,
+}
+
+// articleIndexCmd 索引文章到 Elasticsearch
+var articleIndexCmd = &cobra.Command{
+	Use:   "index",
+	Short: "索引文章到 Elasticsearch",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := context.Background()
+		svc := service.NewEbArticleService()
+
+		entity := &model.EbArticle{
+			Name: articleName,
+			Data: articleData,
+		}
+
+		if err := svc.Index(ctx, entity); err != nil {
+			return fmt.Errorf("index article failed: %w", err)
+		}
+
+		log.Printf("✓ Article indexed to Elasticsearch: %s", articleName)
+		return nil
+	},
+}
+
+// articleSearchCmd 搜索文章
+var articleSearchCmd = &cobra.Command{
+	Use:   "search [keyword]",
+	Short: "搜索文章",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := context.Background()
+		svc := service.NewEbArticleService()
+
+		if len(args) < 1 {
+			return fmt.Errorf("keyword is required")
+		}
+		keyword := args[0]
+
+		results, total, err := svc.Search(ctx, keyword)
+		if err != nil {
+			return fmt.Errorf("search failed: %w", err)
+		}
+
+		log.Printf("Found %d articles:\n", total)
+		for _, article := range results {
+			log.Printf("  - ID=%d, Name=%s\n", article.ID, article.Name)
+		}
+		return nil
+	},
+}
+
+func init() {
+	ebArticleCmd.AddCommand(articleIndexCmd)
+	ebArticleCmd.AddCommand(articleSearchCmd)
+
+	articleIndexCmd.Flags().StringVar(&articleName, "name", "", "文章标题 (required)")
+	articleIndexCmd.Flags().StringVar(&articleData, "data", "", "文章内容")
+	articleIndexCmd.MarkFlagRequired("name")
+
+	rootCmd.AddCommand(ebArticleCmd)
+}

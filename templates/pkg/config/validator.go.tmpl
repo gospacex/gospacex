@@ -1,0 +1,229 @@
+package config
+
+import (
+	"errors"
+	"fmt"
+	"net"
+	"strings"
+)
+
+// Validate validates the configuration
+func (c *Config) Validate() error {
+	var errs []error
+
+	// Validate AppConfig
+	if err := c.App.Validate(); err != nil {
+		errs = append(errs, err)
+	}
+
+	// Validate MySQL (optional)
+	if c.MySQL.Host != "" {
+		if err := c.MySQL.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("mysql: %w", err))
+		}
+	}
+
+	// Validate PostgreSQL (optional)
+	if c.PostgreSQL.Host != "" {
+		if err := c.PostgreSQL.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("postgresql: %w", err))
+		}
+	}
+
+	// Validate Redis (optional)
+	if c.Redis.Addr != "" {
+		if err := c.Redis.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("redis: %w", err))
+		}
+	}
+
+	// Validate MongoDB (optional)
+	if c.MongoDB.URI != "" || c.MongoDB.Host != "" {
+		if err := c.MongoDB.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("mongodb: %w", err))
+		}
+	}
+
+	// Validate Elasticsearch (optional)
+	if len(c.Elasticsearch.Addresses) > 0 {
+		if err := c.Elasticsearch.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("elasticsearch: %w", err))
+		}
+	}
+
+	// Validate Etcd (optional)
+	if len(c.Etcd.Endpoints) > 0 {
+		if err := c.Etcd.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("etcd: %w", err))
+		}
+	}
+
+	// Validate Nacos (optional)
+	if c.Nacos.ServerAddr != "" {
+		if err := c.Nacos.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("nacos: %w", err))
+		}
+	}
+
+	// Validate Consul (optional)
+	if c.Consul.Address != "" {
+		if err := c.Consul.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("consul: %w", err))
+		}
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+	return nil
+}
+
+// Validate validates AppConfig
+func (c *AppConfig) Validate() error {
+	if c.Name == "" {
+		return errors.New("app.name is required")
+	}
+	if c.Environment != "" {
+		validEnvs := []string{"development", "staging", "production", "test"}
+		valid := false
+		for _, env := range validEnvs {
+			if strings.EqualFold(c.Environment, env) {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return fmt.Errorf("app.environment must be one of: %v", validEnvs)
+		}
+	}
+	return nil
+}
+
+// Validate validates MySQLConfig
+func (c *MySQLConfig) Validate() error {
+	if c.Host == "" {
+		return errors.New("host is required")
+	}
+	if c.Port == 0 {
+		return errors.New("port is required")
+	}
+	if c.Port < 1 || c.Port > 65535 {
+		return errors.New("port must be between 1 and 65535")
+	}
+	if c.User == "" {
+		return errors.New("user is required")
+	}
+	if c.Database == "" {
+		return errors.New("database is required")
+	}
+	// Validate host format (IP or domain)
+	if net.ParseIP(c.Host) == nil && !strings.Contains(c.Host, ".") {
+		return fmt.Errorf("invalid host format: %s", c.Host)
+	}
+	return nil
+}
+
+// Validate validates PostgreSQLConfig
+func (c *PostgreSQLConfig) Validate() error {
+	if c.Host == "" {
+		return errors.New("host is required")
+	}
+	if c.Port == 0 {
+		return errors.New("port is required")
+	}
+	if c.Port < 1 || c.Port > 65535 {
+		return errors.New("port must be between 1 and 65535")
+	}
+	if c.User == "" {
+		return errors.New("user is required")
+	}
+	if c.Database == "" {
+		return errors.New("database is required")
+	}
+	return nil
+}
+
+// Validate validates RedisConfig
+func (c *RedisConfig) Validate() error {
+	if c.Addr == "" {
+		return errors.New("addr is required")
+	}
+	// Validate address format (host:port)
+	if _, _, err := net.SplitHostPort(c.Addr); err != nil {
+		return fmt.Errorf("invalid addr format (expected host:port): %s", c.Addr)
+	}
+	if c.DB < 0 || c.DB > 15 {
+		return errors.New("db must be between 0 and 15")
+	}
+	return nil
+}
+
+// Validate validates MongoDBConfig
+func (c *MongoDBConfig) Validate() error {
+	if c.URI == "" && c.Host == "" {
+		return errors.New("uri or host is required")
+	}
+	if c.Database == "" {
+		return errors.New("database is required")
+	}
+	return nil
+}
+
+// Validate validates ElasticsearchConfig
+func (c *ElasticsearchConfig) Validate() error {
+	if len(c.Addresses) == 0 {
+		return errors.New("addresses is required")
+	}
+	for i, addr := range c.Addresses {
+		if addr == "" {
+			return fmt.Errorf("addresses[%d] is empty", i)
+		}
+		// Validate URL format
+		if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
+			return fmt.Errorf("addresses[%d] must start with http:// or https://", i)
+		}
+	}
+	return nil
+}
+
+// Validate validates EtcdConfig
+func (c *EtcdConfig) Validate() error {
+	if len(c.Endpoints) == 0 {
+		return errors.New("endpoints is required")
+	}
+	for i, endpoint := range c.Endpoints {
+		if endpoint == "" {
+			return fmt.Errorf("endpoints[%d] is empty", i)
+		}
+	}
+	if c.DialTimeout <= 0 {
+		return errors.New("dial_timeout must be positive")
+	}
+	return nil
+}
+
+// Validate validates NacosConfig
+func (c *NacosConfig) Validate() error {
+	if c.ServerAddr == "" {
+		return errors.New("server_addr is required")
+	}
+	// Validate server address format
+	if _, _, err := net.SplitHostPort(c.ServerAddr); err != nil {
+		return fmt.Errorf("invalid server_addr format (expected host:port): %s", c.ServerAddr)
+	}
+	if c.DataID == "" {
+		return errors.New("data_id is required")
+	}
+	if c.Group == "" {
+		return errors.New("group is required")
+	}
+	return nil
+}
+
+// Validate validates ConsulConfig
+func (c *ConsulConfig) Validate() error {
+	if c.Address == "" {
+		return errors.New("address is required")
+	}
+	return nil
+}

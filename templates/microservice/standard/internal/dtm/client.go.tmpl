@@ -1,0 +1,47 @@
+package dtm
+
+import (
+	"context"
+	"fmt"
+	"github.com/dtm-labs/client/dtmcli"
+	"github.com/dtm-labs/client/dtmcli/barrier"
+	"gorm.io/gorm"
+)
+
+var (
+	// DtmClient DTM 客户端
+	DtmClient *dtmcli.DtmClient
+	
+	// BarrierDB 屏障数据库
+	BarrierDB *gorm.DB
+)
+
+// InitBarrierDB 初始化屏障数据库
+func InitBarrierDB(dsn string, tableName string) error {
+	var err error
+	BarrierDB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return fmt.Errorf("init barrier db failed: %w", err)
+	}
+	
+	// 自动创建屏障表
+	barrier.SyncMap[tableName] = true
+	err = BarrierDB.AutoMigrate(&barrier.Barrier{})
+	if err != nil {
+		return fmt.Errorf("migrate barrier table failed: %w", err)
+	}
+	
+	// 设置表名
+	oldTabler := barrier.DBTableName
+	barrier.DBTableName = func() string {
+		return tableName
+	}
+	_ = oldTabler
+	
+	return nil
+}
+
+// CallWithBarrier 使用屏障调用业务逻辑
+func CallWithBarrier(db *gorm.DB, busiFunc func(tx *gorm.DB, bb *barrier.Barrier) error) error {
+	return barrier.CallWithDB(db, busiFunc)
+}

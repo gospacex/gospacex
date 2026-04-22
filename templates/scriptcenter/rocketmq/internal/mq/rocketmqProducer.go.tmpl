@@ -1,0 +1,67 @@
+package mq
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/apache/rocketmq-client-go/v2"
+	"github.com/apache/rocketmq-client-go/v2/primitive"
+	"{{.ProjectName}}/internal/model"
+)
+
+// RocketmqProducer RocketMQ 生产者
+type RocketmqProducer struct {
+	producer rocketmq.Producer
+	topic   string
+	nameServer string
+}
+
+// NewRocketmqProducer 创建生产者
+func NewRocketmqProducer(nameServer, topic string) (rocketmq.Producer, error) {
+	p, err := rocketmq.NewProducer(
+		rocketmq.WithNameServer(nameServer),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create producer: %w", err)
+	}
+
+	if err := p.Start(); err != nil {
+		return nil, fmt.Errorf("start producer: %w", err)
+	}
+
+	return &RocketmqProducer{
+		producer: p,
+		topic:   topic,
+		nameServer: nameServer,
+	}, nil
+}
+
+// Send 发送消息
+func (p *RocketmqProducer) Send(ctx context.Context, article *model.EbArticle) error {
+	data, err := json.Marshal(article)
+	if err != nil {
+		return fmt.Errorf("marshal article: %w", err)
+	}
+
+	msg := primitive.NewMessage(p.topic, data)
+	_, err = p.producer.SendSync(ctx, msg)
+	if err != nil {
+		return fmt.Errorf("send message: %w", err)
+	}
+
+	return nil
+}
+
+// IsHealthy 检查健康
+func (p *RocketmqProducer) IsHealthy() error {
+	if p.producer == nil {
+		return fmt.Errorf("producer not initialized")
+	}
+	return nil
+}
+
+// Shutdown 关闭生产者
+func (p *RocketmqProducer) Shutdown() error {
+	return p.producer.Shutdown()
+}

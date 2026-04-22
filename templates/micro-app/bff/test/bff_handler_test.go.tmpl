@@ -1,0 +1,126 @@
+package test
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+)
+
+// setupRouter 初始化测试路由
+func setupRouter() *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	// TODO: 注入实际的 handler，此处仅作为模板
+	return r
+}
+
+{{range .Modules}}
+// Test{{.UpperName}}Handler_List 测试 {{.Name}} 列表接口
+func Test{{.UpperName}}Handler_List(t *testing.T) {
+	r := setupRouter()
+	r.GET("/api/v1/{{.Name}}s", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"items": []map[string]interface{}{},
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/{{.Name}}s", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Errorf("failed to parse response: %v", err)
+	}
+}
+
+// Test{{.UpperName}}Handler_Get 测试 {{.Name}} 详情接口
+func Test{{.UpperName}}Handler_Get(t *testing.T) {
+	r := setupRouter()
+	r.GET("/api/v1/{{.Name}}s/:id", func(c *gin.Context) {
+		id := c.Param("id")
+		c.JSON(http.StatusOK, gin.H{
+			"id": id,
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/{{.Name}}s/1", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Errorf("failed to parse response: %v", err)
+	}
+}
+
+// Test{{.UpperName}}Handler_Create 测试 {{.Name}} 创建接口
+func Test{{.UpperName}}Handler_Create(t *testing.T) {
+	r := setupRouter()
+	r.POST("/api/v1/{{.Name}}s", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"id": 1,
+		})
+	})
+
+	body := `{}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/{{.Name}}s", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+}
+
+// Test{{.UpperName}}Handler_Update 测试 {{.Name}} 更新接口
+func Test{{.UpperName}}Handler_Update(t *testing.T) {
+	r := setupRouter()
+	r.PUT("/api/v1/{{.Name}}s/:id", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+		})
+	})
+
+	body := `{}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/{{.Name}}s/1", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+}
+
+// Test{{.UpperName}}Handler_Delete 测试 {{.Name}} 删除接口
+func Test{{.UpperName}}Handler_Delete(t *testing.T) {
+	r := setupRouter()
+	r.DELETE("/api/v1/{{.Name}}s/:id", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/{{.Name}}s/1", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+}
+
+{{end}}

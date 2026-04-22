@@ -1,0 +1,55 @@
+package handler
+
+import (
+	"github.com/gin-gonic/gin"
+	"github.com/dtm-labs/client/dtmcli/barrier"
+	"{{ .ModuleName }}/internal/dtm"
+	"gorm.io/gorm"
+)
+
+// TccTry TCC Try 阶段：冻结资金
+func TccTry(c *gin.Context) error {
+	var req TransferRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		return err
+	}
+	
+	return dtm.CallWithBarrier(dtm.BarrierDB, func(tx *gorm.DB, bb *barrier.Barrier) error {
+		// Try: 冻结资金
+		return tx.Model(&Account{}).
+			Where("user_id = ?", req.FromUserID).
+			Update("frozen_balance", gorm.Expr("frozen_balance + ?", req.Amount),
+			       "balance", gorm.Expr("balance - ?", req.Amount)).Error
+	})
+}
+
+// TccConfirm TCC Confirm 阶段：确认转账
+func TccConfirm(c *gin.Context) error {
+	var req TransferRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		return err
+	}
+	
+	return dtm.CallWithBarrier(dtm.BarrierDB, func(tx *gorm.DB, bb *barrier.Barrier) error {
+		// Confirm: 解冻并确认
+		return tx.Model(&Account{}).
+			Where("user_id = ?", req.FromUserID).
+			Update("frozen_balance", gorm.Expr("frozen_balance - ?", req.Amount)).Error
+	})
+}
+
+// TccCancel TCC Cancel 阶段：取消转账（回滚）
+func TccCancel(c *gin.Context) error {
+	var req TransferRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		return err
+	}
+	
+	return dtm.CallWithBarrier(dtm.BarrierDB, func(tx *gorm.DB, bb *barrier.Barrier) error {
+		// Cancel: 解冻资金（回滚）
+		return tx.Model(&Account{}).
+			Where("user_id = ?", req.FromUserID).
+			Update("frozen_balance", gorm.Expr("frozen_balance - ?", req.Amount),
+			       "balance", gorm.Expr("balance + ?", req.Amount)).Error
+	})
+}

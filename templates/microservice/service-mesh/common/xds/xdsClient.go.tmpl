@@ -1,0 +1,18 @@
+package xds
+
+import (
+	"context"
+	"istio.io/istio/pkg/xds"
+)
+
+type XDSClient struct {
+	gen *xds.Server
+}
+
+func NewXDSClient(gen *xds.Server) *XDSClient {
+	return &XDSClient{gen: gen}
+}
+
+func (c *XDSClient) StreamAds(ctx context.Context) error {
+	return c.gen.StreamAggregatedResources(ctx, nil)
+}

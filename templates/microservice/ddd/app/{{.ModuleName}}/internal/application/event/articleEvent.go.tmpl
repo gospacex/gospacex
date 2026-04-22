@@ -1,0 +1,10 @@
+package event
+
+type ArticleCreatedEvent struct {
+	ArticleID int64  `json:"article_id"`
+	Title     string `json:"title"`
+}
+
+type ArticlePublishedEvent struct {
+	ArticleID int64 `json:"article_id"`
+}

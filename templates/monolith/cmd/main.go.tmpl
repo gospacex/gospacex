@@ -1,0 +1,14 @@
+package main
+
+import (
+	"log"
+	"github.com/cloudwego/hertz/pkg/app/server"
+)
+
+func main() {
+	h := server.Default()
+	registerRoutes(h)
+	if err := h.Run(); err != nil {
+		log.Fatal(err)
+	}
+}

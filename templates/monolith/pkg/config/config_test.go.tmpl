@@ -1,0 +1,166 @@
+package config_test
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/{{.ProjectName}}/pkg/config"
+)
+
+// TestMonolithConfig_Validation tests monolith project config validation
+func TestMonolithConfig_Validation(t *testing.T) {
+	tests := []struct {
+		name    string
+		yamlCfg string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid_minimal_config",
+			yamlCfg: `
+app:
+  name: monolith-service
+  environment: development
+server:
+  host: "0.0.0.0"
+  port: "8080"
+`,
+			wantErr: false,
+		},
+		{
+			name: "valid_full_config",
+			yamlCfg: `
+app:
+  name: monolith-service
+  environment: production
+server:
+  host: "0.0.0.0"
+  port: "8080"
+database:
+  mysql:
+    enabled: true
+    dsn: "root:password@tcp(localhost:3306)/mydb?parseTime=true"
+    pool:
+      max_idle_conns: 10
+      max_open_conns: 100
+log:
+  level: "info"
+  format: "json"
+  output: "stdout"
+`,
+			wantErr: false,
+		},
+		{
+			name: "invalid_port",
+			yamlCfg: `
+app:
+  name: monolith-service
+server:
+  port: "invalid"
+`,
+			wantErr: true,
+			errMsg:  "port",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := config.LoadFromString(tt.yamlCfg)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, cfg)
+			}
+		})
+	}
+}
+
+// TestMonolithConfig_DatabaseDSN tests DSN configuration
+func TestMonolithConfig_DatabaseDSN(t *testing.T) {
+	yamlCfg := `
+app:
+  name: monolith-service
+  environment: development
+database:
+  mysql:
+    enabled: true
+    dsn: "root:password@tcp(localhost:3306)/mydb?parseTime=true"
+    pool:
+      max_idle_conns: 10
+      max_open_conns: 100
+`
+
+	cfg, err := config.LoadFromString(yamlCfg)
+	assert.NoError(t, err)
+	assert.NotNil(t, cfg)
+	assert.True(t, cfg.Database.MySQL.Enabled)
+	assert.Equal(t, "root:password@tcp(localhost:3306)/mydb?parseTime=true", cfg.Database.MySQL.DSN)
+}
+
+// TestMonolithConfig_LogLevels tests log level validation
+func TestMonolithConfig_LogLevels(t *testing.T) {
+	validLevels := []string{"debug", "info", "warn", "error", "fatal"}
+
+	for _, level := range validLevels {
+		yamlCfg := `app:
+  name: test
+log:
+  level: "` + level + `"
+  format: "json"
+  output: "stdout"
+`
+		cfg, err := config.LoadFromString(yamlCfg)
+		assert.NoError(t, err, "Log level %s should be valid", level)
+		assert.Equal(t, level, cfg.Log.Level)
+	}
+}
+
+// TestMonolithConfig_EnvironmentVariables tests env var substitution
+func TestMonolithConfig_EnvironmentVariables(t *testing.T) {
+	yamlCfg := `
+app:
+  name: monolith-service
+database:
+  mysql:
+    enabled: true
+    dsn: "${DB_DSN}"
+`
+
+	cfg, err := config.LoadFromString(yamlCfg)
+	assert.NoError(t, err)
+	assert.NotNil(t, cfg)
+	assert.Contains(t, cfg.Database.MySQL.DSN, "${DB_DSN}")
+}
+
+// TestMonolithConfig_ThreadSafety tests concurrent config access
+func TestMonolithConfig_ThreadSafety(t *testing.T) {
+	yamlCfg := `
+app:
+  name: monolith-service
+  environment: development
+server:
+  host: "0.0.0.0"
+  port: "8080"
+`
+
+	cfg, err := config.LoadFromString(yamlCfg)
+	assert.NoError(t, err)
+
+	// Simulate concurrent reads
+	done := make(chan bool, 10)
+	for i := 0; i < 10; i++ {
+		go func() {
+			_ = cfg.App.Name
+			_ = cfg.Server.Port
+			done <- true
+		}()
+	}
+
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+}

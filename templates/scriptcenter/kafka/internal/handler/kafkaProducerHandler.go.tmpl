@@ -1,0 +1,27 @@
+package handler
+
+import (
+	"context"
+	"log"
+
+	"{{.ProjectName}}/internal/mq"
+	"{{.ProjectName}}/internal/model"
+)
+
+// KafkaProducerHandler Kafka 消息生产者处理器
+type KafkaProducerHandler struct {
+	producer *mq.KafkaProducer
+}
+
+// NewKafkaProducerHandler 创建处理器
+func NewKafkaProducerHandler(producer *mq.KafkaProducer) *KafkaProducerHandler {
+	return &KafkaProducerHandler{
+		producer: producer,
+	}
+}
+
+// PublishArticle 发布文章事件到 Kafka
+func (h *KafkaProducerHandler) PublishArticle(ctx context.Context, article *model.EbArticle) error {
+	log.Printf("Publishing article event: %s", article.Name)
+	return h.producer.Publish(ctx, article)
+}

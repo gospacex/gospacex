@@ -1,0 +1,61 @@
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"log"
+	"net"
+	"time"
+
+	"{{.AppName}}/pkg/config"
+	"{{.AppName}}/pkg/database"
+	"{{.AppName}}/{{.SrvDirName}}/internal/handler"
+	"{{.AppName}}/common/kitexGen/{{.Module}}"
+
+	clientv3 "go.etcd.io/etcd/client/v3"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
+)
+
+var confPath string
+
+func init() {
+	flag.StringVar(&confPath, "config", "configs/config.yaml", "config file")
+}
+
+func main() {
+	flag.Parse()
+	cfg, _ := config.Load(confPath)
+	db, _ := database.NewDB(&cfg.Database)
+	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
+	lis, _ := net.Listen("tcp", addr)
+	s := grpc.NewServer()
+	{{.Module}}.Register{{.UpperModule}}ServiceServer(s, handler.New{{.UpperModule}}Handler(db))
+	reflection.Register(s)
+
+	// Etcd 服务注册
+	etcdClient, err := clientv3.New(clientv3.Config{
+		Endpoints:   []string{cfg.Registry.Address},
+		DialTimeout: 5 * time.Second,
+	})
+	if err != nil {
+		log.Printf("Warning: Failed to connect to Etcd: %v", err)
+	} else {
+		ctx := context.Background()
+		key := fmt.Sprintf("/services/%s/%s", "{{.Module}}", addr)
+		value := addr
+		lease, _ := etcdClient.Grant(ctx, 30)
+		etcdClient.Put(ctx, key, value, clientv3.WithLease(lease.ID))
+		// 保持心跳
+		keepAliveChan, _ := etcdClient.KeepAlive(ctx, lease.ID)
+		go func() {
+			for range keepAliveChan {
+			}
+		}()
+		log.Printf("Registered with Etcd: %s -> %s", key, value)
+	}
+
+	log.Printf("Starting on %s", addr)
+	s.Serve(lis)
+}

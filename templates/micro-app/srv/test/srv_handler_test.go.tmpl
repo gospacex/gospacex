@@ -1,0 +1,52 @@
+package test
+
+import (
+	"context"
+	"testing"
+
+	"{{.AppName}}/{{.SrvDirName}}/internal/handler"
+	"{{.AppName}}/{{.SrvDirName}}/internal/repository"
+	"{{.AppName}}/{{.SrvDirName}}/internal/service"
+	"{{.AppName}}/common/kitexGen/{{.Module}}"
+)
+
+// Test{{.UpperModule}}Service_Create 测试 {{.Module}} 创建
+func Test{{.UpperModule}}Service_Create(t *testing.T) {
+	// TODO: 初始化依赖（mock db）
+	// repo := repository.New{{.UpperModule}}Repo(mockDB)
+	// svc := service.New{{.UpperModule}}Service(repo)
+	// h := handler.New{{.UpperModule}}Handler(repo)
+
+	t.Logf("{{.Module}} Create test placeholder - implement with mock DB")
+}
+
+// Test{{.UpperModule}}Service_Get 测试 {{.Module}} 查询
+func Test{{.UpperModule}}Service_Get(t *testing.T) {
+	t.Logf("{{.Module}} Get test placeholder - implement with mock DB")
+}
+
+// Test{{.UpperModule}}Service_List 测试 {{.Module}} 列表
+func Test{{.UpperModule}}Service_List(t *testing.T) {
+	t.Logf("{{.Module}} List test placeholder - implement with mock DB")
+}
+
+// Test{{.UpperModule}}Service_Update 测试 {{.Module}} 更新
+func Test{{.UpperModule}}Service_Update(t *testing.T) {
+	t.Logf("{{.Module}} Update test placeholder - implement with mock DB")
+}
+
+// Test{{.UpperModule}}Service_Delete 测试 {{.Module}} 删除
+func Test{{.UpperModule}}Service_Delete(t *testing.T) {
+	t.Logf("{{.Module}} Delete test placeholder - implement with mock DB")
+}
+
+// Test{{.UpperModule}}GRPCHandler 测试 gRPC Handler 接口
+func Test{{.UpperModule}}GRPCHandler(t *testing.T) {
+	// TODO: 使用 bufconn 创建内存 gRPC 服务端进行测试
+	// lis := bufconn.Listen(1024 * 1024)
+	// s := grpc.NewServer()
+	// {{.Module}}.Register{{.UpperModule}}ServiceServer(s, handler.New{{.UpperModule}}Handler(mockDB))
+	// go s.Serve(lis)
+
+	t.Logf("{{.Module}} gRPC handler test placeholder - implement with bufconn")
+}

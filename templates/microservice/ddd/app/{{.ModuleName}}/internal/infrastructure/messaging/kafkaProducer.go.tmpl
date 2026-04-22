@@ -1,0 +1,25 @@
+package messaging
+
+import (
+	"context"
+	"encoding/json"
+
+	"github.com/segmentio/kafka-go"
+)
+
+type KafkaProducer struct {
+	writer *kafka.Writer
+}
+
+func NewKafkaProducer(writer *kafka.Writer) *KafkaProducer {
+	return &KafkaProducer{writer: writer}
+}
+
+func (p *KafkaProducer) Publish(ctx context.Context, topic string, event interface{}) error {
+	data, _ := json.Marshal(event)
+	return p.writer.WriteMessages(ctx, kafka.Message{
+		Topic: topic,
+		Key:   []byte(topic),
+		Value: data,
+	})
+}

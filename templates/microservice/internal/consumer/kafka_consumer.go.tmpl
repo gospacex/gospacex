@@ -1,0 +1,75 @@
+package consumer
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/IBM/sarama"
+)
+
+// KafkaConsumer Kafka 消费者
+type KafkaConsumer struct {
+	consumer sarama.ConsumerGroup
+	topics   []string
+	handler  MessageHandler
+}
+
+// MessageHandler 消息处理器
+type MessageHandler interface {
+	Handle(ctx context.Context, msg string) error
+}
+
+// NewKafkaConsumer 创建消费者
+func NewKafkaConsumer(brokers []string, topic, groupID string, handler MessageHandler) (*KafkaConsumer, error) {
+	config := sarama.NewConfig()
+	config.Consumer.Group.InitialOffset = sarama.OffsetOldest
+	
+	consumer, err := sarama.NewConsumerGroup(brokers, groupID, config)
+	if err != nil {
+		return nil, fmt.Errorf("create consumer failed: %w", err)
+	}
+	
+	log.Printf("Kafka consumer connected: %v, group=%s", brokers, groupID)
+	return &KafkaConsumer{
+		consumer: consumer,
+		topics:   []string{topic},
+		handler:  handler,
+	}, nil
+}
+
+// Consume 消费消息
+func (c *KafkaConsumer) Consume(ctx context.Context) error {
+	h := &handler{handler: c.handler}
+	
+	for {
+		if err := c.consumer.Consume(ctx, c.topics, h); err != nil {
+			log.Printf("Consumer error: %v", err)
+			time.Sleep(5 * time.Second)
+		}
+		
+		select {
+		case <-ctx.Done():
+			return c.consumer.Close()
+		default:
+		}
+	}
+}
+
+type handler struct {
+	handler MessageHandler
+}
+
+func (h *handler) Setup(sarama.ConsumerGroupSession) error   { return nil }
+func (h *handler) Cleanup(sarama.ConsumerGroupSession) error { return nil }
+func (h *handler) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+	for msg := range claim.Messages() {
+		if err := h.handler.Handle(sess.Context(), string(msg.Value)); err != nil {
+			log.Printf("Handler error: %v", err)
+			continue
+		}
+		sess.MarkMessage(msg, "")
+	}
+	return nil
+}

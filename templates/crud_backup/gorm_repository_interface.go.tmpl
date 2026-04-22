@@ -1,0 +1,28 @@
+package repository
+
+import (
+	"context"
+
+	"{{.OutputDir}}/internal/model"
+)
+
+// {{.StructName}}Repository {{.StructName}} 仓储接口
+type {{.StructName}}Repository interface {
+	// Create 创建
+	Create(ctx context.Context, entity *model.{{.StructName}}) error
+	
+	// GetByID 根据 ID 查询
+	GetByID(ctx context.Context, id int64) (*model.{{.StructName}}, error)
+	
+	// List 列表查询
+	List(ctx context.Context, offset, limit int) ([]*model.{{.StructName}}, error)
+	
+	// Update 更新
+	Update(ctx context.Context, entity *model.{{.StructName}}) error
+	
+	// Delete 删除
+	Delete(ctx context.Context, id int64) error
+	
+	// Count 统计
+	Count(ctx context.Context) (int64, error)
+}

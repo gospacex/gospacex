@@ -1,0 +1,45 @@
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"log"
+
+	"{{.AppName}}/{{.BffDirName}}/internal/router"
+	"{{.AppName}}/pkg/config"
+
+	"github.com/cloudwego/hertz/pkg/app/server"
+)
+
+var confPath string
+
+func init() {
+	flag.StringVar(&confPath, "config", "configs/config.yaml", "config file")
+}
+
+func main() {
+	flag.Parse()
+{{- if .NacosEnabled}}
+	// 先从本地文件加载，获取 Nacos 配置信息
+	cfg, err := config.Load(confPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// 优先从 Nacos 加载，失败则使用本地配置
+	if nacosCfg, err := config.LoadWithFallback(confPath, &cfg.Nacos); err == nil {
+		cfg = nacosCfg
+	}
+{{- else}}
+	cfg, err := config.Load(confPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+{{- end}}
+
+	h := server.Default(server.WithHostPorts(cfg.Server.Host + ":" + fmt.Sprintf("%d", cfg.Server.Port)))
+	router.Register(h)
+
+	log.Printf("BFF starting on %s", cfg.Server.Host + ":" + fmt.Sprintf("%d", cfg.Server.Port))
+	h.Run()
+}

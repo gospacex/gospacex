@@ -1,0 +1,13 @@
+package main
+
+import (
+	"log"
+	"github.com/cloudwego/kitex/server"
+)
+
+func main() {
+	svr := server.New(server.WithServiceAddr(&addr))
+	if err := svr.Run(); err != nil {
+		log.Fatal(err)
+	}
+}

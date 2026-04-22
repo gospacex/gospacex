@@ -1,0 +1,20 @@
+package handler
+
+import (
+	"context"
+
+	"{{.ModuleName}}/app/{{.ModuleName}}/internal/application/dto"
+	"{{.ModuleName}}/app/{{.ModuleName}}/internal/application/service"
+)
+
+type ArticleHandler struct {
+	svc *service.ArticleAppService
+}
+
+func NewArticleHandler(svc *service.ArticleAppService) *ArticleHandler {
+	return &ArticleHandler{svc: svc}
+}
+
+func (h *ArticleHandler) HandleCreate(ctx context.Context, req *dto.ArticleCreateDTO) (*dto.ArticleDTO, error) {
+	return h.svc.CreateArticle(ctx, req)
+}

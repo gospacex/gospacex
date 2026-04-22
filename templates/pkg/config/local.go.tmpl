@@ -1,0 +1,121 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/spf13/viper"
+)
+
+// LocalFileLoader 本地配置文件加载器
+// 支持 YAML 和 JSON 格式
+type LocalFileLoader struct {
+	path string
+}
+
+// NewLocalFileLoader 创建本地文件加载器
+func NewLocalFileLoader(path string) *LocalFileLoader {
+	return &LocalFileLoader{
+		path: path,
+	}
+}
+
+// Source 返回配置来源
+func (l *LocalFileLoader) Source() Source {
+	return SourceLocalFile
+}
+
+// Load 加载配置文件
+func (l *LocalFileLoader) Load() (map[string]interface{}, error) {
+	if l.path == "" {
+		l.path = "configs/config.yaml"
+	}
+
+	v := viper.New()
+	v.SetConfigFile(l.path)
+
+	// 根据扩展名设置格式
+	if strings.HasSuffix(l.path, ".json") {
+		v.SetConfigType("json")
+	} else {
+		v.SetConfigType("yaml")
+	}
+
+	if err := v.ReadInConfig(); err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	// 转换为 map[string]interface{}
+	result := make(map[string]interface{})
+	if err := v.Unmarshal(&result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	// 处理环境变量占位符 ${VAR}
+	result = l.substituteEnv(result)
+
+	return result, nil
+}
+
+// Watch 监听配置变更（viper 自带支持）
+func (l *LocalFileLoader) Watch(key string) <-chan *ConfigChange {
+	// TODO: 实现 viper 监听文件变更并转发
+	ch := make(chan *ConfigChange, 1)
+	close(ch)
+	return ch
+}
+
+// substituteEnv 替换 ${VAR} 占位符为环境变量值
+func (l *LocalFileLoader) substituteEnv(data map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{})
+	for k, v := range data {
+		result[k] = l.substituteValue(v)
+	}
+	return result
+}
+
+func (l *LocalFileLoader) substituteValue(v interface{}) interface{} {
+	switch val := v.(type) {
+	case string:
+		return l.expandEnv(val)
+	case map[string]interface{}:
+		return l.substituteEnv(val)
+	case []interface{}:
+		var newSlice []interface{}
+		for _, item := range val {
+			newSlice = append(newSlice, l.substituteValue(item))
+		}
+		return newSlice
+	default:
+		return v
+	}
+}
+
+// expandEnv 替换字符串中的 ${VAR} 占位符
+func (l *LocalFileLoader) expandEnv(s string) string {
+	var result strings.Builder
+	i := 0
+	length := len(s)
+
+	for i < length {
+		if s[i] == '$' && i+1 < length && s[i+1] == '{' {
+			i += 2
+			start := i
+			for i < length && s[i] != '}' {
+				i++
+			}
+			if i < length {
+				varName := s[start:i]
+				varValue := os.Getenv(varName)
+				result.WriteString(varValue)
+				i++ // skip '}'
+			}
+		} else {
+			result.WriteByte(s[i])
+			i++
+		}
+	}
+
+	return result.String()
+}

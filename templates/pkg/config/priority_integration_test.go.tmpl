@@ -1,0 +1,106 @@
+package config
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
+
+// 测试所有优先级场景
+
+// 测试场景 1: 所有来源都有配置 → 远程优先
+func TestPriority_AllSources_RemoteWins(t *testing.T) {
+	m := NewManager()
+
+	m.AddLoader(NewMockLoader(SourceDefault, map[string]interface{}{
+		"database.host": "localhost",
+		"database.port": 3306,
+	}))
+	m.AddLoader(NewMockLoader(SourceLocalFile, map[string]interface{}{
+		"database.host": "127.0.0.1",
+	}))
+	m.AddLoader(NewMockLoader(SourceEnv, map[string]interface{}{
+		"database.host": "env-host",
+	}))
+	m.AddLoader(NewMockLoader(SourceRemote, map[string]interface{}{
+		"database.host": "remote-host",
+		"database.user": "remote-user",
+	}))
+
+	_, err := m.Load("")
+	assert.NoError(t, err)
+
+	// 远程覆盖所有
+	assert.Equal(t, "remote-host", m.Get("database.host"))
+	// 远程添加了新字段
+	assert.Equal(t, "remote-user", m.Get("database.user"))
+	// 环境没有覆盖host，但是port来自默认
+	assert.Equal(t, 3306, m.Get("database.port"))
+
+	// 来源验证
+	assert.Equal(t, "remote", m.GetSource("database.host").Name)
+	assert.Equal(t, "env", m.GetSource("database.port").Name)
+}
+
+// 测试场景 2: 远程没有，环境有 → 环境获胜
+func TestPriority_NoRemote_EnvWins(t *testing.T) {
+	m := NewManager()
+
+	m.AddLoader(NewMockLoader(SourceDefault, map[string]interface{}{
+		"server.port": 8000,
+	}))
+	m.AddLoader(NewMockLoader(SourceLocalFile, map[string]interface{}{
+		"server.port": 8080,
+	}))
+	m.AddLoader(NewMockLoader(SourceEnv, map[string]interface{}{
+		"server.port": 9000,
+	}))
+	// 远程没有这个配置
+
+	_, err := m.Load("")
+	assert.NoError(t, err)
+
+	assert.Equal(t, 9000, m.Get("server.port"))
+	assert.Equal(t, "env", m.GetSource("server.port").Name)
+}
+
+// 测试场景 3: 远程环境都没有，本地有 → 本地获胜
+func TestPriority_NoRemoteEnv_LocalWins(t *testing.T) {
+	m := NewManager()
+
+	m.AddLoader(NewMockLoader(SourceDefault, map[string]interface{}{
+		"debug": false,
+	}))
+	m.AddLoader(NewMockLoader(SourceLocalFile, map[string]interface{}{
+		"debug": true,
+	}))
+	// 环境远程没有
+
+	_, err := m.Load("")
+	assert.NoError(t, err)
+
+	assert.Equal(t, true, m.Get("debug"))
+	assert.Equal(t, "local_file", m.GetSource("debug").Name)
+}
+
+// 测试场景 4: 只有默认 → 默认获胜
+func TestPriority_OnlyDefault_DefaultWins(t *testing.T) {
+	m := NewManager()
+
+	m.AddLoader(NewMockLoader(SourceDefault, map[string]interface{}{
+		"default.key": "default-value",
+	}))
+
+	_, err := m.Load("")
+	assert.NoError(t, err)
+
+	assert.Equal(t, "default-value", m.Get("default.key"))
+	assert.Equal(t, "default", m.GetSource("default.key").Name)
+}
+
+// 测试场景 5: 空 → 空也不报错
+func TestPriority_Empty_NoError(t *testing.T) {
+	m := NewManager()
+	_, err := m.Load("")
+	assert.NoError(t, err)
+}

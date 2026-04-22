@@ -1,0 +1,34 @@
+package service
+
+import (
+	"context"
+
+	"{{.AppName}}/{{.SrvDirName}}/internal/model"
+	"{{.AppName}}/{{.SrvDirName}}/internal/repository"
+)
+
+type {{.UpperModule}}Service struct { repo *repository.{{.UpperModule}}Repo }
+
+func New{{.UpperModule}}Service(repo *repository.{{.UpperModule}}Repo) *{{.UpperModule}}Service {
+	return &{{.UpperModule}}Service{repo: repo}
+}
+
+func (s *{{.UpperModule}}Service) Create(ctx context.Context, m *model.{{.UpperModule}}) error {
+	return s.repo.Create(ctx, m)
+}
+
+func (s *{{.UpperModule}}Service) Get(ctx context.Context, id {{.PKGoType}}) (*model.{{.UpperModule}}, error) {
+	return s.repo.GetByID(ctx, {{.PKModelConvert}})
+}
+
+func (s *{{.UpperModule}}Service) List(ctx context.Context) ([]*model.{{.UpperModule}}, error) {
+	return s.repo.List(ctx)
+}
+
+func (s *{{.UpperModule}}Service) Update(ctx context.Context, m *model.{{.UpperModule}}) error {
+	return s.repo.Update(ctx, m)
+}
+
+func (s *{{.UpperModule}}Service) Delete(ctx context.Context, id {{.PKGoType}}) error {
+	return s.repo.Delete(ctx, {{.PKModelConvert}})
+}

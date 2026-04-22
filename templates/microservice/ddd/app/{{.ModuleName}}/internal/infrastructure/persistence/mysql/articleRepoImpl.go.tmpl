@@ -1,0 +1,33 @@
+package mysql
+
+import (
+	"context"
+	"{{.ModuleName}}/app/{{.ModuleName}}/internal/domain"
+	"{{.ModuleName}}/app/{{.ModuleName}}/internal/infrastructure/po"
+	"gorm.io/gorm"
+)
+
+type ArticleRepoImpl struct {
+	db *gorm.DB
+}
+
+func NewArticleRepoImpl(db *gorm.DB) *ArticleRepoImpl {
+	return &ArticleRepoImpl{db: db}
+}
+
+func (r *ArticleRepoImpl) Save(ctx context.Context, agg *domain.ArticleAggregate) error {
+	po := &po.ArticlePo{
+		ID:     agg.ID(),
+		Title:  agg.Title(),
+		Status: agg.Status(),
+	}
+	return r.db.WithContext(ctx).Create(po).Error
+}
+
+func (r *ArticleRepoImpl) FindByID(ctx context.Context, id int64) (*domain.ArticleAggregate, error) {
+	var po po.ArticlePo
+	if err := r.db.WithContext(ctx).First(&po, id).Error; err != nil {
+		return nil, err
+	}
+	return domain.NewArticleAggregate(po.ID, po.Title, po.Content, po.AuthorID), nil
+}

@@ -1,0 +1,156 @@
+package middleware
+
+import (
+	"context"
+	"go.opentelemetry.io/otel/trace"
+)
+
+// Middleware 是所有中间件的基础接口
+// 所有中间件实现都应该实现这个接口
+//
+// 示例实现:
+//
+//	// KafkaProducer 实现 Middleware 接口
+//	var _ Middleware = (*KafkaProducer)(nil)
+//
+//	type KafkaProducer struct {
+//	    producer sarama.SyncProducer
+//	}
+//
+//	func (p *KafkaProducer) Initialize(ctx context.Context) error {
+//	    // 初始化 Kafka 连接
+//	}
+//
+//	func (p *KafkaProducer) HealthCheck(ctx context.Context) error {
+//	    // 检查 Kafka 连接健康状态
+//	}
+//
+//	func (p *KafkaProducer) Close() error {
+//	    // 关闭 Kafka 连接
+//	}
+type Middleware interface {
+	// Initialize 设置中间件连接
+	// 在应用启动时调用，返回错误表示初始化失败
+	Initialize(ctx context.Context) error
+
+	// HealthCheck 验证连接是否健康
+	// 在健康检查端点调用，返回错误表示不健康
+	HealthCheck(ctx context.Context) error
+
+	// Close 关闭中间件连接
+	// 在应用关闭时调用，清理资源
+	Close() error
+}
+
+// HealthChecker 是支持健康检查的中间件接口
+// 适用于需要独立健康检查的中间件
+type HealthChecker interface {
+	// HealthCheck 验证连接是否健康
+	// 返回 error 表示不健康或连接失败
+	HealthCheck(ctx context.Context) error
+}
+
+// Closer 是需要资源清理的中间件接口
+// 适用于需要显式关闭连接的中间件
+type Closer interface {
+	// Close 关闭中间件连接
+	// 返回 error 表示关闭过程中出现错误
+	Close() error
+}
+
+// ConfigCenter 是配置中心的抽象接口
+// 适用于 Nacos、Apollo 等配置中心
+type ConfigCenter interface {
+	// GetConfigValue 获取配置值，支持默认值
+	GetConfigValue(key string, defaultValue interface{}) interface{}
+
+	// GetConfigStringValue 获取字符串类型配置
+	GetConfigStringValue(key string, defaultValue string) string
+
+	// GetConfigIntValue 获取整数类型配置
+	GetConfigIntValue(key string, defaultValue int) int
+
+	// AddChangeListener 添加配置变更监听器
+	// dataId: 配置的数据 ID
+	// listener: 配置变更时的回调接口
+	AddChangeListener(listener ConfigChangeListener, dataId string) error
+
+	// Close 关闭配置中心连接
+	Close() error
+}
+
+// ConfigChangeListener 配置变更监听器接口
+type ConfigChangeListener interface {
+	// OnChange 配置变更时的回调方法
+	// namespace: 命名空间
+	// key: 配置键
+	// oldValue: 变更前的值
+	// newValue: 变更后的值
+	OnChange(namespace string, key string, oldValue interface{}, newValue interface{})
+}
+
+// Observable 是可观测性中间件接口
+// 适用于 Jaeger、Zipkin 等链路追踪系统
+type Observable interface {
+	// StartSpan 启动一个新的追踪_span
+	// spanName: span 名称，通常是操作名
+	// 返回包含 span 信息的 context 和 span 对象
+	StartSpan(ctx context.Context, spanName string) (context.Context, trace.Span)
+
+	// RecordEvent 在 span 中记录事件
+	// span: 要记录事件的 span
+	// eventName: 事件名称
+	RecordEvent(span trace.Span, eventName string)
+}
+
+// Messenger 是消息队列中间件接口
+// 适用于 Kafka、RabbitMQ、RocketMQ 等消息队列
+type Messenger interface {
+	// SendMessage 发送消息到指定主题
+	// topic: 消息主题
+	// key: 消息键（用于分区或路由）
+	// value: 消息内容
+	SendMessage(ctx context.Context, topic, key, value string) error
+
+	// Consume 消费消息
+	// handler: 消息处理器，处理接收到的消息
+	Consume(ctx context.Context, handler MessageHandler) error
+}
+
+// MessageHandler 消息处理器接口
+type MessageHandler interface {
+	// Handle 处理单条消息
+	// ctx: 包含追踪等信息的上下文
+	// msg: 消息内容
+	// 返回 error 表示处理失败，可能触发重试
+	Handle(ctx context.Context, msg string) error
+}
+
+//Initializer 是支持初始化的中间件接口
+type Initializer interface {
+	// Initialize 初始化中间件连接
+	Initialize(ctx context.Context) error
+}
+
+//Registry 是服务注册中心接口
+//适用于 Consul、etcd、Nacos 等服务发现系统
+type Registry interface {
+	// Register 注册服务实例
+	// serviceName: 服务名称
+	// instanceID: 实例 ID
+	// address: 服务地址（ip:port）
+	Register(ctx context.Context, serviceName, instanceID, address string) error
+
+	// Deregister 注销服务实例
+	Deregister(ctx context.Context, serviceName, instanceID string) error
+
+	// Discover 发现服务实例列表
+	// 返回指定服务的所有健康实例地址
+	Discover(ctx context.Context, serviceName string) ([]string, error)
+
+	// HealthCheck 检查服务注册状态
+	HealthCheck(ctx context.Context) error
+
+	// Close 关闭注册中心连接
+	Close() error
+}

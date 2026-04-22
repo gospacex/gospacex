@@ -1,0 +1,90 @@
+package service
+
+import (
+	"context"
+	"testing"
+	"{{ .ModuleName }}/domain/valueobject"
+)
+
+type mockOrderRepository struct {
+	orders map[int64]*Order
+}
+
+func (m *mockOrderRepository) Save(ctx context.Context, order *Order) error {
+	m.orders[order.ID] = order
+	return nil
+}
+
+func (m *mockOrderRepository) FindByID(ctx context.Context, id int64) (*Order, error) {
+	order, ok := m.orders[id]
+	if !ok {
+		return nil, nil
+	}
+	return order, nil
+}
+
+func (m *mockOrderRepository) FindByUserID(ctx context.Context, userID int64) ([]*Order, error) {
+	var result []*Order
+	for _, order := range m.orders {
+		if order.UserID == userID {
+			result = append(result, order)
+		}
+	}
+	return result, nil
+}
+
+func (m *mockOrderRepository) Update(ctx context.Context, order *Order) error {
+	m.orders[order.ID] = order
+	return nil
+}
+
+func (m *mockOrderRepository) Delete(ctx context.Context, id int64) error {
+	delete(m.orders, id)
+	return nil
+}
+
+func TestOrderService_CreateOrder(t *testing.T) {
+	repo := &mockOrderRepository{orders: make(map[int64]*Order)}
+	service := NewOrderService(repo)
+	
+	money, _ := valueobject.NewMoney(10000, "CNY")
+	items := []OrderItem{
+		{ProductID: 1, Quantity: 2},
+	}
+	
+	order, err := service.CreateOrder(context.Background(), 1, items, money)
+	if err != nil {
+		t.Fatalf("CreateOrder failed: %v", err)
+	}
+	
+	if order == nil {
+		t.Fatal("order should not be nil")
+	}
+	
+	if order.UserID != 1 {
+		t.Errorf("UserID = %v, want 1", order.UserID)
+	}
+}
+
+func TestOrderService_GetOrderByID(t *testing.T) {
+	repo := &mockOrderRepository{orders: make(map[int64]*Order)}
+	service := NewOrderService(repo)
+	
+	money, _ := valueobject.NewMoney(10000, "CNY")
+	order := NewOrder(1, money)
+	order.ID = 1
+	repo.orders[1] = order
+	
+	retrieved, err := service.GetOrderByID(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("GetOrderByID failed: %v", err)
+	}
+	
+	if retrieved == nil {
+		t.Fatal("order should not be nil")
+	}
+	
+	if retrieved.ID != 1 {
+		t.Errorf("ID = %v, want 1", retrieved.ID)
+	}
+}

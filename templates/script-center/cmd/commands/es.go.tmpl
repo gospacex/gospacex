@@ -1,0 +1,238 @@
+package commands
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+
+	"{{.ProjectName}}/pkg/config"
+	"{{.ProjectName}}/pkg/search"
+	"github.com/spf13/cobra"
+)
+
+var esCmd = &cobra.Command{
+	Use:   "es",
+	Short: "Elasticsearch management commands",
+	Long:  `Elasticsearch 索引和文档管理命令`,
+}
+
+var (
+	esIndex   string
+	esID      string
+	esQuery   string
+	esFrom    int
+	esSize    int
+	esData    string
+)
+
+// esCreateCmd 创建文档
+var esCreateCmd = &cobra.Command{
+	Use:   "create",
+	Short: "Create a document in Elasticsearch",
+	Long:  `在 Elasticsearch 中创建文档`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg := config.Get()
+
+		client, err := initESClient(cfg)
+		if err != nil {
+			return err
+		}
+
+		if esIndex == "" {
+			return fmt.Errorf("--index is required")
+		}
+		if esID == "" {
+			return fmt.Errorf("--id is required")
+		}
+
+		var doc interface{}
+		if err := json.Unmarshal([]byte(esData), &doc); err != nil {
+			return fmt.Errorf("invalid JSON data: %w", err)
+		}
+
+		esClient := search.NewESClient(client, esIndex)
+		if err := esClient.IndexDocument(esID, doc); err != nil {
+			return fmt.Errorf("create document failed: %w", err)
+		}
+
+		fmt.Printf("✓ Document created in index=%s, id=%s\n", esIndex, esID)
+		return nil
+	},
+}
+
+// esGetCmd 获取文档
+var esGetCmd = &cobra.Command{
+	Use:   "get",
+	Short: "Get a document from Elasticsearch",
+	Long:  `从 Elasticsearch 中获取文档`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg := config.Get()
+
+		client, err := initESClient(cfg)
+		if err != nil {
+			return err
+		}
+
+		if esIndex == "" {
+			return fmt.Errorf("--index is required")
+		}
+		if esID == "" {
+			return fmt.Errorf("--id is required")
+		}
+
+		esClient := search.NewESClient(client, esIndex)
+		data, err := esClient.GetDocument(esID)
+		if err != nil {
+			return fmt.Errorf("get document failed: %w", err)
+		}
+
+		fmt.Println(string(data))
+		return nil
+	},
+}
+
+// esSearchCmd 搜索文档
+var esSearchCmd = &cobra.Command{
+	Use:   "search [query]",
+	Short: "Search documents in Elasticsearch",
+	Long:  `在 Elasticsearch 中搜索文档`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg := config.Get()
+
+		client, err := initESClient(cfg)
+		if err != nil {
+			return err
+		}
+
+		if esIndex == "" {
+			return fmt.Errorf("--index is required")
+		}
+
+		esClient := search.NewESClient(client, esIndex)
+
+		// Build multi_match query
+		query := map[string]interface{}{
+			"multi_match": map[string]interface{}{
+				"query":  args[0],
+				"fields": []string{"*"},
+			},
+		}
+
+		data, err := esClient.Search(query, esFrom, esSize)
+		if err != nil {
+			return fmt.Errorf("search failed: %w", err)
+		}
+
+		fmt.Println(string(data))
+		return nil
+	},
+}
+
+// esDeleteCmd 删除文档
+var esDeleteCmd = &cobra.Command{
+	Use:   "delete",
+	Short: "Delete a document from Elasticsearch",
+	Long:  `从 Elasticsearch 中删除文档`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg := config.Get()
+
+		client, err := initESClient(cfg)
+		if err != nil {
+			return err
+		}
+
+		if esIndex == "" {
+			return fmt.Errorf("--index is required")
+		}
+		if esID == "" {
+			return fmt.Errorf("--id is required")
+		}
+
+		esClient := search.NewESClient(client, esIndex)
+		if err := esClient.DeleteDocument(esID); err != nil {
+			return fmt.Errorf("delete document failed: %w", err)
+		}
+
+		fmt.Printf("✓ Document deleted from index=%s, id=%s\n", esIndex, esID)
+		return nil
+	},
+}
+
+// esBulkCmd 批量索引文档
+var esBulkCmd = &cobra.Command{
+	Use:   "bulk",
+	Short: "Bulk index documents in Elasticsearch",
+	Long:  `批量索引文档到 Elasticsearch`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg := config.Get()
+
+		client, err := initESClient(cfg)
+		if err != nil {
+			return err
+		}
+
+		if esIndex == "" {
+			return fmt.Errorf("--index is required")
+		}
+		if esData == "" {
+			return fmt.Errorf("--data is required (JSON array)")
+		}
+
+		var docs []struct {
+			ID   string          `json:"id"`
+			Doc  json.RawMessage `json:"doc"`
+		}
+		if err := json.Unmarshal([]byte(esData), &docs); err != nil {
+			return fmt.Errorf("invalid JSON data: %w", err)
+		}
+
+		esClient := search.NewESClient(client, esIndex)
+		bulkDocs := make([]search.BulkDoc, 0, len(docs))
+		for _, d := range docs {
+			var doc interface{}
+			if err := json.Unmarshal(d.Doc, &doc); err != nil {
+				return fmt.Errorf("invalid document: %w", err)
+			}
+			bulkDocs = append(bulkDocs, search.BulkDoc{
+				ID:     d.ID,
+				Action: "index",
+				Doc:    doc,
+			})
+		}
+
+		if err := esClient.BulkIndex(bulkDocs); err != nil {
+			return fmt.Errorf("bulk index failed: %w", err)
+		}
+
+		fmt.Printf("✓ Bulk indexed %d documents to index=%s\n", len(bulkDocs), esIndex)
+		return nil
+	},
+}
+
+// initESClient initializes the ES client from config
+func initESClient(cfg *config.Config) (*search.ESClient, error) {
+	if err := search.InitElasticsearch(*cfg); err != nil {
+		log.Printf("ES init error: %v", err)
+		return nil, err
+	}
+	// Return a wrapper that uses the global ESClient
+	index := esIndex
+	if index == "" && cfg.Elasticsearch.Addr != "" {
+		// Default index from config
+	}
+	return search.NewESClient(search.ESClient.Client(), index), nil
+}
+
+func init() {
+	rootCmd.AddCommand(esCmd)
+	esCmd.AddCommand(esCreateCmd, esGetCmd, esSearchCmd, esDeleteCmd, esBulkCmd)
+
+	// Common flags
+	esCmd.PersistentFlags().StringVar(&esIndex, "index", "", "Elasticsearch index name")
+	esCmd.PersistentFlags().StringVar(&esID, "id", "", "Document ID")
+	esCmd.PersistentFlags().StringVar(&esData, "data", "", "Document data (JSON)")
+	esCmd.PersistentFlags().IntVar(&esFrom, "from", 0, "Search offset")
+	esCmd.PersistentFlags().IntVar(&esSize, "size", 10, "Search page size")
+}

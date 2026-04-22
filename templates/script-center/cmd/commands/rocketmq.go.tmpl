@@ -1,0 +1,186 @@
+package commands
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"{{.ProjectName}}/internal/consumer"
+	"{{.ProjectName}}/internal/producer"
+	"{{.ProjectName}}/pkg/config"
+	"{{.ProjectName}}/pkg/middleware"
+	"github.com/spf13/cobra"
+)
+
+var rocketmqCmd = &cobra.Command{
+	Use:   "rocketmq",
+	Short: "RocketMQ message queue management",
+	Long:  `RocketMQ 消息队列管理命令`,
+}
+
+// rocketmqProduceCmd 发送 RocketMQ 消息
+var rocketmqProduceCmd = &cobra.Command{
+	Use:   "produce [event-type] [order-id]",
+	Short: "Send order event to RocketMQ",
+	Long:  `发送订单事件到 RocketMQ，例如：rocketmq produce created 12345`,
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg := config.Get()
+
+		rocketmqCfg := middleware.RocketMQConfig{
+			NameServer:    cfg.RocketMQ.NameServer,
+			Topic:         cfg.RocketMQ.Topic,
+			ProducerGroup:  cfg.RocketMQ.ProducerGroup,
+			MaxRetries:     3,
+		}
+
+		rocketmqProducer, err := middleware.NewRocketMQProducer(rocketmqCfg)
+		if err != nil {
+			return fmt.Errorf("create rocketmq producer failed: %w", err)
+		}
+		defer rocketmqProducer.Close()
+
+		orderProducer := producer.NewRocketMQOrderProducer(rocketmqProducer, cfg.RocketMQ.Topic)
+		ctx := context.Background()
+
+		eventType := args[0]
+		orderID := args[1]
+
+		switch eventType {
+		case "created":
+			data := fmt.Sprintf(`{"event":"order.created","order_id":%s}`, orderID)
+			if err := orderProducer.SendOrderCreated(ctx, 12345, data); err != nil {
+				return fmt.Errorf("send order created failed: %w", err)
+			}
+			fmt.Println("✓ Order created event sent via RocketMQ")
+
+		case "updated":
+			data := fmt.Sprintf(`{"event":"order.updated","order_id":%s}`, orderID)
+			if err := orderProducer.SendOrderUpdated(ctx, 12345, data); err != nil {
+				return fmt.Errorf("send order updated failed: %w", err)
+			}
+			fmt.Println("✓ Order updated event sent via RocketMQ")
+
+		case "deleted":
+			if err := orderProducer.SendOrderDeleted(ctx, 12345); err != nil {
+				return fmt.Errorf("send order deleted failed: %w", err)
+			}
+			fmt.Println("✓ Order deleted event sent via RocketMQ")
+
+		default:
+			return fmt.Errorf("unknown event type: %s (supported: created, updated, deleted)", eventType)
+		}
+
+		return nil
+	},
+}
+
+// rocketmqConsumeCmd 消费 RocketMQ 消息
+var rocketmqConsumeCmd = &cobra.Command{
+	Use:   "consume",
+	Short: "Start consuming messages from RocketMQ",
+	Long:  `启动 RocketMQ 消费者，持续监听并处理消息`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg := config.Get()
+
+		rocketmqCfg := middleware.RocketMQConfig{
+			NameServer:    cfg.RocketMQ.NameServer,
+			Topic:         cfg.RocketMQ.Topic,
+			ConsumerGroup:  cfg.RocketMQ.ConsumerGroup,
+			MaxRetries:     3,
+		}
+
+		handler := consumer.NewRocketMQOrderEventHandler()
+
+		log.Printf("Starting RocketMQ consumer for topic: %s, group: %s\n", rocketmqCfg.Topic, rocketmqCfg.ConsumerGroup)
+
+		rocketmqConsumer, err := consumer.StartRocketMQConsumer(rocketmqCfg, handler)
+		if err != nil {
+			return fmt.Errorf("start rocketmq consumer failed: %w", err)
+		}
+		defer rocketmqConsumer.Close()
+
+		ctx, cancel := context.WithCancel(cmd.Context())
+		defer cancel()
+
+		<-ctx.Done()
+		log.Println("Stopping RocketMQ consumer...")
+
+		return nil
+	},
+}
+
+// rocketmqOrderedProduceCmd 发送顺序消息
+var rocketmqOrderedProduceCmd = &cobra.Command{
+	Use:   "produce-ordered [sharding-key] [message]",
+	Short: "Send ordered message to RocketMQ",
+	Long:  `发送顺序消息到 RocketMQ，相同 sharding key 的消息保证顺序`,
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg := config.Get()
+
+		rocketmqCfg := middleware.RocketMQConfig{
+			NameServer:    cfg.RocketMQ.NameServer,
+			Topic:         cfg.RocketMQ.Topic,
+			ProducerGroup:  cfg.RocketMQ.ProducerGroup,
+			MaxRetries:     3,
+		}
+
+		producer, err := middleware.NewOrderedRocketMQProducer(rocketmqCfg)
+		if err != nil {
+			return fmt.Errorf("create ordered producer failed: %w", err)
+		}
+		defer producer.Close()
+
+		ctx := context.Background()
+		shardingKey := args[0]
+		body := []byte(args[1])
+
+		if err := producer.SendOrderedMessage(ctx, shardingKey, body); err != nil {
+			return fmt.Errorf("send ordered message failed: %w", err)
+		}
+		fmt.Printf("✓ Ordered message sent, shardingKey=%s\n", shardingKey)
+		return nil
+	},
+}
+
+// rocketmqDelayedProduceCmd 发送延迟消息
+var rocketmqDelayedProduceCmd = &cobra.Command{
+	Use:   "produce-delayed [delay-level] [message]",
+	Short: "Send delayed message to RocketMQ",
+	Long:  `发送延迟消息到 RocketMQ，delay-level: 1-18 对应 1s~2h`,
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg := config.Get()
+
+		rocketmqCfg := middleware.RocketMQConfig{
+			NameServer:    cfg.RocketMQ.NameServer,
+			Topic:         cfg.RocketMQ.Topic,
+			ProducerGroup:  cfg.RocketMQ.ProducerGroup,
+			MaxRetries:     3,
+		}
+
+		delayLevel := 1
+		fmt.Sscanf(args[0], "%d", &delayLevel)
+
+		producer, err := middleware.NewDelayedRocketMQProducer(rocketmqCfg)
+		if err != nil {
+			return fmt.Errorf("create delayed producer failed: %w", err)
+		}
+		defer producer.Close()
+
+		ctx := context.Background()
+		body := []byte(args[1])
+
+		if err := producer.SendDelayedMessage(ctx, body, delayLevel); err != nil {
+			return fmt.Errorf("send delayed message failed: %w", err)
+		}
+		fmt.Printf("✓ Delayed message sent, delayLevel=%d\n", delayLevel)
+		return nil
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(rocketmqCmd)
+	rocketmqCmd.AddCommand(rocketmqProduceCmd, rocketmqConsumeCmd, rocketmqOrderedProduceCmd, rocketmqDelayedProduceCmd)
+}

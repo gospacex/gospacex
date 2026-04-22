@@ -1,0 +1,148 @@
+package middleware
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/apache/rocketmq-client-go/v2"
+	"github.com/apache/rocketmq-client-go/v2/consumer"
+	"github.com/apache/rocketmq-client-go/v2/primitive"
+)
+
+// ==================== 基础配置 ====================
+
+// RocketMQConfig RocketMQ 配置
+type RocketMQConfig struct {
+	Enabled       bool          `yaml:"enabled" json:"enabled"`
+	NameServer    string        `yaml:"name_server" json:"name_server"`
+	ProducerGroup string        `yaml:"producer_group" json:"producer_group"`
+	ConsumerGroup string        `yaml:"consumer_group" json:"consumer_group"`
+	Topic         string        `yaml:"topic" json:"topic"`
+	MaxRetries    int           `yaml:"max_retries" json:"max_retries"`
+	RetryDelay    time.Duration `yaml:"retry_delay" json:"retry_delay"`
+}
+
+// ==================== 生产者 ====================
+
+// RocketMQProducer RocketMQ 消息生产者
+type RocketMQProducer struct {
+	producer rocketmq.Producer
+	config   RocketMQConfig
+}
+
+// NewRocketMQProducer 创建 RocketMQ 生产者
+func NewRocketMQProducer(cfg RocketMQConfig) (*RocketMQProducer, error) {
+	p, err := rocketmq.NewProducer(
+		&rocketmq.ProducerConfig{
+			ProducerGroup: cfg.ProducerGroup,
+			NameServer:    cfg.NameServer,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create producer failed: %w", err)
+	}
+
+	if err := p.Start(); err != nil {
+		return nil, fmt.Errorf("start producer failed: %w", err)
+	}
+
+	log.Printf("RocketMQ producer started, group=%s, nameServer=%s", cfg.ProducerGroup, cfg.NameServer)
+	return &RocketMQProducer{
+		producer: p,
+		config:   cfg,
+	}, nil
+}
+
+// SendMessage 发送消息（带重试）
+func (p *RocketMQProducer) SendMessage(ctx context.Context, body []byte) error {
+	var lastErr error
+	for i := 0; i < p.config.MaxRetries; i++ {
+		msg := &primitive.Message{
+			Topic: p.config.Topic,
+			Body:  body,
+		}
+
+		result, err := p.producer.SendSync(ctx, msg)
+		if err == nil && result.Status == primitive.SendOK {
+			log.Printf("RocketMQ message sent, msgId=%s", result.MsgID)
+			return nil
+		}
+		lastErr = err
+		log.Printf("RocketMQ send failed (attempt %d/%d): %v", i+1, p.config.MaxRetries, err)
+		time.Sleep(p.config.RetryDelay)
+	}
+
+	return fmt.Errorf("send failed after %d retries: %w", p.config.MaxRetries, lastErr)
+}
+
+// Close 关闭生产者
+func (p *RocketMQProducer) Close() error {
+	if err := p.producer.Shutdown(); err != nil {
+		return fmt.Errorf("shutdown producer failed: %w", err)
+	}
+	log.Println("RocketMQ producer closed")
+	return nil
+}
+
+// ==================== 消费者 ====================
+
+// RocketMQConsumer RocketMQ 消息消费者
+type RocketMQConsumer struct {
+	consumer rocketmq.PushConsumer
+	config   RocketMQConfig
+}
+
+// NewRocketMQConsumer 创建 RocketMQ 消费者
+func NewRocketMQConsumer(cfg RocketMQConfig, handler MessageHandler) (*RocketMQConsumer, error) {
+	c, err := rocketmq.NewPushConsumer(
+		consumer.WithGroupName(cfg.ConsumerGroup),
+		consumer.WithNameServer(cfg.NameServer),
+		consumer.WithRetry(3),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create consumer failed: %w", err)
+	}
+
+	err = c.Subscribe(cfg.Topic, consumer.MessageSelector{}, func(ctx context.Context,
+		msgs ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
+
+		for _, msg := range msgs {
+			if err := handler.Handle(ctx, string(msg.Body)); err != nil {
+				log.Printf("Handler error: %v", err)
+				return consumer.ConsumeRetryLater, nil
+			}
+		}
+		return consumer.ConsumeSuccess, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if err := c.Start(); err != nil {
+		return nil, fmt.Errorf("start consumer failed: %w", err)
+	}
+
+	log.Printf("RocketMQ consumer started, group=%s, topic=%s", cfg.ConsumerGroup, cfg.Topic)
+	return &RocketMQConsumer{
+		consumer: c,
+		config:   cfg,
+	}, nil
+}
+
+// Consume 消费消息（阻塞直到上下文取消）
+func (c *RocketMQConsumer) Consume(ctx context.Context) error {
+	<-ctx.Done()
+	log.Println("RocketMQ consumer stopping...")
+	return c.consumer.Shutdown()
+}
+
+// Close 关闭消费者
+func (c *RocketMQConsumer) Close() error {
+	if err := c.consumer.Shutdown(); err != nil {
+		return fmt.Errorf("shutdown consumer failed: %w", err)
+	}
+	log.Println("RocketMQ consumer closed")
+	return nil
+}

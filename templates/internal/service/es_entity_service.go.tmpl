@@ -1,0 +1,113 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	"github.com/elastic/go-elasticsearch/v8"
+	"{{.ProjectName}}/internal/model"
+	"{{.ProjectName}}/pkg/database"
+)
+
+const {{.EntityNameLower}}Index = "{{.IndexName}}"
+
+// {{.EsEntityName}}Service {{.EsEntityName}} 服务
+type {{.EsEntityName}}Service struct {
+	ctx context.Context
+	es  *elasticsearch.Client
+}
+
+// New{{.EsEntityName}}Service creates new {{.EsEntityName}} service
+func New{{.EsEntityName}}Service(ctx context.Context) *{{.EsEntityName}}Service {
+	return &{{.EsEntityName}}Service{
+		ctx: ctx,
+		es:  database.ESClient,
+	}
+}
+
+// Index indexes a new {{.EsEntityName}}
+func (s *{{.EsEntityName}}Service) Index(entity *model.{{.EsEntityName}}) error {
+	data, err := entity.Marshal()
+	if err != nil {
+		return fmt.Errorf("marshal entity: %w", err)
+	}
+	res, err := s.es.Index({{.EntityNameLower}}Index, strings.NewReader(string(data)), s.es.Index.WithDocumentID(entity.ID))
+	if err != nil {
+		return fmt.Errorf("index document: %w", err)
+	}
+	defer res.Body.Close()
+	if res.IsError() {
+		return fmt.Errorf("index error: %s", res.String())
+	}
+	return nil
+}
+
+// Get gets {{.EsEntityName}} by ID
+func (s *{{.EsEntityName}}Service) Get(id string) (*model.{{.EsEntityName}}, error) {
+	res, err := s.es.Get({{.EntityNameLower}}Index, id)
+	if err != nil {
+		return nil, fmt.Errorf("get document: %w", err)
+	}
+	defer res.Body.Close()
+	if res.IsError() {
+		return nil, fmt.Errorf("document not found: %s", id)
+	}
+
+	var result struct {
+		Source model.{{.EsEntityName}} `json:"_source"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+	return &result.Source, nil
+}
+
+// Search searches {{.EsEntityName}}
+func (s *{{.EsEntityName}}Service) Search(query string, page, pageSize int) ([]*model.{{.EsEntityName}}, int64, error) {
+	from := (page - 1) * pageSize
+	searchQuery := fmt.Sprintf(` + "`" + `{"query":{"multi_match":{"query":"%s","fields":["id","address","product_snapshot"]}},"from":%d,"size":%d}` + "`" + `, query, from, pageSize)
+
+	res, err := s.es.Search(s.es.Search.WithIndex({{.EntityNameLower}}Index), s.es.Search.WithBody(strings.NewReader(searchQuery)))
+	if err != nil {
+		return nil, 0, fmt.Errorf("search documents: %w", err)
+	}
+	defer res.Body.Close()
+	if res.IsError() {
+		return nil, 0, fmt.Errorf("search error: %s", res.String())
+	}
+
+	var result struct {
+		Hits struct {
+			Total struct {
+				Value int64 `json:"value"`
+			} `json:"total"`
+			Hits []struct {
+				Source model.{{.EsEntityName}} `json:"_source"`
+			} `json:"hits"`
+		} `json:"hits"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return nil, 0, fmt.Errorf("decode response: %w", err)
+	}
+
+	entities := make([]*model.{{.EsEntityName}}, len(result.Hits.Hits))
+	for i, hit := range result.Hits.Hits {
+		entities[i] = &hit.Source
+	}
+	return entities, result.Hits.Total.Value, nil
+}
+
+// Delete deletes {{.EsEntityName}} by ID
+func (s *{{.EsEntityName}}Service) Delete(id string) error {
+	res, err := s.es.Delete({{.EntityNameLower}}Index, id)
+	if err != nil {
+		return fmt.Errorf("delete document: %w", err)
+	}
+	defer res.Body.Close()
+	if res.IsError() {
+		return fmt.Errorf("delete error: %s", res.String())
+	}
+	return nil
+}

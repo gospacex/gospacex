@@ -1,0 +1,89 @@
+package config
+
+import (
+	"os"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
+
+func TestEnvLoader_Load(t *testing.T) {
+	// 设置测试环境变量
+	os.Setenv("APP_NAME", "test-app")
+	os.Setenv("APP_DEBUG", "true")
+	os.Setenv("APP_PORT", "8080")
+	os.Setenv("APP_TIMEOUT", "30.5")
+	os.Setenv("APP_ENABLED", "false")
+
+	defer func() {
+		os.Unsetenv("APP_NAME")
+		os.Unsetenv("APP_DEBUG")
+		os.Unsetenv("APP_PORT")
+		os.Unsetenv("APP_TIMEOUT")
+		os.Unsetenv("APP_ENABLED")
+	}()
+
+	loader := NewEnvLoaderWithPrefix("APP_")
+	data, err := loader.Load()
+	assert.NoError(t, err)
+
+	// 验证类型转换
+	assert.Equal(t, "test-app", data["name"])
+	assert.Equal(t, true, data["debug"])
+	assert.Equal(t, 8080, data["port"])
+	assert.Equal(t, 30.5, data["timeout"])
+	assert.Equal(t, false, data["enabled"])
+}
+
+func TestEnvLoader_NoPrefix(t *testing.T) {
+	os.Setenv("CUSTOM_HOST", "localhost")
+	defer os.Unsetenv("CUSTOM_HOST")
+
+	loader := NewEnvLoader()
+	data, err := loader.Load()
+	assert.NoError(t, err)
+
+	// 没有前缀，key 就是 custom.host
+	assert.Equal(t, "localhost", data["custom.host"])
+}
+
+func TestEnvLoader_Source(t *testing.T) {
+	loader := NewEnvLoader()
+	assert.Equal(t, SourceEnv, loader.Source())
+}
+
+func TestEnvLoader_Watch(t *testing.T) {
+	loader := NewEnvLoader()
+	ch := loader.Watch("test.key")
+	// 环境变量不支持监听，channel 应该已经关闭
+	_, ok := <-ch
+	assert.False(t, ok, "channel should be closed")
+}
+
+func TestConvertEnvValue_String(t *testing.T) {
+	// 纯字符串，不转换
+	val := convertEnvValue("hello world")
+	assert.Equal(t, "hello world", val)
+}
+
+func TestConvertEnvValue_BoolVariations(t *testing.T) {
+	// 测试各种大小写的 true/false
+	assert.True(t, convertEnvValue("true").(bool))
+	assert.True(t, convertEnvValue("True").(bool))
+	assert.True(t, convertEnvValue("TRUE").(bool))
+
+	assert.False(t, convertEnvValue("false").(bool))
+	assert.False(t, convertEnvValue("False").(bool))
+	assert.False(t, convertEnvValue("FALSE").(bool))
+}
+
+func TestConvertEnvValue_EdgeCases(t *testing.T) {
+	// 空字符串
+	assert.Equal(t, "", convertEnvValue(""))
+
+	// 零值
+	assert.Equal(t, 0, convertEnvValue("0").(int))
+	assert.Equal(t, 0.0, convertEnvValue("0.0").(float64))
+	assert.Equal(t, false, convertEnvValue("0")) // 不是 "true"/"false"，保持字符串？实际上会被解析为整数 0
+	assert.Equal(t, 0, convertEnvValue("0").(int))
+}

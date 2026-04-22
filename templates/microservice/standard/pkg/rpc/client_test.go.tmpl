@@ -1,0 +1,59 @@
+package rpc
+
+import (
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+)
+
+func TestNewClient(t *testing.T) {
+	c := NewClient("test-service")
+	assert.NotNil(t, c)
+	assert.Equal(t, "test-service", c.ServiceName())
+}
+
+func TestNewClientFromConfig_DirectAddr(t *testing.T) {
+	cfg := &ClientConfig{
+		ServiceName: "test-service",
+		TargetAddr:  "127.0.0.1:8080",
+		RegistryType: "static",
+		DialTimeout:  5 * time.Second,
+		RPCTimeout:   3 * time.Second,
+	}
+
+	c, err := NewClientFromConfig(cfg)
+	assert.NoError(t, err)
+	assert.NotNil(t, c)
+	assert.Equal(t, "test-service", c.ServiceName())
+}
+
+func TestClient_Close(t *testing.T) {
+	c := NewClient("test-service")
+	c.Close()
+
+	// 检查通道已关闭
+	select {
+	case <-c.Done():
+		// OK，已关闭
+	default:
+		t.Fatal("channel should be closed")
+	}
+
+	// 多次关闭应该没事（有 once 保护）
+	c.Close()
+}
+
+func TestClient_Options(t *testing.T) {
+	cfg := &ClientConfig{
+		ServiceName:  "test-service",
+		EnableCircuit: true,
+		EnableLB:     true,
+	}
+
+	c, err := NewClientFromConfig(cfg)
+	assert.NoError(t, err)
+	assert.NotNil(t, c)
+	// 选项已应用，这里只是验证创建不失败
+	// 实际熔断器和负载均衡会被正确加入 options
+}

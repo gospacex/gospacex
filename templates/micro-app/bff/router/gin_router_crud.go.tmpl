@@ -1,0 +1,16 @@
+package router
+
+import (
+	"{{.AppName}}/{{.BffDirName}}/internal/handler"
+	"github.com/gin-gonic/gin"
+)
+
+func NewRouter() *gin.Engine {
+	r := gin.Default()
+{{range .Modules}}	r.GET("/api/v1/{{.Name}}s", handler.New{{.UpperName}}Handler().List)
+	r.GET("/api/v1/{{.Name}}s/:id", handler.New{{.UpperName}}Handler().Get)
+	r.POST("/api/v1/{{.Name}}s", handler.New{{.UpperName}}Handler().Create)
+	r.PUT("/api/v1/{{.Name}}s/:id", handler.New{{.UpperName}}Handler().Update)
+	r.DELETE("/api/v1/{{.Name}}s/:id", handler.New{{.UpperName}}Handler().Delete)
+{{end}}	return r
+}

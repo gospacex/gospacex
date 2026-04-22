@@ -1,0 +1,168 @@
+package config
+
+import (
+	"fmt"
+	"sort"
+	"sync"
+)
+
+// Manager 配置管理器，负责优先级调度和配置合并
+type Manager struct {
+	loaders []ConfigLoader
+	cache   map[string]ConfigValue
+	mu      sync.RWMutex
+	watches map[string][]chan *ConfigChange
+}
+
+// ConfigValue 配置值，包含来源信息
+type ConfigValue struct {
+	Value  interface{}
+	Source Source
+}
+
+// NewManager 创建一个新的配置管理器
+func NewManager() *Manager {
+	return &Manager{
+		loaders: make([]ConfigLoader, 0),
+		cache:   make(map[string]ConfigValue),
+		watches: make(map[string][]chan *ConfigChange),
+	}
+}
+
+// AddLoader 添加配置加载器，会按照优先级自动排序
+func (m *Manager) AddLoader(loader ConfigLoader) {
+	m.loaders = append(m.loaders, loader)
+	// 按优先级排序（优先级数值越小，优先级越高，加载顺序从低到高，后加载覆盖先加载）
+	sort.Slice(m.loaders, func(i, j int) bool {
+		return m.loaders[i].Source().Priority < m.loaders[j].Source().Priority
+	})
+}
+
+// Load 加载所有配置，按照优先级合并
+func (m *Manager) Load(path string) (*Config, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// 清空缓存
+	m.cache = make(map[string]ConfigValue)
+
+	// 按优先级顺序加载配置（优先级低的先加载，高优先级后加载覆盖）
+	for _, loader := range m.loaders {
+		kv, err := loader.Load()
+		if err != nil {
+			fmt.Printf("Warning: failed to load config from %s: %v\n", loader.Source().Name, err)
+			continue
+		}
+
+		src := loader.Source()
+		for k, v := range kv {
+			old := m.cache[k]
+			m.cache[k] = ConfigValue{
+				Value:  v,
+				Source: src,
+			}
+
+			// 通知变更
+			m.notifyChange(k, old.Value, v, src)
+		}
+	}
+
+	// 反序列化到 Config 结构体
+	var cfg Config
+	if err := m.unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	return &cfg, nil
+}
+
+// unmarshal 将缓存的键值对反序列化到 Config 结构体
+// 我们使用 github.com/mitchellh/mapstructure 来做转换
+func (m *Manager) unmarshal(cfg *Config) error {
+	import "github.com/mitchellh/mapstructure"
+
+	config := &mapstructure.DecoderConfig{
+		Result:           cfg,
+		UnmarshalName:   "mapstructure",
+		WeaklyTypedInput: true,
+	}
+
+	decoder, err := mapstructure.NewDecoder(config)
+	if err != nil {
+		return err
+	}
+
+	data := make(map[string]interface{})
+	m.mu.RLock()
+	for k, v := range m.cache {
+		data[k] = v.Value
+	}
+	m.mu.RUnlock()
+
+	return decoder.Decode(data)
+}
+
+// Get 获取配置值
+func (m *Manager) Get(key string) interface{} {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if val, ok := m.cache[key]; ok {
+		return val.Value
+	}
+	return nil
+}
+
+// GetSource 获取配置值的来源
+func (m *Manager) GetSource(key string) *Source {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if val, ok := m.cache[key]; ok {
+		return &val.Source
+	}
+	return nil
+}
+
+// Watch 监听配置变更
+func (m *Manager) Watch(key string) <-chan *ConfigChange {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	ch := make(chan *ConfigChange, 1)
+	if _, ok := m.watches[key]; !ok {
+		m.watches[key] = make([]chan *ConfigChange, 0)
+	}
+	m.watches[key] = append(m.watches[key], ch)
+
+	return ch
+}
+
+func (m *Manager) notifyChange(key string, oldVal, newVal interface{}, src Source) {
+	if listeners, ok := m.watches[key]; ok {
+		event := &ConfigChange{
+			Key:      key,
+			OldValue: oldVal,
+			NewValue: newVal,
+			Source:   src,
+		}
+		for _, ch := range listeners {
+			select {
+			case ch <- event:
+			default:
+			}
+		}
+	}
+}
+
+var defaultManager = NewManager()
+
+func init() {
+	// 注册默认加载器，按照优先级从小到大（优先级低先加载，后加载覆盖）
+	// 加载顺序：Default < LocalFile < Env < Remote
+	defaultManager.AddLoader(NewLocalFileLoader(""))
+	defaultManager.AddLoader(NewEnvLoaderWithPrefix(""))
+	// Remote loader 需要用户根据实际配置手动添加
+	//  example:
+	// 	defaultManager.AddLoader(remote.NewNacosLoader(...))
+}

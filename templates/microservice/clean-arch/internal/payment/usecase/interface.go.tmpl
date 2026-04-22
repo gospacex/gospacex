@@ -1,0 +1,12 @@
+package usecase
+
+type PaymentUseCase interface {
+	ProcessPayment(orderID string, amount float64) error
+	QueryPayment(orderID string) (*Payment, error)
+}
+
+type Payment struct {
+	OrderID  string
+	Amount   float64
+	Status   string
+}

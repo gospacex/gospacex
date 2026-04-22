@@ -1,0 +1,147 @@
+package handler
+
+import (
+	"net/http"
+	"strconv"
+
+{{- if or (eq .Register "consul") (eq .Register "etcd")}}
+	"{{.AppName}}/pkg/config"
+{{- end}}
+	"{{.AppName}}/{{.BffDirName}}/internal/rpcClient"
+	pb "{{.AppName}}/common/kitexGen/{{.Module}}"
+
+	"github.com/gin-gonic/gin"
+)
+
+type {{.UpperModule}}Handler struct {
+	client *rpcclient.{{.UpperModule}}Client
+}
+
+func New{{.UpperModule}}Handler() *{{.UpperModule}}Handler {
+{{- if eq .Register "consul"}}
+	cfg, _ := config.Load("configs/config.yaml")
+	cli, err := rpcclient.New{{.UpperModule}}Client(cfg.Registry.Address)
+{{- else if eq .Register "etcd"}}
+	cfg, _ := config.Load("configs/config.yaml")
+	cli, err := rpcclient.New{{.UpperModule}}Client(cfg.Registry.Address)
+{{- else}}
+	cli, err := rpcclient.New{{.UpperModule}}Client("127.0.0.1:{{.SrvPort}}")
+{{- end}}
+	if err != nil {
+		panic("failed to create {{.Module}} client: " + err.Error())
+	}
+	return &{{.UpperModule}}Handler{client: cli}
+}
+
+func (h *{{.UpperModule}}Handler) Create(c *gin.Context) {
+	var req struct {
+{{- range .CreateFields}}
+		{{.ProtoGoName}} {{.GoType}} `json:"{{.Name}}"`
+{{- end}}
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	rpcReq := &pb.Create{{.UpperModule}}Req{
+{{- range .CreateFields}}
+		{{.ProtoGoName}}: req.{{.ProtoGoName}},
+{{- end}}
+	}
+
+	resp, err := h.client.Create(c.Request.Context(), rpcReq)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"id": resp.{{.PKProtoGoName}}})
+}
+
+func (h *{{.UpperModule}}Handler) Get(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	resp, err := h.client.Get(c.Request.Context(), {{.PKGoType}}(id))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+{{- range .Columns}}
+		"{{.Name}}": resp.{{.ProtoGoName}},
+{{- end}}
+	})
+}
+
+func (h *{{.UpperModule}}Handler) List(c *gin.Context) {
+	resp, err := h.client.List(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var items []map[string]interface{}
+	for _, item := range resp.Items {
+		items = append(items, map[string]interface{}{
+{{- range .Columns}}
+			"{{.Name}}": item.{{.ProtoGoName}},
+{{- end}}
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
+func (h *{{.UpperModule}}Handler) Update(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	var req struct {
+{{- range .UpdateFields}}
+		{{.ProtoGoName}} {{.GoType}} `json:"{{.Name}}"`
+{{- end}}
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	rpcReq := &pb.Update{{.UpperModule}}Req{
+		{{.PKProtoGoName}}: {{.PKGoType}}(id),
+{{- range .UpdateFields}}
+		{{.ProtoGoName}}: req.{{.ProtoGoName}},
+{{- end}}
+	}
+
+	resp, err := h.client.Update(c.Request.Context(), rpcReq)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": resp.Success})
+}
+
+func (h *{{.UpperModule}}Handler) Delete(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	resp, err := h.client.Delete(c.Request.Context(), {{.PKGoType}}(id))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": resp.Success})
+}

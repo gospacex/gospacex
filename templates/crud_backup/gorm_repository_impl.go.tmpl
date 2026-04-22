@@ -1,0 +1,64 @@
+package repository
+
+import (
+	"context"
+	"fmt"
+
+	"{{.OutputDir}}/internal/model"
+	"gorm.io/gorm"
+)
+
+// {{.StructName}}RepositoryImpl {{.StructName}} 仓储实现
+type {{.StructName}}RepositoryImpl struct {
+	db *gorm.DB
+}
+
+// New{{.StructName}}Repository creates new repository
+func New{{.StructName}}Repository(db *gorm.DB) {{.StructName}}Repository {
+	return &{{.StructName}}RepositoryImpl{db: db}
+}
+
+// Create creates a new entity
+func (r *{{.StructName}}RepositoryImpl) Create(ctx context.Context, entity *model.{{.StructName}}) error {
+	return r.db.WithContext(ctx).Create(entity).Error
+}
+
+// GetByID gets entity by ID
+func (r *{{.StructName}}RepositoryImpl) GetByID(ctx context.Context, id int64) (*model.{{.StructName}}, error) {
+	var entity model.{{.StructName}}
+	if err := r.db.WithContext(ctx).First(&entity, id).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, fmt.Errorf("{{.LowerName}} not found")
+		}
+		return nil, err
+	}
+	return &entity, nil
+}
+
+// List lists entities
+func (r *{{.StructName}}RepositoryImpl) List(ctx context.Context, offset, limit int) ([]*model.{{.StructName}}, error) {
+	var entities []*model.{{.StructName}}
+	if err := r.db.WithContext(ctx).Offset(offset).Limit(limit).Find(&entities).Error; err != nil {
+		return nil, err
+	}
+	return entities, nil
+}
+
+// Update updates an entity
+func (r *{{.StructName}}RepositoryImpl) Update(ctx context.Context, entity *model.{{.StructName}}) error {
+	return r.db.WithContext(ctx).Save(entity).Error
+}
+
+// Delete deletes an entity
+func (r *{{.StructName}}RepositoryImpl) Delete(ctx context.Context, id int64) error {
+	return r.db.WithContext(ctx).Delete(&model.{{.StructName}}{}, id).Error
+}
+
+// Count counts entities
+func (r *{{.StructName}}RepositoryImpl) Count(ctx context.Context) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&model.{{.StructName}}{}).Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
+}

@@ -1,0 +1,132 @@
+package mq
+
+import (
+	"context"
+	"fmt"
+	"sync"
+
+	"github.com/apache/rocketmq-client-go/v2"
+	"github.com/apache/rocketmq-client-go/v2/consumer"
+	"github.com/apache/rocketmq-client-go/v2/producer"
+	"github.com/apache/rocketmq-client-go/v2/rlog"
+)
+
+// RocketMQConfig RocketMQ 配置
+type RocketMQConfig struct {
+	Namesrv string
+	GroupID string
+}
+
+// RocketMQProducer RocketMQ 生产者
+type RocketMQProducer struct {
+	p    producer.Producer
+	topic string
+}
+
+// NewRocketMQProducer 创建 RocketMQ 生产者
+func NewRocketMQProducer(cfg *RocketMQConfig) (*RocketMQProducer, error) {
+	p, err := rocketmq.NewProducer(
+		producer.WithNsResolver(consumer.NewAutoCommitNSQNamesrvResolver(cfg.Namesrv)),
+		producer.WithSendMsgTimeout(5),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create rocketmq producer: %w", err)
+	}
+
+	if err := p.Start(); err != nil {
+		return nil, fmt.Errorf("start producer: %w", err)
+	}
+
+	return &RocketMQProducer{
+		p: p,
+	}, nil
+}
+
+// Send 发送消息
+func (p *RocketMQProducer) Send(ctx context.Context, msg *Message) error {
+	m := &producer.Message{
+		Topic: msg.Topic,
+		Body:  msg.Value,
+	}
+	m.WithKeys([]string{msg.Key})
+
+	_, err := p.p.SendMessage(ctx, m)
+	return err
+}
+
+// Close 关闭生产者
+func (p *RocketMQProducer) Close() error {
+	return p.p.Shutdown()
+}
+
+// RocketMQConsumer RocketMQ 消费者
+type RocketMQConsumer struct {
+	c       consumer.PushConsumer
+	handler func(msg *Message) error
+	cancel  context.CancelFunc
+	wg      sync.WaitGroup
+}
+
+// NewRocketMQConsumer 创建 RocketMQ 消费者
+func NewRocketMQConsumer(cfg *RocketMQConfig, topic string, handler func(msg *Message) error) (*RocketMQConsumer, error) {
+	rlog.SetLogLevel("error")
+
+	c, err := rocketmq.NewPushConsumer(
+		consumer.WithNsResolver(consumer.NewAutoCommitNSQNamesrvResolver(cfg.Namesrv)),
+		consumer.WithConsumerGroup(cfg.GroupID),
+		consumer.WithSubscription(map[string]string{
+			topic: "*",
+		}),
+		consumer.WithHandler(&rocketMQHandler{handler: handler}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create rocketmq consumer: %w", err)
+	}
+
+	return &RocketMQConsumer{
+		c:       c,
+		handler: handler,
+	}, nil
+}
+
+// Start 启动消费者
+func (c *RocketMQConsumer) Start() error {
+	return c.c.Start()
+}
+
+// Stop 停止消费者
+func (c *RocketMQConsumer) Stop() error {
+	return c.c.Shutdown()
+}
+
+type rocketMQHandler struct {
+	handler func(msg *Message) error
+}
+
+func (h *rocketMQHandler) Consume(msg []*consumer.ConsumeMessage) (consumer.ConsumeResult, error) {
+	for _, m := range msg {
+		err := h.handler(&Message{
+			Topic: m.Msg.Topic,
+			Key:   m.Msg.GetKeys(),
+			Value: m.Msg.Body,
+		})
+		if err != nil {
+			continue
+		}
+	}
+	return consumer.ConsumeSuccess, nil
+}
+
+// NewRocketMQProducer 兼容旧接口
+func NewRocketMQProducer(config interface{}) (Producer, error) {
+	cfg, ok := config.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid rocketmq config")
+	}
+
+	namesrv, _ := cfg["namesrv"].(string)
+
+	return NewRocketMQProducer(&RocketMQConfig{
+		Namesrv: namesrv,
+	})
+}

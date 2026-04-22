@@ -1,0 +1,464 @@
+package config
+
+import (
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     *Config
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid_minimal_config",
+			cfg: &Config{
+				App: AppConfig{
+					Name:        "test-service",
+					Environment: "development",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing_app_name",
+			cfg: &Config{
+				App: AppConfig{
+					Environment: "development",
+				},
+			},
+			wantErr: true,
+			errMsg:  "app.name is required",
+		},
+		{
+			name: "invalid_environment",
+			cfg: &Config{
+				App: AppConfig{
+					Name:        "test-service",
+					Environment: "invalid",
+				},
+			},
+			wantErr: true,
+			errMsg:  "app.environment must be one of",
+		},
+		{
+			name: "valid_mysql_config",
+			cfg: &Config{
+				App: AppConfig{
+					Name:        "test-service",
+					Environment: "development",
+				},
+				MySQL: MySQLConfig{
+					Host:     "localhost",
+					Port:     3306,
+					User:     "root",
+					Password: "password",
+					Database: "testdb",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid_mysql_port",
+			cfg: &Config{
+				App: AppConfig{
+					Name:        "test-service",
+					Environment: "development",
+				},
+				MySQL: MySQLConfig{
+					Host: "localhost",
+					Port: 99999,
+					User: "root",
+				},
+			},
+			wantErr: true,
+			errMsg:  "port must be between 1 and 65535",
+		},
+		{
+			name: "valid_redis_config",
+			cfg: &Config{
+				App: AppConfig{
+					Name:        "test-service",
+					Environment: "development",
+				},
+				Redis: RedisConfig{
+					Addr: "localhost:6379",
+					DB:   0,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid_redis_addr",
+			cfg: &Config{
+				App: AppConfig{
+					Name:        "test-service",
+					Environment: "development",
+				},
+				Redis: RedisConfig{
+					Addr: "invalid",
+				},
+			},
+			wantErr: true,
+			errMsg:  "invalid addr format",
+		},
+		{
+			name: "invalid_redis_db",
+			cfg: &Config{
+				App: AppConfig{
+					Name:        "test-service",
+					Environment: "development",
+				},
+				Redis: RedisConfig{
+					Addr: "localhost:6379",
+					DB:   20,
+				},
+			},
+			wantErr: true,
+			errMsg:  "db must be between 0 and 15",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cfg.Validate()
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestMySQLConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     MySQLConfig
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid_config",
+			cfg: MySQLConfig{
+				Host:     "localhost",
+				Port:     3306,
+				User:     "root",
+				Password: "password",
+				Database: "testdb",
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing_host",
+			cfg: MySQLConfig{
+				Port:     3306,
+				User:     "root",
+				Database: "testdb",
+			},
+			wantErr: true,
+			errMsg:  "host is required",
+		},
+		{
+			name: "missing_port",
+			cfg: MySQLConfig{
+				Host:     "localhost",
+				User:     "root",
+				Database: "testdb",
+			},
+			wantErr: true,
+			errMsg:  "port is required",
+		},
+		{
+			name: "missing_user",
+			cfg: MySQLConfig{
+				Host:     "localhost",
+				Port:     3306,
+				Database: "testdb",
+			},
+			wantErr: true,
+			errMsg:  "user is required",
+		},
+		{
+			name: "missing_database",
+			cfg: MySQLConfig{
+				Host: "localhost",
+				Port: 3306,
+				User: "root",
+			},
+			wantErr: true,
+			errMsg:  "database is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cfg.Validate()
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestMySQLConfig_GetDSN(t *testing.T) {
+	cfg := MySQLConfig{
+		Host:     "localhost",
+		Port:     3306,
+		User:     "root",
+		Password: "password",
+		Database: "testdb",
+	}
+
+	dsn := cfg.GetDSN()
+	assert.Contains(t, dsn, "root:password@tcp(localhost:3306)/testdb")
+	assert.Contains(t, dsn, "charset=utf8mb4")
+	assert.Contains(t, dsn, "parseTime=True")
+}
+
+func TestPostgreSQLConfig_GetDSN(t *testing.T) {
+	cfg := PostgreSQLConfig{
+		Host:     "localhost",
+		Port:     5432,
+		User:     "postgres",
+		Password: "password",
+		Database: "testdb",
+	}
+
+	dsn := cfg.GetDSN()
+	assert.Contains(t, dsn, "host=localhost")
+	assert.Contains(t, dsn, "user=postgres")
+	assert.Contains(t, dsn, "password=password")
+	assert.Contains(t, dsn, "dbname=testdb")
+	assert.Contains(t, dsn, "port=5432")
+	assert.Contains(t, dsn, "sslmode=disable")
+}
+
+func TestRedisConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     RedisConfig
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid_config",
+			cfg: RedisConfig{
+				Addr:     "localhost:6379",
+				Password: "",
+				DB:       0,
+				PoolSize: 100,
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing_addr",
+			cfg: RedisConfig{
+				DB: 0,
+			},
+			wantErr: true,
+			errMsg:  "addr is required",
+		},
+		{
+			name: "invalid_db",
+			cfg: RedisConfig{
+				Addr: "localhost:6379",
+				DB:   16,
+			},
+			wantErr: true,
+			errMsg:  "db must be between 0 and 15",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cfg.Validate()
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestElasticsearchConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     ElasticsearchConfig
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid_config",
+			cfg: ElasticsearchConfig{
+				Addresses: []string{"http://localhost:9200"},
+				Username:  "elastic",
+				Password:  "password",
+				Index:     "test",
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing_addresses",
+			cfg: ElasticsearchConfig{
+				Username: "elastic",
+			},
+			wantErr: true,
+			errMsg:  "addresses is required",
+		},
+		{
+			name: "invalid_url_scheme",
+			cfg: ElasticsearchConfig{
+				Addresses: []string{"localhost:9200"},
+			},
+			wantErr: true,
+			errMsg:  "must start with http:// or https://",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cfg.Validate()
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestEtcdConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     EtcdConfig
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid_config",
+			cfg: EtcdConfig{
+				Endpoints:   []string{"localhost:2379"},
+				DialTimeout: 5 * time.Second,
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing_endpoints",
+			cfg:  EtcdConfig{},
+			wantErr: true,
+			errMsg:  "endpoints is required",
+		},
+		{
+			name: "missing_dial_timeout",
+			cfg: EtcdConfig{
+				Endpoints: []string{"localhost:2379"},
+			},
+			wantErr: true,
+			errMsg:  "dial_timeout must be positive",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cfg.Validate()
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestLoadFromString(t *testing.T) {
+	yamlContent := `
+app:
+  name: test-service
+  environment: development
+mysql:
+  host: localhost
+  port: 3306
+  user: root
+  password: password
+  database: testdb
+redis:
+  addr: localhost:6379
+  db: 0
+`
+
+	cfg, err := LoadFromString(yamlContent)
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
+
+	assert.Equal(t, "test-service", cfg.App.Name)
+	assert.Equal(t, "development", cfg.App.Environment)
+	assert.Equal(t, "localhost", cfg.MySQL.Host)
+	assert.Equal(t, 3306, cfg.MySQL.Port)
+	assert.Equal(t, "localhost:6379", cfg.Redis.Addr)
+}
+
+func TestLoadFromString_InvalidYAML(t *testing.T) {
+	yamlContent := `
+app:
+  name: test-service
+  invalid_yaml: [unclosed
+`
+
+	_, err := LoadFromString(yamlContent)
+	assert.Error(t, err)
+}
+
+func TestDefaultConfig(t *testing.T) {
+	cfg := defaultConfig()
+	require.NotNil(t, cfg)
+
+	assert.Equal(t, "gpx-service", cfg.App.Name)
+	assert.Equal(t, "development", cfg.App.Environment)
+	assert.Equal(t, 3306, cfg.MySQL.Port)
+	assert.Equal(t, 5432, cfg.PostgreSQL.Port)
+	assert.Equal(t, "localhost:6379", cfg.Redis.Addr)
+}
+
+func TestSetAndGet(t *testing.T) {
+	originalConfig := globalConfig
+	defer func() {
+		globalConfig = originalConfig
+	}()
+
+	testCfg := &Config{
+		App: AppConfig{
+			Name:        "test-service",
+			Environment: "test",
+		},
+	}
+
+	Set(testCfg)
+	cfg := Get()
+
+	assert.Equal(t, "test-service", cfg.App.Name)
+	assert.Equal(t, "test", cfg.App.Environment)
+}

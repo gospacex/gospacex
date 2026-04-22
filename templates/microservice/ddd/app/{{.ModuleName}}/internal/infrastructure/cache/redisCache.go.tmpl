@@ -1,0 +1,33 @@
+package cache
+
+import (
+	"context"
+	"encoding/json"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+)
+
+type RedisCache struct {
+	client *redis.Client
+	ttl    time.Duration
+}
+
+func NewRedisCache(client *redis.Client, ttl time.Duration) *RedisCache {
+	return &RedisCache{client: client, ttl: ttl}
+}
+
+func (c *RedisCache) Get(ctx context.Context, key string) (interface{}, error) {
+	val, err := c.client.Get(ctx, key).Result()
+	if err != nil {
+		return nil, err
+	}
+	var result interface{}
+	json.Unmarshal([]byte(val), &result)
+	return result, nil
+}
+
+func (c *RedisCache) Set(ctx context.Context, key string, value interface{}) error {
+	val, _ := json.Marshal(value)
+	return c.client.Set(ctx, key, val, c.ttl).Err()
+}

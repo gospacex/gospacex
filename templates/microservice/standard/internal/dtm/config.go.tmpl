@@ -1,0 +1,65 @@
+package dtm
+
+import (
+	"fmt"
+	"github.com/dtm-labs/client/dtmcli"
+)
+
+// Config DTM 配置
+type Config struct {
+	Server       string `yaml:"server" json:"server"`
+	Mode         string `yaml:"mode" json:"mode"`
+	RetryLimit   int    `yaml:"retry_limit" json:"retry_limit"`
+	Timeout      int    `yaml:"timeout" json:"timeout"`
+	BarrierDB    string `yaml:"barrier_db" json:"barrier_db"`
+	BarrierTable string `yaml:"barrier_table" json:"barrier_table"`
+}
+
+// DefaultConfig 默认配置
+func DefaultConfig() *Config {
+	return &Config{
+		Server:       "http://localhost:36789",
+		Mode:         "saga",
+		RetryLimit:   3,
+		Timeout:      60,
+		BarrierTable: "dtm_barrier",
+	}
+}
+
+// Validate 验证配置
+func (c *Config) Validate() error {
+	if c.Server == "" {
+		return fmt.Errorf("DTM server is required")
+	}
+	
+	validModes := map[string]bool{
+		"saga":     true,
+		"tcc":      true,
+		"msg":      true,
+		"workflow": true,
+	}
+	
+	if !validModes[c.Mode] {
+		return fmt.Errorf("invalid DTM mode: %s", c.Mode)
+	}
+	
+	if c.RetryLimit <= 0 {
+		return fmt.Errorf("retry_limit must be positive")
+	}
+	
+	if c.Timeout <= 0 {
+		return fmt.Errorf("timeout must be positive")
+	}
+	
+	return nil
+}
+
+// Init 初始化 DTM 客户端
+func Init(cfg *Config) error {
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	
+	dtmcli.DtmClient = dtmcli.NewDtmClient(cfg.Server)
+	return nil
+}

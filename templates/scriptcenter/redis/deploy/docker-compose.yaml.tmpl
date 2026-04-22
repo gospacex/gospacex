@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7.2
+    container_name: {{ .ProjectName }}-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass {{ .Redis.Password | default "password" }}
+    volumes:
+      - redis_data:/data
+    networks:
+      - {{ .ProjectName }}-net
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  {{ .ProjectName }}-net:
+    driver: bridge

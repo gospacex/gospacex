@@ -1,0 +1,183 @@
+package middleware
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/IBM/sarama"
+)
+
+// ==================== 基础配置 ====================
+
+// KafkaConfig Kafka 配置
+type KafkaConfig struct {
+	Enabled       bool          `yaml:"enabled" json:"enabled"`
+	Brokers       []string      `yaml:"brokers" json:"brokers"`
+	Topic         string        `yaml:"topic" json:"topic"`
+	ConsumerGroup string        `yaml:"consumer_group" json:"consumer_group"`
+	MaxRetries    int           `yaml:"max_retries" json:"max_retries"`
+	RetryDelay    time.Duration `yaml:"retry_delay" json:"retry_delay"`
+}
+
+// ==================== 生产者 ====================
+
+// KafkaProducer Kafka 消息生产者
+type KafkaProducer struct {
+	producer sarama.SyncProducer
+	config   KafkaConfig
+}
+
+// NewKafkaProducer 创建 Kafka 生产者
+func NewKafkaProducer(cfg KafkaConfig) (*KafkaProducer, error) {
+	config := sarama.NewConfig()
+	config.Producer.Return.Successes = true
+	config.Producer.Return.Errors = true
+	config.Producer.RequiredAcks = sarama.WaitForAll
+
+	producer, err := sarama.NewSyncProducer(cfg.Brokers, config)
+	if err != nil {
+		return nil, fmt.Errorf("create kafka producer failed: %w", err)
+	}
+
+	log.Printf("Kafka producer connected to %v", cfg.Brokers)
+	return &KafkaProducer{
+		producer: producer,
+		config:   cfg,
+	}, nil
+}
+
+// SendMessage 发送简单消息（带重试）
+func (p *KafkaProducer) SendMessage(ctx context.Context, key, value string) error {
+	msg := &sarama.ProducerMessage{
+		Topic: p.config.Topic,
+		Key:   sarama.StringEncoder(key),
+		Value: sarama.StringEncoder(value),
+	}
+
+	var lastErr error
+	for i := 0; i < p.config.MaxRetries; i++ {
+		partition, offset, err := p.producer.SendMessage(msg)
+		if err == nil {
+			log.Printf("Kafka message sent: partition=%d, offset=%d", partition, offset)
+			return nil
+		}
+		lastErr = err
+		log.Printf("Kafka send failed (attempt %d/%d): %v", i+1, p.config.MaxRetries, err)
+		time.Sleep(p.config.RetryDelay)
+	}
+
+	return fmt.Errorf("send failed after %d retries: %w", p.config.MaxRetries, lastErr)
+}
+
+// SendBatchMessages 批量发送消息
+func (p *KafkaProducer) SendBatchMessages(ctx context.Context, messages []struct{ Key, Value string }) error {
+	for _, msgData := range messages {
+		msg := &sarama.ProducerMessage{
+			Topic: p.config.Topic,
+			Key:   sarama.StringEncoder(msgData.Key),
+			Value: sarama.StringEncoder(msgData.Value),
+		}
+		
+		_, _, err := p.producer.SendMessage(msg)
+		if err != nil {
+			return fmt.Errorf("batch send failed: %w", err)
+		}
+	}
+	
+	log.Printf("Kafka batch sent %d messages", len(messages))
+	return nil
+}
+
+// Close 关闭生产者
+func (p *KafkaProducer) Close() error {
+	if err := p.producer.Close(); err != nil {
+		return fmt.Errorf("close producer failed: %w", err)
+	}
+	log.Println("Kafka producer closed")
+	return nil
+}
+
+// ==================== 消费者 ====================
+
+// KafkaConsumer Kafka 消息消费者
+type KafkaConsumer struct {
+	consumer sarama.ConsumerGroup
+	topics   []string
+	handler  MessageHandler
+}
+
+// NewKafkaConsumer 创建 Kafka 消费者
+func NewKafkaConsumer(cfg KafkaConfig, handler MessageHandler) (*KafkaConsumer, error) {
+	config := sarama.NewConfig()
+	config.Version = sarama.V3_0_0_0
+	config.Consumer.Offsets.Initial = sarama.OffsetOldest
+	config.Consumer.Group.Rebalance.GroupStrategies = []sarama.BalanceStrategy{sarama.NewBalanceStrategyRoundRobin()}
+	config.Consumer.Return.Errors = true
+
+	consumer, err := sarama.NewConsumerGroup(cfg.Brokers, cfg.ConsumerGroup, config)
+	if err != nil {
+		return nil, fmt.Errorf("create consumer failed: %w", err)
+	}
+
+	log.Printf("Kafka consumer connected to %v, group=%s", cfg.Brokers, cfg.ConsumerGroup)
+	return &KafkaConsumer{
+		consumer: consumer,
+		topics:   []string{cfg.Topic},
+		handler:  handler,
+	}, nil
+}
+
+// Consume 消费消息（阻塞调用）
+func (c *KafkaConsumer) Consume(ctx context.Context) error {
+	handler := &consumerGroupHandler{handler: c.handler}
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("Kafka consumer stopping...")
+			return c.consumer.Close()
+		default:
+			if err := c.consumer.Consume(ctx, c.topics, handler); err != nil {
+				log.Printf("Consumer error: %v", err)
+				time.Sleep(5 * time.Second)
+			}
+		}
+	}
+}
+
+// consumerGroupHandler 消费者组处理器
+type consumerGroupHandler struct {
+	handler MessageHandler
+}
+
+func (h *consumerGroupHandler) Setup(sarama.ConsumerGroupSession) error {
+	log.Println("Kafka consumer session setup")
+	return nil
+}
+
+func (h *consumerGroupHandler) Cleanup(sarama.ConsumerGroupSession) error {
+	log.Println("Kafka consumer session cleanup")
+	return nil
+}
+
+func (h *consumerGroupHandler) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+	for msg := range claim.Messages() {
+		ctx := sess.Context()
+		
+		if err := h.handler.Handle(ctx, string(msg.Value)); err != nil {
+			log.Printf("Message handler error: %v", err)
+			continue
+		}
+		
+		sess.MarkMessage(msg, "")
+	}
+	return nil
+}
+
+// Close 关闭消费者
+func (c *KafkaConsumer) Close() error {
+	log.Println("Kafka consumer closing...")
+	return c.consumer.Close()
+}

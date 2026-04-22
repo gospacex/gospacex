@@ -1,0 +1,199 @@
+package middleware
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/nacos-group/nacos-sdk-go/v2/clients"
+	"github.com/nacos-group/nacos-sdk-go/v2/clients/config_client"
+	"github.com/nacos-group/nacos-sdk-go/v2/common/constant"
+	"github.com/nacos-group/nacos-sdk-go/v2/vo"
+)
+
+// ConfigCenter 配置中心统一接口
+// Apollo 和 Nacos 都实现此接口，提供统一的配置中心抽象
+type ConfigCenter interface {
+	// GetConfigValue 获取配置值 (通用类型)
+	GetConfigValue(key string, defaultValue interface{}) interface{}
+
+	// GetConfigStringValue 获取字符串类型配置值
+	GetConfigStringValue(key string, defaultValue string) string
+
+	// GetConfigIntValue 获取整数类型配置值
+	GetConfigIntValue(key string, defaultValue int) int
+
+	// AddChangeListener 添加配置变更监听器
+	AddChangeListener(listener ConfigChangeListener, dataId string) error
+
+	// Close 关闭配置中心客户端
+	Close() error
+}
+
+// NacosConfig Nacos 配置中心配置
+//
+// YAML configuration example:
+// ```yaml
+// middleware:
+//   config:
+//     nacos:
+//       enabled: true
+//       endpoint: "http://localhost:8848"
+//       namespace_id: "public"
+//       group: "DEFAULT_GROUP"
+//       data_id: "application.yaml"
+// ```
+type NacosConfig struct {
+	// Enabled 是否启用 Nacos 配置中心
+	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// ServerAddrs Nacos 服务器地址列表
+	ServerAddrs []string `yaml:"server_addrs" json:"server_addrs"`
+
+	// NamespaceID 命名空间 ID
+	NamespaceID string `yaml:"namespace_id" json:"namespace_id"`
+
+	// DataID 数据 ID
+	DataID string `yaml:"data_id" json:"data_id"`
+
+	// Group 分组名称
+	Group string `yaml:"group" json:"group"`
+}
+
+// NacosClient Nacos 配置中心客户端
+// 实现 ConfigCenter 接口
+type NacosClient struct {
+	client config_client.IConfigClient
+	config *NacosConfig
+}
+
+// NewNacosClient 创建 Nacos 配置中心客户端
+func NewNacosClient(cfg NacosConfig) (*NacosClient, error) {
+	if !cfg.Enabled {
+		return nil, fmt.Errorf("nacos config is disabled")
+	}
+
+	// 创建服务器配置列表
+	sc := make([]constant.ServerConfig, 0, len(cfg.ServerAddrs))
+	for _, addr := range cfg.ServerAddrs {
+		// 支持地址中包含端口或不包含端口的情况
+		var serverAddr string
+		var port uint64 = 8848
+		// 简单处理：如果地址包含端口，使用原地址；否则添加默认端口
+		// 实际使用中建议 ServerAddrs 格式为 "host:port"
+		serverAddr = addr
+		sc = append(sc, *constant.NewServerConfig(serverAddr, port))
+	}
+
+	// 客户端配置
+	clientConfig := constant.ClientConfig{
+		NamespaceId: cfg.NamespaceID,
+		LogLevel:    "warn",
+		Timeout:     5000, // 5 秒超时
+	}
+
+	// 创建配置客户端
+	client, err := clients.CreateConfigClient(map[string]interface{}{
+		"serverConfigs": sc,
+		"clientConfig":  clientConfig,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create nacos client failed: %w", err)
+	}
+
+	return &NacosClient{
+		client: client,
+		config: &cfg,
+	}, nil
+}
+
+// GetConfigValue 获取配置值 (通用类型)
+func (c *NacosClient) GetConfigValue(key string, defaultValue interface{}) interface{} {
+	content, err := c.client.GetConfig(vo.ConfigParam{
+		DataId: c.config.DataID,
+		Group:  c.config.Group,
+	})
+	if err != nil {
+		return defaultValue
+	}
+
+	// 简单返回，实际使用中可能需要解析 YAML/JSON/Properties
+	// 这里返回原始字符串，调用者自行转换
+	if content == "" {
+		return defaultValue
+	}
+	return content
+}
+
+// GetConfigStringValue 获取字符串类型配置值
+func (c *NacosClient) GetConfigStringValue(key string, defaultValue string) string {
+	value := c.GetConfigValue(key, defaultValue)
+	if value == nil {
+		return defaultValue
+	}
+	if str, ok := value.(string); ok {
+		return str
+	}
+	return defaultValue
+}
+
+// GetConfigIntValue 获取整数类型配置值
+func (c *NacosClient) GetConfigIntValue(key string, defaultValue int) int {
+	value := c.GetConfigValue(key, defaultValue)
+	if value == nil {
+		return defaultValue
+	}
+	if i, ok := value.(int); ok {
+		return i
+	}
+	// 尝试从字符串解析
+	if str, ok := value.(string); ok {
+		// 简单处理，实际应使用 strconv.Atoi
+		return defaultValue
+	}
+	return defaultValue
+}
+
+// AddChangeListener 添加配置变更监听器
+func (c *NacosClient) AddChangeListener(listener ConfigChangeListener, dataId string) error {
+	if dataId == "" {
+		dataId = c.config.DataID
+	}
+
+	err := c.client.ListenConfig(vo.ConfigParam{
+		DataId: dataId,
+		Group:  c.config.Group,
+		OnChange: func(namespace, group, dataId, data string) {
+			// 简单处理：将整个配置内容作为变更通知
+			// 实际使用中可能需要解析变更的键值对
+			listener.OnChange(namespace, dataId, nil, data)
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("listen config change failed: %w", err)
+	}
+	return nil
+}
+
+// PublishConfig 发布配置
+func (c *NacosClient) PublishConfig(dataId, group, content string) error {
+	success, err := c.client.PublishConfig(vo.ConfigParam{
+		DataId:  dataId,
+		Group:   group,
+		Content: content,
+	})
+	if err != nil {
+		return fmt.Errorf("publish config failed: %w", err)
+	}
+	if !success {
+		return fmt.Errorf("publish config failed: unknown error")
+	}
+	return nil
+}
+
+// Close 关闭 Nacos 客户端
+func (c *NacosClient) Close() error {
+	// Nacos SDK v2 没有显式的 Close 方法
+	// 这里仅清理本地引用
+	c.client = nil
+	return nil
+}

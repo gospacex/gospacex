@@ -1,0 +1,87 @@
+package rpc
+
+import (
+	"math/rand"
+	"sync"
+	"time"
+
+	"github.com/cloudwego/kitex/pkg/loadbalance"
+	"github.com/cloudwego/kitex/pkg/rpcinfo"
+)
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
+
+// RoundRobinLoadBalancer 轮询负载均衡器
+type RoundRobinLoadBalancer struct {
+	index int
+	mu    sync.Mutex
+}
+
+// NewRoundRobinLoadBalancer 创建轮询负载均衡器
+func NewRoundRobinLoadBalancer() *RoundRobinLoadBalancer {
+	return &RoundRobinLoadBalancer{index: 0}
+}
+
+// GetPicker 返回选择器
+func (r *RoundRobinLoadBalancer) GetPicker(di *loadbalance.DefaultInfo) loadbalance.Picker {
+	if len(di.Instances) == 0 {
+		return loadbalance.NewErrPicker(loadbalance.ErrNoInstance)
+	}
+	return &roundRobinPicker{
+		instances: di.Instances,
+		lb:        r,
+	}
+}
+
+type roundRobinPicker struct {
+	instances []*rpcinfo.EndpointInfo
+	lb        *RoundRobinLoadBalancer
+}
+
+// Next 选择下一个实例
+func (p *roundRobinPicker) Next(rpcinfo.RPCInfo) *rpcinfo.EndpointInfo {
+	p.lb.mu.Lock()
+	defer p.lb.mu.Unlock()
+
+	length := len(p.instances)
+	instance := p.instances[p.lb.index%length]
+	p.lb.index = (p.lb.index + 1) % length
+	return instance
+}
+
+// RandomLoadBalancer 随机负载均衡器
+type RandomLoadBalancer struct{}
+
+// NewRandomLoadBalancer 创建随机负载均衡器
+func NewRandomLoadBalancer() *RandomLoadBalancer {
+	return &RandomLoadBalancer{}
+}
+
+// GetPicker 返回选择器
+func (r *RandomLoadBalancer) GetPicker(di *loadbalance.DefaultInfo) loadbalance.Picker {
+	if len(di.Instances) == 0 {
+		return loadbalance.NewErrPicker(loadbalance.ErrNoInstance)
+	}
+	return &randomPicker{
+		instances: di.Instances,
+	}
+}
+
+type randomPicker struct {
+	instances []*rpcinfo.EndpointInfo
+}
+
+// Next 随机选择一个实例
+func (p *randomPicker) Next(rpcinfo.RPCInfo) *rpcinfo.EndpointInfo {
+	return p.instances[rand.Intn(len(p.instances))]
+}
+
+// WeightedRoundRobin 加权轮询（未实现）
+type WeightedRoundRobin struct{}
+
+// NewWeightedRoundRobin 创建加权轮询负载均衡器
+func NewWeightedRoundRobin() *WeightedRoundRobin {
+	return &WeightedRoundRobin{}
+}

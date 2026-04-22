@@ -1,0 +1,29 @@
+package commands
+
+import (
+	"github.com/spf13/cobra"
+)
+
+var (
+	cfgFile string
+	rootCmd = &cobra.Command{
+		Use:   "{{.ProjectName}}",
+		Short: "脚本中心 - 基于 Cobra CLI 的 Elasticsearch 数据同步任务",
+		Long: `脚本中心是一个基于 Cobra CLI 的任务调度平台。
+本项目集成 Elasticsearch 搜索引擎，支持全文检索和数据同步。`,
+	}
+)
+
+// Execute executes the root command
+func Execute() error {
+	return rootCmd.Execute()
+}
+
+func init() {
+	cobra.OnInitialize(initConfig)
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "配置文件路径 (默认：configs/config.yaml)")
+}
+
+func initConfig() {
+	_ = cfgFile
+}

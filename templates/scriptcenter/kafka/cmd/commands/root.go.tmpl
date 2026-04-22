@@ -1,0 +1,30 @@
+package commands
+
+import (
+	"github.com/spf13/cobra"
+)
+
+var (
+	cfgFile string
+	rootCmd = &cobra.Command{
+		Use:   "{{.ProjectName}}",
+		Short: "脚本中心 - 基于 Cobra CLI 的 Kafka 消费者/生产者任务",
+		Long: `脚本中心是一个基于 Cobra CLI 的任务调度平台。
+本项目集成 Kafka 消息队列，支持消费者和生产者处理。`,
+	}
+)
+
+// Execute executes the root command
+func Execute() error {
+	return rootCmd.Execute()
+}
+
+func init() {
+	cobra.OnInitialize(initConfig)
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "配置文件路径 (默认：configs/config.yaml)")
+}
+
+func initConfig() {
+	// 初始化配置逻辑
+	_ = cfgFile
+}

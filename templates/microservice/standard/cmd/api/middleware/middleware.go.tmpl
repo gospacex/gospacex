@@ -1,0 +1,15 @@
+package middleware
+
+import (
+	"github.com/cloudwego/hertz/pkg/app"
+)
+
+// API middlewares
+type Middleware = app.HandlerFunc
+
+// Chain creates middleware chain
+func Chain(middlewares ...Middleware) Middleware {
+	return func(ctx context.Context, c *app.RequestContext) {
+		c.Next(ctx)
+	}
+}

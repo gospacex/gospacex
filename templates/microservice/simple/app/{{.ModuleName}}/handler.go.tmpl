@@ -1,0 +1,41 @@
+package main
+
+import (
+	"context"
+
+	"{{.ModuleName}}/idls"
+	"{{.ModuleName}}/app/{{.ModuleName}}/biz/service"
+)
+
+type Handler struct {
+	svc service.Service
+}
+
+func NewHandler(svc service.Service) *Handler {
+	return &Handler{svc: svc}
+}
+
+func (h *Handler) CreateArticle(ctx context.Context, req *idls.CreateArticleReq) (*idls.CreateArticleResp, error) {
+	resp, err := h.svc.CreateArticle(ctx, req)
+	return resp, err
+}
+
+func (h *Handler) GetArticle(ctx context.Context, req *idls.GetArticleReq) (*idls.GetArticleResp, error) {
+	resp, err := h.svc.GetArticle(ctx, req)
+	return resp, err
+}
+
+func (h *Handler) UpdateArticle(ctx context.Context, req *idls.UpdateArticleReq) (*idls.UpdateArticleResp, error) {
+	resp, err := h.svc.UpdateArticle(ctx, req)
+	return resp, err
+}
+
+func (h *Handler) DeleteArticle(ctx context.Context, req *idls.DeleteArticleReq) (*idls.DeleteArticleResp, error) {
+	resp, err := h.svc.DeleteArticle(ctx, req)
+	return resp, err
+}
+
+func (h *Handler) ListArticles(ctx context.Context, req *idls.ListArticlesReq) (*idls.ListArticlesResp, error) {
+	resp, err := h.svc.ListArticles(ctx, req)
+	return resp, err
+}

@@ -1,0 +1,15 @@
+package middleware
+
+import "context"
+
+// MessageHandler MQ 消息处理器接口
+type MessageHandler interface {
+	Handle(ctx context.Context, msg string) error
+}
+
+// MessageHandlerFunc 函数式处理器
+type MessageHandlerFunc func(ctx context.Context, msg string) error
+
+func (f MessageHandlerFunc) Handle(ctx context.Context, msg string) error {
+	return f(ctx, msg)
+}

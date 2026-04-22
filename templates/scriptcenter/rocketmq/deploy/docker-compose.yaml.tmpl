@@ -1,0 +1,41 @@
+version: '3'
+
+services:
+  namesrv:
+    image: apache/rocketmq:4.9.5
+    container_name: rocketmq-namesrv
+    ports:
+      - "9876:9876"
+    environment:
+      JAVA_OPTS: " -Duser.home=/opt"
+    volumes:
+      - ./data/namesrv/logs:/root/logs
+      - ./data/namesrv/store:/root/store
+
+  broker:
+    image: apache/rocketmq:4.9.5
+    container_name: rocketmq-broker
+    ports:
+      - "10909:10909"
+      - "10911:10911"
+      - "9876:9876"
+    environment:
+      JAVA_OPTS: " -Duser.home=/opt"
+    depends_on:
+      - namesrv
+    volumes:
+      - ./data/broker/logs:/root/logs
+      - ./data/broker/store:/root/store
+
+  mysql:
+    image: mysql:8.0
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: {{.ProjectName}}
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+volumes:
+  mysql-data:

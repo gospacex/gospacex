@@ -1,0 +1,13 @@
+package main
+
+import (
+	"github.com/cloudwego/hertz/pkg/app/server"
+)
+
+func main() {
+	h := server.Default()
+	h.GET("/", func(c context.Context, req *app.RequestContext) {
+		c.String(200, "Product Page")
+	})
+	h.Run(":9080")
+}

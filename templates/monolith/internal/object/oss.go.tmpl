@@ -1,0 +1,100 @@
+package object
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"net/url"
+
+	"github.com/aliyun/aliyun-oss-go-sdk/oss"
+)
+
+// OSSConfig OSS 配置
+type OSSConfig struct {
+	Endpoint        string
+	AccessKeyID     string
+	AccessKeySecret string
+	Bucket          string
+}
+
+// OSSStorage OSS 对象存储
+type OSSStorage struct {
+	client *oss.Client
+	bucket *oss.Bucket
+}
+
+// NewOSSStorage 创建 OSS 存储
+func NewOSSStorage(cfg *OSSConfig) (*OSSStorage, error) {
+	client, err := oss.New(cfg.Endpoint, cfg.AccessKeyID, cfg.AccessKeySecret)
+	if err != nil {
+		return nil, fmt.Errorf("create oss client: %w", err)
+	}
+
+	bucket, err := client.Bucket(cfg.Bucket)
+	if err != nil {
+		return nil, fmt.Errorf("get bucket: %w", err)
+	}
+
+	return &OSSStorage{
+		client: client,
+		bucket: bucket,
+	}, nil
+}
+
+// Upload 上传文件
+func (s *OSSStorage) Upload(ctx context.Context, key string, data []byte) error {
+	return s.bucket.PutObject(key, bytes.NewReader(data))
+}
+
+// Download 下载文件
+func (s *OSSStorage) Download(ctx context.Context, key string) ([]byte, error) {
+	body, err := s.bucket.GetObject(key)
+	if err != nil {
+		return nil, err
+	}
+	defer body.Close()
+
+	return io.ReadAll(body)
+}
+
+// Delete 删除文件
+func (s *OSSStorage) Delete(ctx context.Context, key string) error {
+	return s.bucket.DeleteObject(key)
+}
+
+// GetURL 获取文件访问 URL
+func (s *OSSStorage) GetURL(ctx context.Context, key string) (string, error) {
+	signedURL, err := s.bucket.SignURL(key, 3600)
+	if err != nil {
+		return "", err
+	}
+	return signedURL, nil
+}
+
+// Exist 检查文件是否存在
+func (s *OSSStorage) Exist(ctx context.Context, key string) (bool, error) {
+	return s.bucket.IsObjectExist(key)
+}
+
+// NewOSSStorage 兼容旧接口
+func NewOSSStorage(config interface{}) (ObjectStorage, error) {
+	cfg, ok := config.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid oss config")
+	}
+
+	return NewOSSStorage(&OSSConfig{
+		Endpoint:        getString(cfg, "endpoint"),
+		AccessKeyID:     getString(cfg, "access_key_id"),
+		AccessKeySecret: getString(cfg, "access_key_secret"),
+		Bucket:          getString(cfg, "bucket"),
+	})
+}
+
+func getString(m map[string]interface{}, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
+}

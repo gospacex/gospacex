@@ -1,0 +1,38 @@
+package handler
+
+import (
+	"context"
+	"log"
+
+	"{{.ProjectName}}/internal/mq"
+	"{{.ProjectName}}/internal/model"
+	"{{.ProjectName}}/internal/service"
+)
+
+// RabbitmqConsumerHandler RabbitMQ 消息消费者处理器
+type RabbitmqConsumerHandler struct {
+	consumer  *mq.RabbitmqConsumer
+	service   service.EbArticleService
+}
+
+// NewRabbitmqConsumerHandler 创建处理器
+func NewRabbitmqConsumerHandler(consumer *mq.RabbitmqConsumer, svc service.EbArticleService) *RabbitmqConsumerHandler {
+	return &RabbitmqConsumerHandler{
+		consumer:  consumer,
+		service:   svc,
+	}
+}
+
+// Start 开始消费
+func (h *RabbitmqConsumerHandler) Start(ctx context.Context) error {
+	log.Println("Starting RabbitMQ consumer...")
+	return h.consumer.Consume(ctx, func(article *model.EbArticle) error {
+		log.Printf("Received article: %s", article.Name)
+		if err := h.service.Store(ctx, article); err != nil {
+			log.Printf("Error storing article: %v", err)
+			return err
+		}
+		log.Printf("Article stored successfully")
+		return nil
+	})
+}

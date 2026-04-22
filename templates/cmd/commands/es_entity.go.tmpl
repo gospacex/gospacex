@@ -1,0 +1,87 @@
+package commands
+
+import (
+	"context"
+	"fmt"
+
+	"{{.ProjectName}}/internal/handler"
+	"{{.ProjectName}}/pkg/config"
+	"{{.ProjectName}}/pkg/logger"
+	"github.com/spf13/cobra"
+)
+
+var es{{.EntityName}}Cmd = &cobra.Command{
+	Use:   "{{.EsEntityName}}",
+	Short: "{{.EsEntityName}} management",
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		config.Load("configs/config.yaml")
+		logger.Init()
+	},
+}
+
+var createEs{{.EntityName}}Cmd = &cobra.Command{
+	Use:   "create",
+	Short: "Create {{.EsEntityName}}",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		h := handler.NewEs{{.EntityName}}Handler(context.Background())
+		req := &handler.CreateEs{{.EntityName}}Request{ID: ""}
+		if err := h.CreateEs{{.EntityName}}(req); err != nil {
+			return err
+		}
+		fmt.Println("{{.EsEntityName}} created")
+		return nil
+	},
+}
+
+var getEs{{.EntityName}}Cmd = &cobra.Command{
+	Use:   "get [id]",
+	Short: "Get {{.EsEntityName}}",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		h := handler.NewEs{{.EntityName}}Handler(context.Background())
+		resp, err := h.GetEs{{.EntityName}}(args[0])
+		if err != nil {
+			return err
+		}
+		h.PrintEs{{.EntityName}}(resp)
+		return nil
+	},
+}
+
+var searchEs{{.EntityName}}Cmd = &cobra.Command{
+	Use:   "search [query]",
+	Short: "Search {{.EsEntityName}}s",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		page, _ := cmd.Flags().GetInt("page")
+		pageSize, _ := cmd.Flags().GetInt("page-size")
+		h := handler.NewEs{{.EntityName}}Handler(context.Background())
+		resp, total, err := h.SearchEs{{.EntityName}}s(args[0], page, pageSize)
+		if err != nil {
+			return err
+		}
+		h.PrintEs{{.EntityName}}s(resp, total, page, pageSize)
+		return nil
+	},
+}
+
+var deleteEs{{.EntityName}}Cmd = &cobra.Command{
+	Use:   "delete [id]",
+	Short: "Delete {{.EsEntityName}}",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		h := handler.NewEs{{.EntityName}}Handler(context.Background())
+		if err := h.DeleteEs{{.EntityName}}(args[0]); err != nil {
+			return err
+		}
+		fmt.Println("{{.EsEntityName}} deleted")
+		return nil
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(es{{.EntityName}}Cmd)
+	es{{.EntityName}}Cmd.AddCommand(createEs{{.EntityName}}Cmd, getEs{{.EntityName}}Cmd, searchEs{{.EntityName}}Cmd, deleteEs{{.EntityName}}Cmd)
+	searchEs{{.EntityName}}Cmd.Flags().Int("page", 1, "Page")
+	searchEs{{.EntityName}}Cmd.Flags().Int("page-size", 10, "PageSize")
+}

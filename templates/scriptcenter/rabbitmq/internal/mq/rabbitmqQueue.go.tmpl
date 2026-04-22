@@ -1,0 +1,55 @@
+package mq
+
+import (
+	"fmt"
+
+	"github.com/streadway/amqp"
+)
+
+// RabbitmqQueue 队列声明
+type RabbitmqQueue struct {
+	name         string
+	durable     bool
+	exclusive   bool
+	autoDelete  bool
+}
+
+// NewRabbitmqQueue 创建队列
+func NewRabbitmqQueue(channel *amqp.Channel, name string, durable, exclusive, autoDelete bool, bindExchange string) (*RabbitmqQueue, error) {
+	q, err := channel.QueueDeclare(
+		name,
+		durable,
+		exclusive,
+		autoDelete,
+		false,
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("declare queue: %w", err)
+	}
+
+	if bindExchange != "" {
+		err = channel.QueueBind(
+			q.Name,
+			"",      // routing key
+			bindExchange,
+			false,
+			nil,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("bind queue: %w", err)
+		}
+	}
+
+	return &RabbitmqQueue{
+		name:         name,
+		durable:     durable,
+		exclusive:   exclusive,
+		autoDelete:  autoDelete,
+	}, nil
+}
+
+// Name 获取队列名称
+func (q *RabbitmqQueue) Name() string {
+	return q.name
+}

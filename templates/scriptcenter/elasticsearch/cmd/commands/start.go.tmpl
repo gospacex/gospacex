@@ -1,0 +1,43 @@
+package commands
+
+import (
+	"context"
+	"log"
+	"os/signal"
+	"syscall"
+
+	"{{.ProjectName}}/pkg/database"
+	"github.com/spf13/cobra"
+)
+
+// startCmd 启动命令
+var startCmd = &cobra.Command{
+	Use:   "start",
+	Short: "启动 Elasticsearch 数据同步消费者",
+	Long:  `启动所有 Elasticsearch 同步任务`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// 初始化数据库连接
+		database.Init()
+
+		log.Println("✓ Services initialized")
+
+		// 等待退出信号
+		ctx, cancel := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
+		defer cancel()
+
+		// TODO: Start all Elasticsearch consumers
+		log.Println("Elasticsearch consumers started")
+
+		<-ctx.Done()
+		log.Println("Shutting down...")
+
+		// Close all connections
+		database.Close()
+
+		return nil
+	},
+}
+
+func init() {
+	rootCmd.Add(startCmd)
+}

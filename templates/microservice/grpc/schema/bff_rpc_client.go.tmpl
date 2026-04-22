@@ -1,0 +1,50 @@
+package rpcclient
+
+import (
+	"context"
+
+	pb "{{.AppName}}/common/kitexGen/{{.Module}}"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+)
+
+type {{.UpperModule}}Client struct {
+	conn   *grpc.ClientConn
+	client pb.{{.UpperModule}}ServiceClient
+}
+
+func New{{.UpperModule}}Client(addr string) (*{{.UpperModule}}Client, error) {
+	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, err
+	}
+	return &{{.UpperModule}}Client{conn: conn, client: pb.New{{.UpperModule}}ServiceClient(conn)}, nil
+}
+
+func (c *{{.UpperModule}}Client) Close() error {
+	if c.conn != nil {
+		return c.conn.Close()
+	}
+	return nil
+}
+
+func (c *{{.UpperModule}}Client) Create(ctx context.Context, req *pb.Create{{.UpperModule}}Req) (*pb.Create{{.UpperModule}}Resp, error) {
+	return c.client.Create(ctx, req)
+}
+
+func (c *{{.UpperModule}}Client) Get(ctx context.Context, id {{.PKGoType}}) (*pb.Get{{.UpperModule}}Resp, error) {
+	return c.client.Get(ctx, &pb.Get{{.UpperModule}}Req{ {{.PKProtoGoName}}: id })
+}
+
+func (c *{{.UpperModule}}Client) List(ctx context.Context) (*pb.List{{.UpperModule}}Resp, error) {
+	return c.client.List(ctx, &pb.List{{.UpperModule}}Req{})
+}
+
+func (c *{{.UpperModule}}Client) Update(ctx context.Context, req *pb.Update{{.UpperModule}}Req) (*pb.Update{{.UpperModule}}Resp, error) {
+	return c.client.Update(ctx, req)
+}
+
+func (c *{{.UpperModule}}Client) Delete(ctx context.Context, id {{.PKGoType}}) (*pb.Delete{{.UpperModule}}Resp, error) {
+	return c.client.Delete(ctx, &pb.Delete{{.UpperModule}}Req{ {{.PKProtoGoName}}: id })
+}

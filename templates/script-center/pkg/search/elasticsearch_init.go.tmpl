@@ -1,0 +1,61 @@
+package search
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/elastic/go-elasticsearch/v8/esapi"
+	"{{.ProjectName}}/pkg/config"
+)
+
+// ESClient global Elasticsearch client
+var ESClient *elasticsearch.Client
+
+// InitElasticsearch initializes Elasticsearch connection with auth support
+func InitElasticsearch(cfg config.Config) error {
+	// Build addresses list with default fallback
+	addresses := cfg.Elasticsearch.Addresses
+	if len(addresses) == 0 {
+{{- if .ESAddr }}
+		addresses = []string{"{{.ESAddr}}"}
+{{- else }}
+		addresses = []string{"http://localhost:9200"}
+{{- end }}
+	}
+
+	// Build Elasticsearch config
+	esCfg := elasticsearch.Config{
+		Addresses: addresses,
+		Username:  cfg.Elasticsearch.Username,
+		Password:  cfg.Elasticsearch.Password,
+	}
+
+	// Create client
+	client, err := elasticsearch.NewClient(esCfg)
+	if err != nil {
+		return fmt.Errorf("failed to create Elasticsearch client: %w", err)
+	}
+
+	// Test connection with 5s timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	res, err := client.Info(esapi.WithContext(ctx))
+	if err != nil {
+		return fmt.Errorf("failed to connect to Elasticsearch: %w", err)
+	}
+	defer res.Body.Close()
+
+	// Assign to global variable
+	ESClient = client
+
+	fmt.Printf("Connected to Elasticsearch at %s\n", addresses)
+	return nil
+}
+
+// GetClient returns the global Elasticsearch client
+func GetClient() *elasticsearch.Client {
+	return ESClient
+}

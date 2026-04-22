@@ -1,0 +1,178 @@
+package config_test
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/{{.ProjectName}}/pkg/config"
+)
+
+// TestMicroserviceConfig_Validation tests microservice config validation
+func TestMicroserviceConfig_Validation(t *testing.T) {
+	tests := []struct {
+		name    string
+		yamlCfg string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid_minimal_config",
+			yamlCfg: `
+app:
+  name: microservice
+  environment: development
+server:
+  name: api
+  address: :8080
+`,
+			wantErr: false,
+		},
+		{
+			name: "valid_registry_config",
+			yamlCfg: `
+app:
+  name: microservice
+  environment: production
+server:
+  name: api
+  address: :8080
+registry:
+  type: etcd
+  endpoints:
+    - localhost:2379
+`,
+			wantErr: false,
+		},
+		{
+			name: "valid_full_config",
+			yamlCfg: `
+app:
+  name: user-service
+  environment: production
+  version: 1.0.0
+server:
+  name: api
+  address: :8080
+  read_timeout: 30s
+  write_timeout: 30s
+registry:
+  type: etcd
+  endpoints:
+    - localhost:2379
+    - localhost:2380
+database:
+  mysql:
+    host: localhost
+    port: 3306
+    user: root
+    password: secret
+    database: userdb
+log:
+  level: info
+  format: json
+`,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := config.LoadFromString(tt.yamlCfg)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, cfg)
+			}
+		})
+	}
+}
+
+// TestMicroserviceConfig_RegistryEndpoints tests registry endpoints
+func TestMicroserviceConfig_RegistryEndpoints(t *testing.T) {
+	yamlCfg := `
+app:
+  name: user-service
+server:
+  name: api
+  address: :8080
+registry:
+  type: etcd
+  endpoints:
+    - localhost:2379
+    - localhost:2380
+    - localhost:2381
+`
+
+	cfg, err := config.LoadFromString(yamlCfg)
+	assert.NoError(t, err)
+	assert.NotNil(t, cfg)
+	assert.Equal(t, "etcd", cfg.Registry.Type)
+	assert.Len(t, cfg.Registry.Endpoints, 3)
+	assert.Equal(t, "localhost:2379", cfg.Registry.Endpoints[0])
+}
+
+// TestMicroserviceConfig_Timeouts tests timeout configuration
+func TestMicroserviceConfig_Timeouts(t *testing.T) {
+	yamlCfg := `
+app:
+  name: user-service
+server:
+  name: api
+  address: :8080
+  read_timeout: 30s
+  write_timeout: 30s
+  idle_timeout: 60s
+`
+
+	cfg, err := config.LoadFromString(yamlCfg)
+	assert.NoError(t, err)
+	assert.NotNil(t, cfg)
+	assert.Equal(t, "30s", cfg.Server.ReadTimeout)
+	assert.Equal(t, "30s", cfg.Server.WriteTimeout)
+	assert.Equal(t, "60s", cfg.Server.IdleTimeout)
+}
+
+// TestMicroserviceConfig_Defaults tests default values
+func TestMicroserviceConfig_Defaults(t *testing.T) {
+	yamlCfg := `
+app:
+  name: user-service
+  environment: development
+server:
+  name: api
+  address: :8080
+`
+
+	cfg, err := config.LoadFromString(yamlCfg)
+	assert.NoError(t, err)
+	
+	// Check defaults
+	assert.Equal(t, "info", cfg.Log.Level)
+	assert.Equal(t, "json", cfg.Log.Format)
+}
+
+// TestMicroserviceConfig_ServiceName tests service name validation
+func TestMicroserviceConfig_ServiceName(t *testing.T) {
+	validNames := []string{
+		"user-service",
+		"order-service",
+		"payment_gateway",
+		"api-gateway",
+	}
+
+	for _, name := range validNames {
+		yamlCfg := `app:
+  name: ` + name + `
+server:
+  name: api
+  address: :8080
+`
+		cfg, err := config.LoadFromString(yamlCfg)
+		assert.NoError(t, err, "Service name %s should be valid", name)
+		assert.Equal(t, name, cfg.App.Name)
+	}
+}

@@ -1,0 +1,9 @@
+package domain
+
+import "context"
+
+type ArticleRepository interface {
+	Save(ctx context.Context, aggregate *ArticleAggregate) error
+	FindByID(ctx context.Context, id int64) (*ArticleAggregate, error)
+	Delete(ctx context.Context, id int64) error
+}

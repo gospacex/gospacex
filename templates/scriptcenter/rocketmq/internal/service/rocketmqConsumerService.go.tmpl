@@ -1,0 +1,37 @@
+package service
+
+import (
+	"context"
+
+	"{{.ProjectName}}/internal/mq"
+	"{{.ProjectName}}/internal/handler"
+)
+
+// RocketmqConsumerService RocketMQ 消费者服务
+type RocketmqConsumerService interface {
+	Start(ctx context.Context) error
+	CheckHealth() error
+}
+
+type rocketmqConsumerService struct {
+	consumer *mq.RocketmqConsumer
+	handler *handler.RocketmqConsumerHandler
+}
+
+// NewRocketmqConsumerService 创建服务
+func NewRocketmqConsumerService(consumer *mq.RocketmqConsumer, handler *handler.RocketmqConsumerHandler) RocketmqConsumerService {
+	return &rocketmqConsumerService{
+		consumer: consumer,
+		handler: handler,
+	}
+}
+
+// Start 开始消费
+func (s *rocketmqConsumerService) Start(ctx context.Context) error {
+	return s.handler.Start(ctx)
+}
+
+// CheckHealth 检查健康
+func (s *rocketmqConsumerService) CheckHealth() error {
+	return s.consumer.IsHealthy()
+}

@@ -1,0 +1,73 @@
+package consumer
+
+import (
+	"context"
+	"encoding/json"
+	"log"
+
+	"{{.ProjectName}}/pkg/middleware"
+)
+
+// RocketMQOrderEventHandler RocketMQ 订单事件处理器
+type RocketMQOrderEventHandler struct {
+	// 可以注入 service 来处理业务逻辑
+}
+
+// NewRocketMQOrderEventHandler 创建订单事件处理器
+func NewRocketMQOrderEventHandler() *RocketMQOrderEventHandler {
+	return &RocketMQOrderEventHandler{}
+}
+
+// Handle 处理消息 (实现 MessageHandler 接口)
+func (h *RocketMQOrderEventHandler) Handle(ctx context.Context, msg string) error {
+	log.Printf("Received RocketMQ message: %s", msg)
+
+	var event struct {
+		Event   string          `json:"event"`
+		OrderID int64           `json:"order_id"`
+		Data    json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(msg), &event); err != nil {
+		log.Printf("Failed to parse message: %v", err)
+		return err
+	}
+
+	switch event.Event {
+	case "order.created":
+		return h.handleOrderCreated(ctx, event.OrderID, event.Data)
+	case "order.updated":
+		return h.handleOrderUpdated(ctx, event.OrderID, event.Data)
+	case "order.deleted":
+		return h.handleOrderDeleted(ctx, event.OrderID)
+	default:
+		log.Printf("Unknown event type: %s", event.Event)
+	}
+
+	return nil
+}
+
+func (h *RocketMQOrderEventHandler) handleOrderCreated(ctx context.Context, orderID int64, data json.RawMessage) error {
+	log.Printf("Handling order.created: orderID=%d", orderID)
+	return nil
+}
+
+func (h *RocketMQOrderEventHandler) handleOrderUpdated(ctx context.Context, orderID int64, data json.RawMessage) error {
+	log.Printf("Handling order.updated: orderID=%d", orderID)
+	return nil
+}
+
+func (h *RocketMQOrderEventHandler) handleOrderDeleted(ctx context.Context, orderID int64) error {
+	log.Printf("Handling order.deleted: orderID=%d", orderID)
+	return nil
+}
+
+// StartRocketMQConsumer 启动 RocketMQ 消费者
+func StartRocketMQConsumer(cfg middleware.RocketMQConfig, handler middleware.MessageHandler) (*middleware.RocketMQConsumer, error) {
+	consumer, err := middleware.NewRocketMQConsumer(cfg, handler)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Println("RocketMQ consumer started")
+	return consumer, nil
+}

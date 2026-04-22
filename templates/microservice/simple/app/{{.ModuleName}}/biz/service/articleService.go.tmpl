@@ -1,0 +1,69 @@
+package service
+
+import (
+	"context"
+
+	"{{.ModuleName}}/biz/dal"
+	"{{.ModuleName}}/biz/model"
+	"{{.ModuleName}}/idls"
+)
+
+type Service interface {
+	CreateArticle(ctx context.Context, req *idls.CreateArticleReq) (*idls.CreateArticleResp, error)
+	GetArticle(ctx context.Context, req *idls.GetArticleReq) (*idls.GetArticleResp, error)
+	UpdateArticle(ctx context.Context, req *idls.UpdateArticleReq) (*idls.UpdateArticleResp, error)
+	DeleteArticle(ctx context.Context, req *idls.DeleteArticleReq) (*idls.DeleteArticleResp, error)
+	ListArticles(ctx context.Context, req *idls.ListArticlesReq) (*idls.ListArticlesResp, error)
+}
+
+type articleService struct{}
+
+func NewService() Service {
+	return &articleService{}
+}
+
+func (s *articleService) CreateArticle(ctx context.Context, req *idls.CreateArticleReq) (*idls.CreateArticleResp, error) {
+	article := &model.Article{Name: req.Name, Data: req.Data}
+	id, err := dal.ArticleCreateDB(ctx, article)
+	if err != nil {
+		return nil, err
+	}
+	return &idls.CreateArticleResp{ID: id}, nil
+}
+
+func (s *articleService) GetArticle(ctx context.Context, req *idls.GetArticleReq) (*idls.GetArticleResp, error) {
+	article, err := dal.ArticleFindByIDDB(ctx, req.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &idls.GetArticleResp{Article: &idls.Article{ID: article.ID, Name: article.Name, Data: article.Data}}, nil
+}
+
+func (s *articleService) UpdateArticle(ctx context.Context, req *idls.UpdateArticleReq) (*idls.UpdateArticleResp, error) {
+	article := &model.Article{ID: req.ID, Name: req.Name, Data: req.Data}
+	err := dal.ArticleUpdateDB(ctx, article)
+	if err != nil {
+		return nil, err
+	}
+	return &idls.UpdateArticleResp{}, nil
+}
+
+func (s *articleService) DeleteArticle(ctx context.Context, req *idls.DeleteArticleReq) (*idls.DeleteArticleResp, error) {
+	err := dal.ArticleDeleteDB(ctx, req.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &idls.DeleteArticleResp{}, nil
+}
+
+func (s *articleService) ListArticles(ctx context.Context, req *idls.ListArticlesReq) (*idls.ListArticlesResp, error) {
+	articles, total, err := dal.ArticleListDB(ctx, req.Offset, req.Limit)
+	if err != nil {
+		return nil, err
+	}
+	var respArticles []*idls.Article
+	for _, a := range articles {
+		respArticles = append(respArticles, &idls.Article{ID: a.ID, Name: a.Name, Data: a.Data})
+	}
+	return &idls.ListArticlesResp{Articles: respArticles, Total: total}, nil
+}

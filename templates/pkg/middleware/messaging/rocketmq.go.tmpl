@@ -1,0 +1,180 @@
+package middleware
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"github.com/apache/rocketmq-client-go/v2"
+	"github.com/apache/rocketmq-client-go/v2/consumer"
+	"github.com/apache/rocketmq-client-go/v2/primitive"
+)
+
+// TransactionStatus 事务消息状态
+type TransactionStatus int
+
+const (
+	// CommitTransaction 提交事务
+	CommitTransaction TransactionStatus = iota
+	// RollbackTransaction 回滚事务
+	RollbackTransaction
+	// UnknownTransaction 事务状态未知
+	UnknownTransaction
+)
+
+// TransactionListener 事务监听器接口
+type TransactionListener interface {
+	// ExecuteLocalTransaction 执行本地事务
+	ExecuteLocalTransaction(ctx context.Context, msg *primitive.Message) primitive.LocalTransactionState
+	// CheckLocalTransaction 检查本地事务状态
+	CheckLocalTransaction(ctx context.Context, msg *primitive.TransactionMessage) primitive.LocalTransactionState
+}
+
+// RocketMQConfig RocketMQ 配置
+type RocketMQConfig struct {
+	Enabled     bool   `yaml:"enabled" json:"enabled"`
+	NameServer  string `yaml:"name_server" json:"name_server"`
+	Topic       string `yaml:"topic" json:"topic"`
+	GroupName   string `yaml:"group_name" json:"group_name"`
+	ConsumerTag string `yaml:"consumer_tag" json:"consumer_tag"`
+	// Transaction producer configuration
+	ProducerGroup string `yaml:"producer_group" json:"producer_group"`
+}
+
+// RocketMQProducer RocketMQ 生产者
+type RocketMQProducer struct {
+	producer rocketmq.Producer
+}
+
+// NewRocketMQProducer 创建 RocketMQ 生产者
+func NewRocketMQProducer(cfg RocketMQConfig) (*RocketMQProducer, error) {
+	producer, err := rocketmq.NewProducer(
+		&producer.Config{
+			ConsumerGroup: cfg.GroupName,
+			NameServer:    cfg.NameServer,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create producer failed: %w", err)
+	}
+
+	if err := producer.Start(); err != nil {
+		return nil, fmt.Errorf("start producer failed: %w", err)
+	}
+
+	return &RocketMQProducer{
+		producer: producer,
+	}, nil
+}
+
+// SendMessage 发送消息
+func (p *RocketMQProducer) SendMessage(ctx context.Context, body []byte) error {
+	msg := &primitive.Message{
+		Topic: p.Topic(),
+		Body:  body,
+	}
+
+	result, err := p.producer.SendSync(ctx, msg)
+	if err != nil {
+		return fmt.Errorf("send message failed: %w", err)
+	}
+
+	if result.Status != primitive.SendOK {
+		return fmt.Errorf("send failed: %v", result.Status)
+	}
+
+	return nil
+}
+
+// Topic returns the topic name (placeholder for template)
+func (p *RocketMQProducer) Topic() string {
+	return "default-topic"
+}
+
+// RocketMQConsumer RocketMQ 消费者
+type RocketMQConsumer struct {
+	consumer rocketmq.PushConsumer
+}
+
+// NewRocketMQConsumer 创建 RocketMQ 消费者
+func NewRocketMQConsumer(cfg RocketMQConfig, handler func(context.Context, ...primitive.MessageExt) (consumer.ConsumeResult, error)) (*RocketMQConsumer, error) {
+	c, err := rocketmq.NewPushConsumer(
+		consumer.WithGroupName(cfg.GroupName),
+		consumer.WithNsResolver(primitive.NewPassthroughResolver([]string{cfg.NameServer})),
+		consumer.WithConsumerModel(consumer.Clustering),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create consumer failed: %w", err)
+	}
+
+	if err := c.Subscribe(cfg.Topic, consumer.MessageSelector{}, handler); err != nil {
+		return nil, fmt.Errorf("subscribe failed: %w", err)
+	}
+
+	if err := c.Start(); err != nil {
+		return nil, fmt.Errorf("start consumer failed: %w", err)
+	}
+
+	return &RocketMQConsumer{
+		consumer: c,
+	}, nil
+}
+
+// Close 关闭消费者
+func (c *RocketMQConsumer) Close() error {
+	return c.consumer.Shutdown()
+}
+
+// TransactionProducer 事务消息生产者
+type TransactionProducer struct {
+	producer rocketmq.TransactionProducer
+}
+
+// NewTransactionProducer 创建事务消息生产者
+func NewTransactionProducer(cfg RocketMQConfig, listener TransactionListener) (*TransactionProducer, error) {
+	producer, err := rocketmq.NewTransactionProducer(
+		&primitive.TransactionListener{
+			ExecuteLocalTransaction: func(ctx context.Context, msg *primitive.Message) primitive.LocalTransactionState {
+				return listener.ExecuteLocalTransaction(ctx, msg)
+			},
+			CheckLocalTransaction: func(ctx context.Context, msg *primitive.TransactionMessage) primitive.LocalTransactionState {
+				return listener.CheckLocalTransaction(ctx, msg)
+			},
+		},
+		&producer.Config{
+			ConsumerGroup: cfg.ProducerGroup,
+			NameServer:    cfg.NameServer,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create transaction producer failed: %w", err)
+	}
+
+	if err := producer.Start(); err != nil {
+		return nil, fmt.Errorf("start transaction producer failed: %w", err)
+	}
+
+	return &TransactionProducer{
+		producer: producer,
+	}, nil
+}
+
+// SendMessageInTransaction 发送事务消息
+func (p *TransactionProducer) SendMessageInTransaction(ctx context.Context, topic, tag, key, body string) (*primitive.SendResult, error) {
+	msg := primitive.NewMessage(topic, []byte(body))
+	msg.WithTag(tag)
+	msg.WithKeys([]string{key})
+
+	result, err := p.producer.SendMessageInTransaction(ctx, msg)
+	if err != nil {
+		return nil, fmt.Errorf("send transaction message failed: %w", err)
+	}
+
+	log.Printf("transaction message sent: msgID=%s, status=%v", result.MsgID, result.Status)
+	return result, nil
+}
+
+// Close 关闭事务生产者
+func (p *TransactionProducer) Close() error {
+	return p.producer.Shutdown()
+}

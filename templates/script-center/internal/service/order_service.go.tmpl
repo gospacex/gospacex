@@ -1,0 +1,160 @@
+package service
+
+import (
+	"context"
+	"fmt"
+
+	"{{.ProjectName}}/internal/repository"
+)
+
+// OrderService Order service implementation
+type OrderService struct {
+	repo *repository.OrderRepository
+}
+
+// NewOrderService creates a new Order service instance
+func NewOrderService() *OrderService {
+	return &OrderService{repo: repository.NewOrderRepository()}
+}
+
+// CreateOrder creates a new order
+func (s *OrderService) CreateOrder(ctx context.Context, userID, productID int64, quantity int, amount float64) (*repository.Order, error) {
+	if userID <= 0 {
+		return nil, fmt.Errorf("invalid user ID")
+	}
+	if productID <= 0 {
+		return nil, fmt.Errorf("invalid product ID")
+	}
+	if quantity <= 0 {
+		return nil, fmt.Errorf("invalid quantity")
+	}
+	if amount <= 0 {
+		return nil, fmt.Errorf("invalid amount")
+	}
+
+	order := &repository.Order{
+		UserID:    userID,
+		ProductID: productID,
+		Quantity:  quantity,
+		Amount:    amount,
+		Status:    1, // 待支付
+	}
+
+	if err := s.repo.Create(ctx, order); err != nil {
+		return nil, fmt.Errorf("failed to create order: %w", err)
+	}
+
+	return order, nil
+}
+
+// GetOrder retrieves an order by ID
+func (s *OrderService) GetOrder(ctx context.Context, id uint) (*repository.Order, error) {
+	if id <= 0 {
+		return nil, fmt.Errorf("invalid order ID")
+	}
+
+	order, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	return order, nil
+}
+
+// GetOrderByNo retrieves an order by order number
+func (s *OrderService) GetOrderByNo(ctx context.Context, orderNo string) (*repository.Order, error) {
+	if orderNo == "" {
+		return nil, fmt.Errorf("invalid order number")
+	}
+
+	order, err := s.repo.GetByOrderNo(ctx, orderNo)
+	if err != nil {
+		return nil, err
+	}
+
+	return order, nil
+}
+
+// PayOrder updates order status to paid
+func (s *OrderService) PayOrder(ctx context.Context, id uint) error {
+	if id <= 0 {
+		return fmt.Errorf("invalid order ID")
+	}
+
+	order, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if order.Status != 1 {
+		return fmt.Errorf("order status is not pending payment")
+	}
+
+	return s.repo.UpdateStatus(ctx, id, 2) // 已支付
+}
+
+// CompleteOrder updates order status to completed
+func (s *OrderService) CompleteOrder(ctx context.Context, id uint) error {
+	if id <= 0 {
+		return fmt.Errorf("invalid order ID")
+	}
+
+	order, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if order.Status != 2 {
+		return fmt.Errorf("order status is not paid")
+	}
+
+	return s.repo.UpdateStatus(ctx, id, 3) // 已完成
+}
+
+// CancelOrder updates order status to cancelled
+func (s *OrderService) CancelOrder(ctx context.Context, id uint) error {
+	if id <= 0 {
+		return fmt.Errorf("invalid order ID")
+	}
+
+	order, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if order.Status != 1 {
+		return fmt.Errorf("only pending orders can be cancelled")
+	}
+
+	return s.repo.UpdateStatus(ctx, id, 4) // 已取消
+}
+
+// DeleteOrder deletes an order by ID
+func (s *OrderService) DeleteOrder(ctx context.Context, id uint) error {
+	if id <= 0 {
+		return fmt.Errorf("invalid order ID")
+	}
+
+	return s.repo.Delete(ctx, id)
+}
+
+// ListOrders retrieves orders with pagination
+func (s *OrderService) ListOrders(ctx context.Context, limit, offset int) ([]*repository.Order, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 10
+	}
+
+	return s.repo.List(ctx, limit, offset)
+}
+
+// ListUserOrders retrieves orders by user ID with pagination
+func (s *OrderService) ListUserOrders(ctx context.Context, userID int64, limit, offset int) ([]*repository.Order, error) {
+	if userID <= 0 {
+		return nil, fmt.Errorf("invalid user ID")
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 10
+	}
+
+	return s.repo.ListByUserID(ctx, userID, limit, offset)
+}

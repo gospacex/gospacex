@@ -1,0 +1,37 @@
+package service
+
+import (
+	"context"
+
+	"{{.ModuleName}}/internal/handler"
+)
+
+type StringService struct {
+	handler *handler.StringHandler
+}
+
+func NewStringService(h *handler.StringService) *StringService {
+	return &StringService{handler: h}
+}
+
+func (s *StringService) Set(ctx context.Context, key, value string) error {
+	return s.handler.Set(ctx, key, value)
+}
+
+func (s *StringService) Get(ctx context.Context, key string) (string, error) {
+	return s.handler.Get(ctx, key)
+}
+
+func (s *StringService) MGet(ctx context.Context, keys ...string) (map[string]string, error) {
+	values, err := s.handler.MGet(ctx, keys...)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]string)
+	for i, k := range keys {
+		if i < len(values) {
+			result[k] = values[i]
+		}
+	}
+	return result, nil
+}

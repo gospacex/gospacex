@@ -1,0 +1,58 @@
+package dtm
+
+import (
+	"context"
+	"github.com/dtm-labs/client/workflow"
+)
+
+// InitWorkflow 初始化 Workflow
+func InitWorkflow() {
+	// 注册 Workflow 处理器
+	workflow.Register(1, func(wf *workflow.Workflow, data interface{}) error {
+		req := data.(*TransferRequest)
+		
+		// 设置完成回调
+		wf.OnFinished(func(tx *workflow.Transaction) {
+			// 事务完成后的处理
+		})
+		
+		// 添加同步步骤（本地事务）
+		wf.AddSync(func() error {
+			// 本地数据库操作
+			return nil
+		})
+		
+		// 添加 SAGA 分支
+		wf.AddBranch(1, func(b *workflow.Branch) error {
+			return b.Saga().
+				Add("http://service-a:8080/action", "http://service-a:8080/rollback", req).
+				Add("http://service-b:8080/action", "http://service-b:8080/rollback", req).
+				Submit()
+		})
+		
+		// 添加 TCC 分支
+		wf.AddBranch(2, func(b *workflow.Branch) error {
+			return b.TCC().
+				Call("http://service-c:8080/try",
+				     "http://service-c:8080/confirm",
+				     "http://service-c:8080/cancel",
+				     req).
+				Submit()
+		})
+		
+		return nil
+	})
+}
+
+// StartWorkflow 启动 Workflow
+func StartWorkflow(req *TransferRequest) error {
+	return workflow.Start(1, req)
+}
+
+// WorkflowRequest Workflow 请求
+type WorkflowRequest struct {
+	TrxID      string  `json:"trx_id"`
+	FromUserID int64   `json:"from_user_id"`
+	ToUserID   int64   `json:"to_user_id"`
+	Amount     float64 `json:"amount"`
+}

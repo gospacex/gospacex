@@ -1,0 +1,39 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"log"
+
+	"{{.AppName}}/pkg/config"
+	"{{.AppName}}/{{.BffDirName}}/internal/router"
+)
+
+var confPath string
+
+func init() {
+	flag.StringVar(&confPath, "config", "configs/config.yaml", "config file")
+}
+
+func main() {
+	flag.Parse()
+{{- if .NacosEnabled}}
+	// 先从本地文件加载，获取 Nacos 配置信息
+	cfg, err := config.Load(confPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// 优先从 Nacos 加载，失败则使用本地配置
+	if nacosCfg, err := config.LoadWithFallback(confPath, &cfg.Nacos); err == nil {
+		cfg = nacosCfg
+	}
+{{- else}}
+	cfg, err := config.Load(confPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+{{- end}}
+	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
+	log.Printf("BFF starting on %s", addr)
+	router.NewRouter().Run(addr)
+}

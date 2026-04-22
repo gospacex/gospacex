@@ -1,0 +1,37 @@
+package rpcclient
+
+import (
+	"fmt"
+
+	"{{.ModuleName}}/common/kitexGen/{{.TableName}}"
+
+	"github.com/hashicorp/consul/api"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+)
+
+type {{.UpperName}}Client struct {
+	conn *grpc.ClientConn
+	client {{.TableName}}.{{.UpperName}}ServiceClient
+}
+
+func New{{.UpperName}}Client(consulAddr string) (*{{.UpperName}}Client, error) {
+	// 通过 Consul 服务发现获取 SRV 地址
+	consulConfig := api.DefaultConfig()
+	consulConfig.Address = consulAddr
+	consulClient, err := api.NewClient(consulConfig)
+	if err != nil {
+		return nil, fmt.Errorf("connect to consul failed: %w", err)
+	}
+	services, _, err := consulClient.Health().Service("{{.AppName}}", "", true, nil)
+	if err != nil || len(services) == 0 {
+		return nil, fmt.Errorf("service %s not found in consul", "{{.AppName}}")
+	}
+	srvAddr := fmt.Sprintf("%s:%d", services[0].Service.Address, services[0].Service.Port)
+
+	conn, err := grpc.Dial(srvAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, err
+	}
+	return &{{.UpperName}}Client{conn: conn, client: {{.TableName}}.New{{.UpperName}}ServiceClient(conn)}, nil
+}

@@ -1,0 +1,46 @@
+package interceptor
+
+import (
+	"context"
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+// UnaryInterceptor gRPC 一元拦截器
+func UnaryInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	start := time.Now()
+
+	// 请求前处理（认证、限流、日志等）
+	// if err := validateRequest(ctx, info.FullMethod); err != nil {
+	// 	return nil, err
+	// }
+
+	resp, err := handler(ctx, req)
+
+	latency := time.Since(start)
+	code := codes.OK
+	if err != nil {
+		if st, ok := status.FromError(err); ok {
+			code = st.Code()
+		}
+	}
+
+	_ = latency
+	_ = code
+	// log.Printf("[GRPC] %s %s %v", info.FullMethod, code, latency)
+
+	return resp, err
+}
+
+// StreamInterceptor gRPC 流拦截器
+func StreamInterceptor(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	// 请求前处理
+	// if err := validateRequest(ss.Context(), info.FullMethod); err != nil {
+	// 	return err
+	// }
+
+	return handler(srv, ss)
+}

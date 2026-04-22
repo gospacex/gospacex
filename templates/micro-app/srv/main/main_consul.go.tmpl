@@ -1,0 +1,62 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"log"
+	"net"
+
+	"{{.AppName}}/pkg/config"
+	"{{.AppName}}/pkg/database"
+	"{{.AppName}}/{{.SrvDirName}}/internal/handler"
+	"{{.AppName}}/common/kitexGen/{{.Module}}"
+
+	"github.com/hashicorp/consul/api"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
+)
+
+var confPath string
+
+func init() {
+	flag.StringVar(&confPath, "config", "configs/config.yaml", "config file")
+}
+
+func main() {
+	flag.Parse()
+	cfg, _ := config.Load(confPath)
+	db, _ := database.NewDB(&cfg.Database)
+	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
+	lis, _ := net.Listen("tcp", addr)
+	s := grpc.NewServer()
+	{{.Module}}.Register{{.UpperModule}}ServiceServer(s, handler.New{{.UpperModule}}Handler(db))
+	reflection.Register(s)
+
+	// Consul 服务注册
+	consulConfig := api.DefaultConfig()
+	consulConfig.Address = cfg.Registry.Address
+	consulClient, err := api.NewClient(consulConfig)
+	if err != nil {
+		log.Printf("Warning: Failed to connect to Consul: %v", err)
+	} else {
+		registration := &api.AgentServiceRegistration{
+			ID:      "{{.Module}}",
+			Name:    "{{.Module}}",
+			Port:    cfg.Server.Port,
+			Address: cfg.Server.Host,
+			Check: &api.AgentServiceCheck{
+				GRPC:     addr,
+				Interval: "10s",
+				Timeout:  "5s",
+			},
+		}
+		if err := consulClient.Agent().ServiceRegister(registration); err != nil {
+			log.Printf("Warning: Failed to register with Consul: %v", err)
+		} else {
+			log.Printf("Registered with Consul: %s", "{{.Module}}")
+		}
+	}
+
+	log.Printf("Starting on %s", addr)
+	s.Serve(lis)
+}

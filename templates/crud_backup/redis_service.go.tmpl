@@ -1,0 +1,48 @@
+package service
+
+import (
+	"context"
+	"time"
+
+	"{{.OutputDir}}/internal/model"
+	"{{.OutputDir}}/internal/repository"
+)
+
+// {{.StructName}}Service {{.StructName}} 服务
+type {{.StructName}}Service struct {
+	repo repository.{{.StructName}}Repository
+	ttl  time.Duration
+}
+
+// New{{.StructName}}Service creates new service
+func New{{.StructName}}Service(repo repository.{{.StructName}}Repository, ttl time.Duration) *{{.StructName}}Service {
+	return &{{.StructName}}Service{
+		repo: repo,
+		ttl:  ttl,
+	}
+}
+
+// Set sets a new {{.StructName}}
+func (s *{{.StructName}}Service) Set(ctx context.Context, entity *model.{{.StructName}}) error {
+	return s.repo.Set(ctx, entity, s.ttl)
+}
+
+// Get gets {{.StructName}} by ID
+func (s *{{.StructName}}Service) Get(ctx context.Context, id string) (*model.{{.StructName}}, error) {
+	return s.repo.Get(ctx, id)
+}
+
+// Delete deletes a {{.StructName}}
+func (s *{{.StructName}}Service) Delete(ctx context.Context, id string) error {
+	return s.repo.Del(ctx, id)
+}
+
+// Exists checks if {{.StructName}} exists
+func (s *{{.StructName}}Service) Exists(ctx context.Context, id string) (bool, error) {
+	return s.repo.Exists(ctx, id)
+}
+
+// TTL gets TTL of {{.StructName}}
+func (s *{{.StructName}}Service) TTL(ctx context.Context, id string) (time.Duration, error) {
+	return s.repo.TTL(ctx, id)
+}

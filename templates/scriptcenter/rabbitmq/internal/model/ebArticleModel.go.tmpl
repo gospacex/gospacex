@@ -1,0 +1,22 @@
+package model
+
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
+
+// EbArticle 文章事件模型
+type EbArticle struct {
+	ID        int64          ` + "`gorm:\"primaryKey;autoIncrement\"`" + `
+	CreatedAt time.Time      ` + "`gorm:\"autoCreateTime\"`" + `
+	UpdatedAt time.Time      ` + "`gorm:\"autoUpdateTime\"`" + `
+	DeletedAt gorm.DeletedAt ` + "`gorm:\"index\"`" + `
+	Name      string         ` + "`gorm:\"size:255;not null\"`" + `
+	Data      string         ` + "`gorm:\"type:text\"`" + `
+}
+
+// TableName 指定表名
+func (EbArticle) TableName() string {
+	return "eb_articles"
+}

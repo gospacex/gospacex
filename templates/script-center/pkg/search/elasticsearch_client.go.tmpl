@@ -1,0 +1,220 @@
+package search
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/elastic/go-elasticsearch/v8/esapi"
+)
+
+// BulkDoc represents a document for bulk indexing
+type BulkDoc struct {
+	ID     string
+	Action string // "index", "create", "update", "delete"
+	Doc    interface{}
+}
+
+// ESClient wraps Elasticsearch client with index-specific operations
+type ESClient struct {
+	client *elasticsearch.Client
+	index  string
+}
+
+// NewESClient creates a new ES client wrapper
+func NewESClient(client *elasticsearch.Client, indexName string) *ESClient {
+	return &ESClient{
+		client: client,
+		index:  indexName,
+	}
+}
+
+// IndexDocument indexes a document to Elasticsearch
+func (es *ESClient) IndexDocument(id string, doc interface{}) error {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(doc); err != nil {
+		return fmt.Errorf("failed to marshal document: %w", err)
+	}
+
+	req := esapi.IndexRequest{
+		Index:      es.index,
+		DocumentID: id,
+		Body:       &buf,
+		Refresh:    "true",
+	}
+
+	res, err := req.Do(context.Background(), es.client)
+	if err != nil {
+		return fmt.Errorf("failed to index document: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("index document error: %s", res.String())
+	}
+
+	return nil
+}
+
+// GetDocument gets a document from Elasticsearch by ID
+func (es *ESClient) GetDocument(id string) ([]byte, error) {
+	req := esapi.GetRequest{
+		Index:      es.index,
+		DocumentID: id,
+	}
+
+	res, err := req.Do(context.Background(), es.client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get document: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		if res.StatusCode == 404 {
+			return nil, fmt.Errorf("document not found")
+		}
+		return nil, fmt.Errorf("get document error: %s", res.String())
+	}
+
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(res.Body); err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+// DeleteDocument deletes a document from Elasticsearch by ID
+func (es *ESClient) DeleteDocument(id string) error {
+	req := esapi.DeleteRequest{
+		Index:      es.index,
+		DocumentID: id,
+		Refresh:    "true",
+	}
+
+	res, err := req.Do(context.Background(), es.client)
+	if err != nil {
+		return fmt.Errorf("failed to delete document: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("delete document error: %s", res.String())
+	}
+
+	return nil
+}
+
+// UpdateDocument updates a document in Elasticsearch
+func (es *ESClient) UpdateDocument(id string, doc interface{}) error {
+	var buf bytes.Buffer
+	updateDoc := map[string]interface{}{
+		"doc": doc,
+	}
+	if err := json.NewEncoder(&buf).Encode(updateDoc); err != nil {
+		return fmt.Errorf("failed to marshal update document: %w", err)
+	}
+
+	req := esapi.UpdateRequest{
+		Index:      es.index,
+		DocumentID: id,
+		Body:       &buf,
+		Refresh:    "true",
+	}
+
+	res, err := req.Do(context.Background(), es.client)
+	if err != nil {
+		return fmt.Errorf("failed to update document: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("update document error: %s", res.String())
+	}
+
+	return nil
+}
+
+// Search searches documents in Elasticsearch with pagination
+func (es *ESClient) Search(query map[string]interface{}, from, size int) ([]byte, error) {
+	var buf bytes.Buffer
+	searchBody := map[string]interface{}{
+		"query": query,
+		"from":  from,
+		"size":  size,
+	}
+
+	if err := json.NewEncoder(&buf).Encode(searchBody); err != nil {
+		return nil, fmt.Errorf("failed to marshal search query: %w", err)
+	}
+
+	req := esapi.SearchRequest{
+		Index: []string{es.index},
+		Body:  &buf,
+	}
+
+	res, err := req.Do(context.Background(), es.client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search documents: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, fmt.Errorf("search error: %s", res.String())
+	}
+
+	var result bytes.Buffer
+	if _, err := result.ReadFrom(res.Body); err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	return result.Bytes(), nil
+}
+
+// BulkIndex performs bulk indexing of multiple documents
+func (es *ESClient) BulkIndex(docs []BulkDoc) error {
+	if len(docs) == 0 {
+		return nil
+	}
+
+	var buf bytes.Buffer
+	for _, doc := range docs {
+		// Add action meta
+		action := map[string]interface{}{
+			doc.Action: map[string]interface{}{
+				"_index": es.index,
+				"_id":    doc.ID,
+			},
+		}
+		if err := json.NewEncoder(&buf).Encode(action); err != nil {
+			return fmt.Errorf("failed to encode bulk action: %w", err)
+		}
+
+		// Add document source (skip for delete action)
+		if doc.Action != "delete" && doc.Doc != nil {
+			if err := json.NewEncoder(&buf).Encode(doc.Doc); err != nil {
+				return fmt.Errorf("failed to encode bulk document: %w", err)
+			}
+		}
+	}
+
+	req := esapi.BulkRequest{
+		Index:   es.index,
+		Body:    &buf,
+		Refresh: "true",
+	}
+
+	res, err := req.Do(context.Background(), es.client)
+	if err != nil {
+		return fmt.Errorf("failed to perform bulk index: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("bulk index error: %s", res.String())
+	}
+
+	return nil
+}

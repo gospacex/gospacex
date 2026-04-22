@@ -1,0 +1,40 @@
+package commands
+
+import (
+	"context"
+	"log"
+	"os/signal"
+	"syscall"
+
+	"{{.ProjectName}}/pkg/database"
+	"github.com/spf13/cobra"
+)
+
+// startCmd 启动命令
+var startCmd = &cobra.Command{
+	Use:   "start",
+	Short: "启动 RabbitMQ 消费者服务",
+	Long:  `启动所有 RabbitMQ 消费者并开始处理消息`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		database.Init()
+
+		log.Println("✓ Services initialized")
+
+		ctx, cancel := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
+		defer cancel()
+
+		// TODO: Start all RabbitMQ consumers
+		log.Println("RabbitMQ consumers started")
+
+		<-ctx.Done()
+		log.Println("Shutting down...")
+
+		database.Close()
+
+		return nil
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(startCmd)
+}

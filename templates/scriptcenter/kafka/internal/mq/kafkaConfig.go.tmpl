@@ -1,0 +1,17 @@
+package mq
+
+// KafkaConfig Kafka 配置
+type KafkaConfig struct {
+	Brokers       []string `yaml:"brokers"`
+	Topic         string   `yaml:"topic"`
+	ConsumerGroup string   `yaml:"consumer_group"`
+}
+
+// GetDefaultConfig 获取默认配置
+func GetDefaultConfig() KafkaConfig {
+	return KafkaConfig{
+		Brokers:       []string{"localhost:9092"},
+		Topic:         "default-topic",
+		ConsumerGroup: "gpx-consumer-group",
+	}
+}

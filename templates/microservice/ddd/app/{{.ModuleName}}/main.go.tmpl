@@ -1,0 +1,17 @@
+package main
+
+import (
+	"github.com/cloudwego/kitex/server"
+	"{{.ModuleName}}/configs"
+)
+
+func main() {
+	cfg, _ := configs.Load()
+	svr := server.New(
+		server.WithServiceAddr(&addr),
+		server.WithMiddleware(middleware),
+	)
+	if err := svr.Run(); err != nil {
+		log.Fatal(err)
+	}
+}

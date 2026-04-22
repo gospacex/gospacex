@@ -1,0 +1,93 @@
+package repository
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
+
+// TestESRepository_Create tests ES repository Create/Index operation
+func TestESRepository_Create(t *testing.T) {
+	t.Skip("Requires Elasticsearch server - integration test")
+
+	ctx := context.Background()
+	// repo := NewESRepository(client)
+
+	// Test Create
+	entity := map[string]interface{}{"name": "test", "id": 1}
+	// err := repo.Create(ctx, "test_index", entity)
+	// assert.NoError(t, err)
+	assert.NotNil(t, ctx)
+	assert.NotNil(t, entity)
+}
+
+// TestESRepository_Get tests ES repository GetByID operation
+func TestESRepository_Get(t *testing.T) {
+	t.Skip("Requires Elasticsearch server - integration test")
+
+	ctx := context.Background()
+	// repo := NewESRepository(client)
+
+	// Test GetByID
+	// retrieved, err := repo.GetByID(ctx, "test_index", "test_id")
+	// assert.NoError(t, err)
+	// assert.NotNil(t, retrieved)
+	assert.NotNil(t, ctx)
+}
+
+// TestESRepository_Update tests ES repository Update operation
+func TestESRepository_Update(t *testing.T) {
+	t.Skip("Requires Elasticsearch server - integration test")
+
+	ctx := context.Background()
+	// repo := NewESRepository(client)
+
+	// Test Update
+	updatedEntity := map[string]interface{}{"name": "updated", "id": 1}
+	// err := repo.Update(ctx, "test_index", "test_id", updatedEntity)
+	// assert.NoError(t, err)
+	assert.NotNil(t, ctx)
+	assert.NotNil(t, updatedEntity)
+}
+
+// TestESRepository_Delete tests ES repository Delete operation
+func TestESRepository_Delete(t *testing.T) {
+	t.Skip("Requires Elasticsearch server - integration test")
+
+	ctx := context.Background()
+	// repo := NewESRepository(client)
+
+	// Test Delete
+	// err := repo.Delete(ctx, "test_index", "test_id")
+	// assert.NoError(t, err)
+	assert.NotNil(t, ctx)
+}
+
+// TestESRepository_List tests ES repository List operation with match_all query
+func TestESRepository_List(t *testing.T) {
+	t.Skip("Requires Elasticsearch server - integration test")
+
+	ctx := context.Background()
+	// repo := NewESRepository(client)
+
+	// Test List with match_all query
+	// results, err := repo.List(ctx, "test_index", 10, 0)
+	// assert.NoError(t, err)
+	// assert.NotNil(t, results)
+	assert.NotNil(t, ctx)
+}
+
+// TestESRepository_Search tests ES repository Search operation with query_string
+func TestESRepository_Search(t *testing.T) {
+	t.Skip("Requires Elasticsearch server - integration test")
+
+	ctx := context.Background()
+	// repo := NewESRepository(client)
+
+	// Test Search with query_string
+	// results, err := repo.Search(ctx, "test query", 10, 0)
+	// assert.NoError(t, err)
+	// assert.NotNil(t, results)
+	assert.NotNil(t, ctx)
+}

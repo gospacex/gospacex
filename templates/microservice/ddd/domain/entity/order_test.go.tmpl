@@ -1,0 +1,115 @@
+package entity
+
+import (
+	"context"
+	"testing"
+	"{{ .ModuleName }}/domain/valueobject"
+)
+
+func TestOrder_NewOrder(t *testing.T) {
+	money, _ := valueobject.NewMoney(10000, "CNY")
+	order := NewOrder(1, money)
+	
+	if order.UserID != 1 {
+		t.Errorf("UserID = %v, want 1", order.UserID)
+	}
+	
+	if order.Status != StatusCreated {
+		t.Errorf("Status = %v, want StatusCreated", order.Status)
+	}
+	
+	if len(order.Items) != 0 {
+		t.Errorf("Items len = %v, want 0", len(order.Items))
+	}
+}
+
+func TestOrder_AddItem(t *testing.T) {
+	money, _ := valueobject.NewMoney(10000, "CNY")
+	order := NewOrder(1, money)
+	
+	price, _ := valueobject.NewMoney(1000, "CNY")
+	err := order.AddItem(1, 2, price)
+	if err != nil {
+		t.Fatalf("AddItem failed: %v", err)
+	}
+	
+	if len(order.Items) != 1 {
+		t.Errorf("Items len = %v, want 1", len(order.Items))
+	}
+	
+	if order.Items[0].Quantity != 2 {
+		t.Errorf("Quantity = %v, want 2", order.Items[0].Quantity)
+	}
+}
+
+func TestOrder_Pay(t *testing.T) {
+	money, _ := valueobject.NewMoney(10000, "CNY")
+	order := NewOrder(1, money)
+	
+	err := order.Pay()
+	if err != nil {
+		t.Fatalf("Pay failed: %v", err)
+	}
+	
+	if order.Status != StatusPaid {
+		t.Errorf("Status = %v, want StatusPaid", order.Status)
+	}
+}
+
+func TestOrder_PayInvalidStatus(t *testing.T) {
+	money, _ := valueobject.NewMoney(10000, "CNY")
+	order := NewOrder(1, money)
+	order.Status = StatusPaid
+	
+	err := order.Pay()
+	if err == nil {
+		t.Error("Pay should fail for paid order")
+	}
+}
+
+func TestOrder_Cancel(t *testing.T) {
+	money, _ := valueobject.NewMoney(10000, "CNY")
+	order := NewOrder(1, money)
+	
+	err := order.Cancel()
+	if err != nil {
+		t.Fatalf("Cancel failed: %v", err)
+	}
+	
+	if order.Status != StatusCancelled {
+		t.Errorf("Status = %v, want StatusCancelled", order.Status)
+	}
+}
+
+func TestOrder_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		order   *Order
+		wantErr bool
+	}{
+		{
+			name:    "valid order",
+			order:   &Order{UserID: 1, Items: []OrderItem{{}}},
+			wantErr: false,
+		},
+		{
+			name:    "invalid user ID",
+			order:   &Order{UserID: 0, Items: []OrderItem{{}}},
+			wantErr: true,
+		},
+		{
+			name:    "no items",
+			order:   &Order{UserID: 1, Items: []OrderItem{}},
+			wantErr: true,
+		},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.order.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}

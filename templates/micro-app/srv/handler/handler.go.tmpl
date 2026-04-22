@@ -1,0 +1,31 @@
+package handler
+
+import (
+	"context"
+
+	"{{.AppName}}/common/kitexGen/{{.Module}}"
+	"{{.AppName}}/{{.SrvDirName}}/internal/repository"
+	"{{.AppName}}/{{.SrvDirName}}/internal/service"
+)
+
+type {{.UpperModule}}Handler struct { svc *service.{{.UpperModule}}Service }
+
+func New{{.UpperModule}}Handler(repo *repository.{{.UpperModule}}Repo) *{{.UpperModule}}Handler {
+	return &{{.UpperModule}}Handler{svc: service.New{{.UpperModule}}Service(repo)}
+}
+
+func (h *{{.UpperModule}}Handler) Create(ctx context.Context, req *{{.Module}}.Create{{.UpperModule}}Req) (*{{.Module}}.Create{{.UpperModule}}Resp, error) {
+	return h.svc.Create(ctx, req)
+}
+func (h *{{.UpperModule}}Handler) Get(ctx context.Context, req *{{.Module}}.Get{{.UpperModule}}Req) (*{{.Module}}.Get{{.UpperModule}}Resp, error) {
+	return h.svc.Get(ctx, req)
+}
+func (h *{{.UpperModule}}Handler) List(ctx context.Context, req *{{.Module}}.List{{.UpperModule}}Req) (*{{.Module}}.List{{.UpperModule}}Resp, error) {
+	return h.svc.List(ctx, req)
+}
+func (h *{{.UpperModule}}Handler) Update(ctx context.Context, req *{{.Module}}.Update{{.UpperModule}}Req) (*{{.Module}}.Update{{.UpperModule}}Resp, error) {
+	return h.svc.Update(ctx, req)
+}
+func (h *{{.UpperModule}}Handler) Delete(ctx context.Context, req *{{.Module}}.Delete{{.UpperModule}}Req) (*{{.Module}}.Delete{{.UpperModule}}Resp, error) {
+	return h.svc.Delete(ctx, req)
+}

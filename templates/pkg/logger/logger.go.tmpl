@@ -1,0 +1,93 @@
+package logger
+
+import (
+	"fmt"
+	"os"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+)
+
+var (
+	zapLogger *zap.Logger
+	sugar     *zap.SugaredLogger
+	initialized bool
+)
+
+// Init initializes logger
+func Init() {
+	if initialized {
+		return
+	}
+	initLogger()
+	initialized = true
+}
+
+func initLogger() {
+	encoderConfig := zapcore.EncoderConfig{
+		TimeKey:        "time",
+		LevelKey:       "level",
+		MessageKey:     "msg",
+		CallerKey:      "caller",
+		EncodeLevel:    zapcore.LowercaseLevelEncoder,
+		EncodeTime:     zapcore.ISO8601TimeEncoder,
+		EncodeDuration: zapcore.SecondsDurationEncoder,
+		EncodeCaller:   zapcore.ShortCallerEncoder,
+	}
+
+	encoder := zapcore.NewConsoleEncoder(encoderConfig)
+	core := zapcore.NewCore(encoder, zapcore.AddSync(os.Stdout), zapcore.InfoLevel)
+	
+	zapLogger = zap.New(core, zap.AddCaller())
+	sugar = zapLogger.Sugar()
+	
+	fmt.Println("Logger initialized")
+}
+
+// Info logs info message
+func Info(args ...interface{}) {
+	if !initialized {
+		Init()
+	}
+	sugar.Info(args...)
+}
+
+// Error logs error message
+func Error(args ...interface{}) {
+	if !initialized {
+		Init()
+	}
+	sugar.Error(args...)
+}
+
+// Debug logs debug message
+func Debug(args ...interface{}) {
+	if !initialized {
+		Init()
+	}
+	sugar.Debug(args...)
+}
+
+// Warn logs warning message
+func Warn(args ...interface{}) {
+	if !initialized {
+		Init()
+	}
+	sugar.Warn(args...)
+}
+
+// Infof logs formatted info message
+func Infof(format string, args ...interface{}) {
+	if !initialized {
+		Init()
+	}
+	sugar.Infof(format, args...)
+}
+
+// Errorf logs formatted error message
+func Errorf(format string, args ...interface{}) {
+	if !initialized {
+		Init()
+	}
+	sugar.Errorf(format, args...)
+}

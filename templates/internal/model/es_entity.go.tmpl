@@ -1,0 +1,23 @@
+package model
+
+import (
+	"encoding/json"
+)
+
+// {{.EsEntityName}} ES {{.IndexName}} 模型
+type {{.EsEntityName}} struct {
+	ID string `json:"id"`
+{{- range .Fields }}
+	{{.Name}} {{.Type}} `json:"{{.JsonName}}"`
+{{- end }}
+}
+
+// Marshal marshals entity to bytes
+func (e *{{.EsEntityName}}) Marshal() ([]byte, error) {
+	return json.Marshal(e)
+}
+
+// Unmarshal unmarshals bytes to entity
+func (e *{{.EsEntityName}}) Unmarshal(data []byte) error {
+	return json.Unmarshal(data, e)
+}

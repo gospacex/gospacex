@@ -1,0 +1,14 @@
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: {{ .ServiceName }}-external-db
+  namespace: {{ .Namespace | default "default" }}
+spec:
+  hosts:
+  - {{ .ExternalHost | default "db.external.com" }}
+  ports:
+  - number: {{ .ExternalPort | default 3306 }}
+    name: mysql
+    protocol: TCP
+  location: MESH_EXTERNAL
+  resolution: DNS

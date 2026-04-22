@@ -1,0 +1,43 @@
+package rpc
+
+import (
+	"sync"
+)
+
+var (
+	clients []*Client
+	once    sync.Once
+)
+
+// AddClient 添加客户端到全局管理
+func AddClient(c *Client) {
+	clients = append(clients, c)
+}
+
+// InitAllClients 初始化所有配置的 RPC 客户端
+// 生成代码时会根据服务依赖自动生成初始化代码
+func InitAllClients() error {
+	// This function will be generated based on actual dependencies
+	// Example:
+	// 	AddClient(NewClient("user-service", ...))
+	// 	AddClient(NewClient("order-service", ...))
+	return nil
+}
+
+// CloseAllClients 关闭所有客户端
+func CloseAllClients() {
+	for _, c := range clients {
+		c.Close()
+	}
+	clients = nil
+}
+
+// GetClient 获取客户端 by service name
+func GetClient(serviceName string) *Client {
+	for _, c := range clients {
+		if c.ServiceName() == serviceName {
+			return c
+		}
+	}
+	return nil
+}

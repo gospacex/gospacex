@@ -1,0 +1,202 @@
+package mq
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/IBM/sarama"
+)
+
+// KafkaConfig Kafka 配置
+type KafkaConfig struct {
+	Brokers []string
+	Topic   string
+}
+
+// KafkaProducer Kafka 生产者
+type KafkaProducer struct {
+	producer sarama.SyncProducer
+	topic    string
+}
+
+// NewKafkaProducer 创建 Kafka 生产者
+func NewKafkaProducer(cfg *KafkaConfig) (*KafkaProducer, error) {
+	config := sarama.NewConfig()
+	config.Producer.RequiredAcks = sarama.WaitForAll
+	config.Producer.Retry.Max = 5
+	config.Producer.Return.Successes = true
+
+	producer, err := sarama.NewSyncProducer(cfg.Brokers, config)
+	if err != nil {
+		return nil, fmt.Errorf("create kafka producer: %w", err)
+	}
+
+	return &KafkaProducer{
+		producer: producer,
+		topic:    cfg.Topic,
+	}, nil
+}
+
+// Send 发送消息
+func (p *KafkaProducer) Send(ctx context.Context, msg *Message) error {
+	kafkaMsg := &sarama.ProducerMessage{
+		Topic: msg.Topic,
+		Key:   sarama.StringEncoder(msg.Key),
+		Value: sarama.ByteEncoder(msg.Value),
+	}
+
+	if msg.Headers != nil {
+		kafkaMsg.Headers = make([]sarama.RecordHeader, 0, len(msg.Headers))
+		for k, v := range msg.Headers {
+			kafkaMsg.Headers = append(kafkaMsg.Headers, sarama.RecordHeader{
+				Key:   []byte(k),
+				Value: []byte(v),
+			})
+		}
+	}
+
+	_, _, err := p.producer.SendMessage(kafkaMsg)
+	return err
+}
+
+// SendJSON 发送 JSON 消息
+func (p *KafkaProducer) SendJSON(ctx context.Context, topic string, key string, data interface{}) error {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("marshal json: %w", err)
+	}
+
+	return p.Send(ctx, &Message{
+		Topic: topic,
+		Key:   key,
+		Value: jsonData,
+	})
+}
+
+// Close 关闭生产者
+func (p *KafkaProducer) Close() error {
+	return p.producer.Close()
+}
+
+// KafkaConsumer Kafka 消费者
+type KafkaConsumer struct {
+	consumer sarama.ConsumerGroup
+	topics   []string
+	handler  *ConsumerHandler
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
+}
+
+// ConsumerHandler 消费者处理器
+type ConsumerHandler struct {
+	Handler func(msg *Message) error
+	Ready   chan bool
+}
+
+// Setup 消费者启动时的回调
+func (h *ConsumerHandler) Setup(sarama.ConsumerGroupSession) error {
+	close(h.Ready)
+	return nil
+}
+
+// Cleanup 消费者关闭时的回调
+func (h *ConsumerHandler) Cleanup(sarama.ConsumerGroupSession) error {
+	return nil
+}
+
+// ConsumeClaim 处理消息
+func (h *ConsumerHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+	for {
+		select {
+		case msg, ok := <-claim.Messages():
+			if !ok {
+				return nil
+			}
+			m := &Message{
+				Topic: msg.Topic,
+				Key:   string(msg.Key),
+				Value: msg.Value,
+			}
+			if err := h.Handler(m); err != nil {
+				// 记录错误，继续消费
+				continue
+			}
+			session.MarkMessage(msg, "")
+		case <-session.Context().Done():
+			return nil
+		}
+	}
+}
+
+// NewKafkaConsumer 创建 Kafka 消费者
+func NewKafkaConsumer(brokers []string, groupID string, topics []string, handler func(msg *Message) error) (*KafkaConsumer, error) {
+	config := sarama.NewConfig()
+	config.Consumer.Group.Rebalance.GroupStrategies = []sarama.BalanceStrategy{sarama.NewBalanceStrategyRoundRobin()}
+	config.Consumer.Offsets.Initial = sarama.OffsetNewest
+
+	consumer, err := sarama.NewConsumerGroup(brokers, groupID, config)
+	if err != nil {
+		return nil, fmt.Errorf("create consumer group: %w", err)
+	}
+
+	return &KafkaConsumer{
+		consumer: consumer,
+		topics:   topics,
+		handler: &ConsumerHandler{
+			Handler: handler,
+			Ready:   make(chan bool),
+		},
+	}, nil
+}
+
+// Start 启动消费者
+func (c *KafkaConsumer) Start() error {
+	ctx, cancel := context.WithCancel(context.Background())
+	c.cancel = cancel
+
+	c.wg.Add(1)
+	go func() {
+		defer c.wg.Done()
+		for {
+			if err := c.consumer.Consume(ctx, c.topics, c.handler); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				time.Sleep(time.Second)
+			}
+		}
+	}()
+
+	<-c.handler.Ready
+	return nil
+}
+
+// Stop 停止消费者
+func (c *KafkaConsumer) Stop() error {
+	c.cancel()
+	c.wg.Wait()
+	return c.consumer.Close()
+}
+
+// ErrUnknownMQType 未知 MQ 类型错误
+var ErrUnknownMQType = fmt.Errorf("unknown message queue type")
+
+// NewKafkaProducer 兼容旧接口
+func NewKafkaProducer(config interface{}) (Producer, error) {
+	cfg, ok := config.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid kafka config")
+	}
+
+	brokers, _ := cfg["brokers"].([]string)
+	topic, _ := cfg["topic"].(string)
+
+	return NewKafkaProducer(&KafkaConfig{
+		Brokers: brokers,
+		Topic:   topic,
+	})
+}

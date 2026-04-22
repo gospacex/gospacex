@@ -1,0 +1,68 @@
+package producer
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/IBM/sarama"
+)
+
+// KafkaProducer Kafka 生产者
+type KafkaProducer struct {
+	producer sarama.SyncProducer
+	config   KafkaConfig
+}
+
+// KafkaConfig Kafka 配置
+type KafkaConfig struct {
+	Brokers    []string `yaml:"brokers"`
+	Topic      string   `yaml:"topic"`
+	MaxRetries int      `yaml:"max_retries"`
+	RetryDelay time.Duration `yaml:"retry_delay"`
+}
+
+// NewKafkaProducer 创建生产者
+func NewKafkaProducer(cfg KafkaConfig) (*KafkaProducer, error) {
+	config := sarama.NewConfig()
+	config.Producer.Return.Successes = true
+	config.Producer.RequiredAcks = sarama.WaitForAll
+	
+	producer, err := sarama.NewSyncProducer(cfg.Brokers, config)
+	if err != nil {
+		return nil, fmt.Errorf("create producer failed: %w", err)
+	}
+	
+	log.Printf("Kafka producer connected: %v", cfg.Brokers)
+	return &KafkaProducer{
+		producer: producer,
+		config:   cfg,
+	}, nil
+}
+
+// SendMessage 发送消息（带重试）
+func (p *KafkaProducer) SendMessage(ctx context.Context, key, value string) error {
+	msg := &sarama.ProducerMessage{
+		Topic: p.config.Topic,
+		Key:   sarama.StringEncoder(key),
+		Value: sarama.StringEncoder(value),
+	}
+	
+	for i := 0; i < p.config.MaxRetries; i++ {
+		partition, offset, err := p.producer.SendMessage(msg)
+		if err == nil {
+			log.Printf("Kafka sent: partition=%d, offset=%d", partition, offset)
+			return nil
+		}
+		log.Printf("Kafka send failed (%d/%d): %v", i+1, p.config.MaxRetries, err)
+		time.Sleep(p.config.RetryDelay)
+	}
+	
+	return fmt.Errorf("send failed after %d retries", p.config.MaxRetries)
+}
+
+// Close 关闭生产者
+func (p *KafkaProducer) Close() error {
+	return p.producer.Close()
+}

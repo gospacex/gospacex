@@ -1,0 +1,52 @@
+package handler
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/redis/go-redis/v9"
+)
+
+type StringHandler struct {
+	client *redis.Client
+}
+
+func NewStringHandler(client *redis.Client) *StringHandler {
+	return &StringHandler{client: client}
+}
+
+func (h *StringHandler) Set(ctx context.Context, key, value string) error {
+	return h.client.Set(ctx, key, value, 0).Err()
+}
+
+func (h *StringHandler) SetEX(ctx context.Context, key, value string, exp int) error {
+	return h.client.SetEX(ctx, key, value, exp).Err()
+}
+
+func (h *StringHandler) Get(ctx context.Context, key string) (string, error) {
+	return h.client.Get(ctx, key).Result()
+}
+
+func (h *StringHandler) GetSet(ctx context.Context, key, value string) (string, error) {
+	return h.client.GetSet(ctx, key, value).Result()
+}
+
+func (h *StringHandler) MGet(ctx context.Context, keys ...string) ([]string, error) {
+	return h.client.MGet(ctx, keys...).Result()
+}
+
+func (h *StringHandler) Incr(ctx context.Context, key string) (int64, error) {
+	return h.client.Incr(ctx, key).Result()
+}
+
+func (h *StringHandler) IncrBy(ctx context.Context, key string, n int64) (int64, error) {
+	return h.client.IncrBy(ctx, key, n).Result()
+}
+
+func (h *StringHandler) Decr(ctx context.Context, key string) (int64, error) {
+	return h.client.Decr(ctx, key).Result()
+}
+
+func (h *StringHandler) DecrBy(ctx context.Context, key string, n int64) (int64, error) {
+	return h.client.DecrBy(ctx, key, n).Result()
+}

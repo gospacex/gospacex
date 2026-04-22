@@ -1,0 +1,45 @@
+package handler
+
+import (
+	"context"
+
+	"{{.AppName}}/{{.BffDirName}}/internal/rpcClient"
+
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
+)
+
+type {{.UpperModule}}Handler struct {
+	client *rpcclient.{{.UpperModule}}Client
+}
+
+func New{{.UpperModule}}Handler() *{{.UpperModule}}Handler {
+	return &{{.UpperModule}}Handler{}
+}
+
+func (h *{{.UpperModule}}Handler) Create(ctx context.Context, c *app.RequestContext) {
+	var req struct {
+		Name string
+	}
+	if err := c.Bind(&req); err != nil {
+		c.JSON(consts.StatusBadRequest, map[string]interface{}{"error": err.Error()})
+		return
+	}
+	c.JSON(consts.StatusOK, map[string]interface{}{"name": req.Name})
+}
+
+func (h *{{.UpperModule}}Handler) List(ctx context.Context, c *app.RequestContext) {
+	c.JSON(consts.StatusOK, gin.H{})
+}
+
+func (h *{{.UpperModule}}Handler) Get(ctx context.Context, c *app.RequestContext) {
+	c.JSON(consts.StatusOK, gin.H{"id": c.Param("id")})
+}
+
+func (h *{{.UpperModule}}Handler) Update(ctx context.Context, c *app.RequestContext) {
+	c.JSON(consts.StatusOK, gin.H{})
+}
+
+func (h *{{.UpperModule}}Handler) Delete(ctx context.Context, c *app.RequestContext) {
+	c.JSON(consts.StatusOK, gin.H{})
+}

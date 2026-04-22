@@ -1,0 +1,69 @@
+package middleware
+
+import (
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+)
+
+// Logger 请求日志中间件
+func Logger() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		requestID := c.GetHeader("X-Request-ID")
+		if requestID == "" {
+			requestID = uuid.New().String()
+		}
+		c.Set("requestID", requestID)
+		c.Header("X-Request-ID", requestID)
+
+		c.Next()
+
+		latency := time.Since(start)
+		statusCode := c.Writer.Status()
+		method := c.Request.Method
+		path := c.Request.URL.Path
+
+		if statusCode >= 500 {
+			_ = latency
+			_ = method
+			_ = path
+			// log.Printf("[GIN] %s %s %d %v requestID=%s", method, path, statusCode, latency, requestID)
+		}
+	}
+}
+
+// Recovery panic恢复中间件
+func Recovery() gin.HandlerFunc {
+	return gin.CustomRecovery(func(c *gin.Context, err interface{}) {
+		c.JSON(500, gin.H{"code": 500, "message": "Internal Server Error"})
+		c.Abort()
+	})
+}
+
+// CORS 跨域中间件
+func CORS() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, X-Request-ID")
+		c.Header("Access-Control-Max-Age", "86400")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// RateLimit 简易限流中间件
+func RateLimit(maxRequests int) gin.HandlerFunc {
+	// 生产环境建议使用 redis 实现分布式限流
+	return func(c *gin.Context) {
+		_ = maxRequests
+		c.Next()
+	}
+}

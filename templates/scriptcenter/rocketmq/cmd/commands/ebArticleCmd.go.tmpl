@@ -1,0 +1,182 @@
+package commands
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"strconv"
+
+	"{{.ProjectName}}/internal/model"
+	"{{.ProjectName}}/internal/service"
+	"github.com/spf13/cobra"
+)
+
+var (
+	articleName  string
+	articleData string
+	articleVisit int
+	articlePage  int
+	articleSize  int
+)
+
+// ebArticleCmd 文章 CRUD 命令
+var ebArticleCmd = &cobra.Command{
+	Use:   "article",
+	Short: "文章 CRUD 操作",
+	Long:  `文章 CRUD 命令 - 创建、查询、列表、更新、删除`,
+}
+
+// articleCreateCmd 创建文章
+var articleCreateCmd = &cobra.Command{
+	Use:   "create",
+	Short: "创建文章",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := context.Background()
+		svc := service.NewEbArticleService()
+
+		entity := &model.EbArticle{
+			Name: articleName,
+			Data: articleData,
+		}
+
+		if err := svc.Create(ctx, entity); err != nil {
+			return fmt.Errorf("create failed: %w", err)
+		}
+
+		log.Printf("✓ Article created: ID=%d, Name=%s", entity.ID, entity.Name)
+		return nil
+	},
+}
+
+// articleGetCmd 查询单条
+var articleGetCmd = &cobra.Command{
+	Use:   "get [id]",
+	Short: "查询单条文章",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := context.Background()
+		svc := service.NewEbArticleService()
+
+		id, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid ID: %w", err)
+		}
+
+		entity, err := svc.GetByID(ctx, id)
+		if err != nil {
+			return fmt.Errorf("get failed: %w", err)
+		}
+
+		log.Printf("Article: ID=%d, Name=%s, Data=%s, Visit=%d", entity.ID, entity.Name, entity.Data, entity.Visit)
+		return nil
+	},
+}
+
+// articleListCmd 列表查询
+var articleListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "列表查询",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := context.Background()
+		svc := service.NewEbArticleService()
+
+		page := articlePage
+		pageSize := articleSize
+		if page <= 0 {
+			page = 1
+		}
+		if pageSize <= 0 {
+			pageSize = 20
+		}
+
+		articles, total, err := svc.List(ctx, page, pageSize)
+		if err != nil {
+			return fmt.Errorf("list failed: %w", err)
+		}
+
+		log.Printf("Total: %d, Page: %d, PageSize: %d", total, page, pageSize)
+		for _, a := range articles {
+			log.Printf("  ID=%d, Name=%s, Visit=%d", a.ID, a.Name, a.Visit)
+		}
+		return nil
+	},
+}
+
+// articleUpdateCmd 更新文章
+var articleUpdateCmd = &cobra.Command{
+	Use:   "update [id]",
+	Short: "更新文章",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := context.Background()
+		svc := service.NewEbArticleService()
+
+		id, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid ID: %w", err)
+		}
+
+		entity, err := svc.GetByID(ctx, id)
+		if err != nil {
+			return fmt.Errorf("get failed: %w", err)
+		}
+
+		if articleName != "" {
+			entity.Name = articleName
+		}
+		if articleData != "" {
+			entity.Data = articleData
+		}
+		if articleVisit > 0 {
+			entity.Visit = int64(articleVisit)
+		}
+
+		if err := svc.Update(ctx, entity); err != nil {
+			return fmt.Errorf("update failed: %w", err)
+		}
+
+		log.Printf("✓ Article %d updated", id)
+		return nil
+	},
+}
+
+// articleDeleteCmd 删除文章
+var articleDeleteCmd = &cobra.Command{
+	Use:   "delete [id]",
+	Short: "删除文章",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := context.Background()
+		svc := service.NewEbArticleService()
+
+		id, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid ID: %w", err)
+		}
+
+		if err := svc.Delete(ctx, id); err != nil {
+			return fmt.Errorf("delete failed: %w", err)
+		}
+
+		log.Printf("✓ Article %d deleted", id)
+		return nil
+	},
+}
+
+func init() {
+	ebArticleCmd.AddCommand(articleCreateCmd)
+	ebArticleCmd.AddCommand(articleGetCmd)
+	ebArticleCmd.AddCommand(articleListCmd)
+	ebArticleCmd.AddCommand(articleUpdateCmd)
+	ebArticleCmd.AddCommand(articleDeleteCmd)
+
+	articleCreateCmd.Flags().StringVar(&articleName, "name", "", "文章名称 (required)")
+	articleCreateCmd.Flags().StringVar(&articleData, "data", "", "文章数据")
+	articleCreateCmd.MarkFlagRequired("name")
+
+	articleListCmd.Flags().IntVar(&articlePage, "page", 1, "页码")
+	articleListCmd.Flags().IntVar(&articleSize, "page-size", 20, "每页数量")
+
+	articleUpdateCmd.Flags().StringVar(&articleName, "name", "", "文章名称")
+	articleUpdateCmd.Flags().StringVar(&articleData, "data", "", "文章数据")
+	articleUpdateCmd.Flags().IntVar(&articleVisit, "visit", 0, "访问量")
+
+	rootCmd.AddCommand(ebArticleCmd)
+}

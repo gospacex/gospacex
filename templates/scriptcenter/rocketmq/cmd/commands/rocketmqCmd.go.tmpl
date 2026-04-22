@@ -1,0 +1,43 @@
+package commands
+
+import (
+	"fmt"
+
+	"{{.ProjectName}}/internal/service"
+	"github.com/spf13/cobra"
+)
+
+var (
+	consumer bool
+	producer bool
+)
+
+// rocketmqCmd RocketMQ 管理命令
+var rocketmqCmd = &cobra.Command{
+	Use:   "rocketmq",
+	Short: "RocketMQ 连接和状态检查",
+	Long:  `检查 RocketMQ 连接状态，查看消费者信息`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if consumer {
+			if err := service.CheckConsumerHealth(); err != nil {
+				return fmt.Errorf("consumer health check failed: %w", err)
+			}
+			fmt.Println("✓ RocketMQ consumers are healthy")
+		}
+
+		if producer {
+			if err := service.CheckProducerHealth(); err != nil {
+				return fmt.Errorf("producer health check failed: %w", err)
+			}
+			fmt.Println("✓ RocketMQ producers are healthy")
+		}
+
+		return nil
+	},
+}
+
+func init() {
+	rocketmqCmd.Flags().BoolVar(&consumer, "consumer", false, "Check consumer health")
+	rocketmqCmd.Flags().BoolVar(&producer, "producer", false, "Check producer health")
+	rootCmd.AddCommand(rocketmqCmd)
+}

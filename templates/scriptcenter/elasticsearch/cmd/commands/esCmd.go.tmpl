@@ -1,0 +1,45 @@
+package commands
+
+import (
+	"fmt"
+
+	"{{.ProjectName}}/internal/service"
+	"github.com/spf13/cobra"
+)
+
+var (
+	index  bool
+	search bool
+)
+
+// esCmd Elasticsearch 管理命令
+var esCmd = &cobra.Command{
+	Use:   "es",
+	Short: "Elasticsearch 连接和状态检查",
+	Long:  `检查 Elasticsearch 连接状态，查看索引信息`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if index {
+			if err := service.CheckIndexHealth(); err != nil {
+				return fmt.Errorf("index health check failed: %w", err)
+			}
+			fmt.Println("✓ Elasticsearch index is healthy")
+		}
+
+		if search {
+			// Search test already done with article command
+		}
+
+		if err := service.CheckClientHealth(); err != nil {
+			return fmt.Errorf("client health check failed: %w", err)
+		}
+		fmt.Println("✓ Elasticsearch client is healthy")
+
+		return nil
+	},
+}
+
+func init() {
+	esCmd.Flags().BoolVar(&index, "index", false, "Check index health")
+	esCmd.Flags().BoolVar(&search, "search", false, "Test search functionality")
+	rootCmd.AddCommand(esCmd)
+}

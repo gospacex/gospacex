@@ -1,0 +1,61 @@
+package mq
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/streadway/amqp"
+	"{{.ProjectName}}/internal/model"
+)
+
+// RabbitmqProducer RabbitMQ 生产者
+type RabbitmqProducer struct {
+	channel *amqp.Channel
+	exchange string
+}
+
+// NewRabbitmqProducer 创建生产者
+func NewRabbitmqProducer(channel *amqp.Channel, exchange string) *RabbitmqProducer {
+	return &RabbitmqProducer{
+		channel: channel,
+		exchange: exchange,
+	}
+}
+
+// Publish 发布消息
+func (p *RabbitmqProducer) Publish(ctx context.Context, article *model.EbArticle) error {
+	data, err := json.Marshal(article)
+	if err != nil {
+		return fmt.Errorf("marshal article: %w", err)
+	}
+
+	msg := amqp.Publishing{
+		ContentType: "application/json",
+		Body:        data,
+	}
+
+	return p.channel.Publish(
+		p.exchange,
+		article.Name, // routing key 使用文章名称作为示例
+		false, // mandatory
+		false, // immediate
+		msg,
+	)
+}
+
+// IsHealthy 检查健康
+func (p *RabbitmqProducer) IsHealthy() error {
+	if p.channel == nil {
+		return fmt.Errorf("channel not initialized")
+	}
+	return nil
+}
+
+// Close 关闭
+func (p *RabbitmqProducer) Close() error {
+	if p.channel != nil {
+		return p.channel.Close()
+	}
+	return nil
+}

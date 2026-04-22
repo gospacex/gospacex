@@ -1,0 +1,19 @@
+package mq
+
+// RabbitmqConfig RabbitMQ 配置
+type RabbitmqConfig struct {
+	URL         string `yaml:"url"`
+	Exchange    string `yaml:"exchange"`
+	Queue       string `yaml:"queue"`
+	EnableDelay bool   `yaml:"enable_delay"`
+}
+
+// GetDefaultConfig 获取默认配置
+func GetDefaultConfig() RabbitmqConfig {
+	return RabbitmqConfig{
+		URL:         "amqp://guest:guest@localhost:5672/",
+		Exchange:    "article-exchange",
+		Queue:       "article-queue",
+		EnableDelay: false,
+	}
+}

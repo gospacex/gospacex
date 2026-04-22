@@ -1,0 +1,41 @@
+package rpcclient
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"{{.ModuleName}}/common/kitexGen/{{.TableName}}"
+
+	clientv3 "go.etcd.io/etcd/client/v3"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+)
+
+type {{.UpperName}}Client struct {
+	conn *grpc.ClientConn
+	client {{.TableName}}.{{.UpperName}}ServiceClient
+}
+
+func New{{.UpperName}}Client(etcdAddr string) (*{{.UpperName}}Client, error) {
+	// 通过 Etcd 服务发现获取 SRV 地址
+	etcdClient, err := clientv3.New(clientv3.Config{
+		Endpoints:   []string{etcdAddr},
+		DialTimeout: 5 * time.Second,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("connect to etcd failed: %w", err)
+	}
+	ctx := context.Background()
+	resp, err := etcdClient.Get(ctx, "/services/{{.AppName}}/", clientv3.WithPrefix())
+	if err != nil || len(resp.Kvs) == 0 {
+		return nil, fmt.Errorf("service %s not found in etcd", "{{.AppName}}")
+	}
+	srvAddr := string(resp.Kvs[0].Value)
+
+	conn, err := grpc.Dial(srvAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, err
+	}
+	return &{{.UpperName}}Client{conn: conn, client: {{.TableName}}.New{{.UpperName}}ServiceClient(conn)}, nil
+}

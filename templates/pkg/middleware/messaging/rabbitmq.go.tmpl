@@ -1,0 +1,208 @@
+package middleware
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/rabbitmq/amqp091-go"
+)
+
+// RabbitMQConfig RabbitMQ 配置
+type RabbitMQConfig struct {
+	Enabled  bool   `yaml:"enabled" json:"enabled"`
+	URL      string `yaml:"url" json:"url"`
+	Queue    string `yaml:"queue" json:"queue"`
+	Exchange string `yaml:"exchange" json:"exchange"`
+	// Exchange type: direct, fanout, topic
+	ExchangeType string `yaml:"exchange_type" json:"exchange_type"`
+	// Routing key for message routing
+	RoutingKey string `yaml:"routing_key" json:"routing_key"`
+	// Dead Letter Exchange configuration
+	DLXExchange   string `yaml:"dlx_exchange" json:"dlx_exchange"`
+	DLXRoutingKey string `yaml:"dlx_routing_key" json:"dlx_routing_key"`
+}
+
+// RabbitMQClient RabbitMQ 客户端
+type RabbitMQClient struct {
+	conn    *amqp091.Connection
+	channel *amqp091.Channel
+	queue   amqp091.Queue
+	config  RabbitMQConfig
+}
+
+// NewRabbitMQClient 创建 RabbitMQ 客户端
+func NewRabbitMQClient(cfg RabbitMQConfig) (*RabbitMQClient, error) {
+	conn, err := amqp091.Dial(cfg.URL)
+	if err != nil {
+		return nil, fmt.Errorf("dial rabbitmq failed: %w", err)
+	}
+
+	channel, err := conn.Channel()
+	if err != nil {
+		return nil, fmt.Errorf("create channel failed: %w", err)
+	}
+
+	// Declare Dead Letter Exchange if configured
+	if cfg.DLXExchange != "" {
+		dlxExchangeName := cfg.DLXExchange
+		if dlxExchangeName == "" {
+			dlxExchangeName = "default"
+		}
+		dlxExchangeType := cfg.ExchangeType
+		if dlxExchangeType == "" {
+			dlxExchangeType = "direct"
+		}
+		
+		if err := channel.ExchangeDeclare(
+			dlxExchangeName,
+			dlxExchangeType,
+			true,  // durable
+			false, // auto-delete
+			false, // internal
+			false, // no-wait
+			nil,
+		); err != nil {
+			return nil, fmt.Errorf("declare DLX exchange failed: %w", err)
+		}
+		log.Printf("DLX exchange declared: %s", dlxExchangeName)
+	}
+
+	// Declare main exchange
+	exchangeName := cfg.Exchange
+	if exchangeName == "" {
+		exchangeName = "default"
+	}
+	exchangeType := cfg.ExchangeType
+	if exchangeType == "" {
+		exchangeType = "direct"
+	}
+
+	if err := channel.ExchangeDeclare(
+		exchangeName,
+		exchangeType,
+		true,  // durable
+		false, // auto-delete
+		false, // internal
+		false, // no-wait
+		nil,
+	); err != nil {
+		return nil, fmt.Errorf("declare exchange failed: %w", err)
+	}
+
+	// Declare queue with DLX arguments
+	queueArgs := amqp091.Table{}
+	if cfg.DLXExchange != "" {
+		queueArgs["x-dead-letter-exchange"] = cfg.DLXExchange
+		if cfg.DLXRoutingKey != "" {
+			queueArgs["x-dead-letter-routing-key"] = cfg.DLXRoutingKey
+		}
+	}
+
+	queue, err := channel.QueueDeclare(
+		cfg.Queue,
+		true,  // durable
+		false, // delete when unused
+		false, // exclusive
+		false, // no-wait
+		queueArgs,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("declare queue failed: %w", err)
+	}
+
+	// Bind queue to exchange with routing key
+	if cfg.Exchange != "" && cfg.RoutingKey != "" {
+		if err := channel.QueueBind(
+			queue.Name,
+			cfg.RoutingKey,
+			cfg.Exchange,
+			false,
+			nil,
+		); err != nil {
+			return nil, fmt.Errorf("bind queue to exchange failed: %w", err)
+		}
+	}
+
+	return &RabbitMQClient{
+		conn:    conn,
+		channel: channel,
+		queue:   queue,
+		config:  cfg,
+	}, nil
+}
+
+// Publish 发布消息
+func (c *RabbitMQClient) Publish(ctx context.Context, body []byte) error {
+	routingKey := c.config.RoutingKey
+	exchange := c.config.Exchange
+	
+	if exchange == "" {
+		exchange = "" // Use default exchange
+	}
+
+	return c.channel.PublishWithContext(
+		ctx,
+		exchange,
+		routingKey,
+		false, // mandatory
+		false, // immediate
+		amqp091.Publishing{
+			ContentType: "application/json",
+			Body:        body,
+			Timestamp:   time.Now(),
+		},
+	)
+}
+
+// PublishWithRouting 使用指定路由键发布消息
+func (c *RabbitMQClient) PublishWithRouting(ctx context.Context, exchange, routingKey string, body []byte) error {
+	return c.channel.PublishWithContext(
+		ctx,
+		exchange,
+		routingKey,
+		false, // mandatory
+		false, // immediate
+		amqp091.Publishing{
+			ContentType: "application/json",
+			Body:        body,
+			Timestamp:   time.Now(),
+		},
+	)
+}
+
+// Consume 消费消息
+func (c *RabbitMQClient) Consume(ctx context.Context, handler func([]byte) error) error {
+	msgs, err := c.channel.Consume(
+		c.queue.Name,
+		"",
+		false, // auto-ack - disabled for manual ack
+		false, // exclusive
+		false, // no-local
+		false, // no-wait
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("consume failed: %w", err)
+	}
+
+	for msg := range msgs {
+		if err := handler(msg.Body); err != nil {
+			log.Printf("message handler failed: %v", err)
+			msg.Nack(false, true) // requeue
+			continue
+		}
+		msg.Ack(false)
+	}
+
+	return nil
+}
+
+// Close 关闭连接
+func (c *RabbitMQClient) Close() error {
+	if err := c.channel.Close(); err != nil {
+		return err
+	}
+	return c.conn.Close()
+}

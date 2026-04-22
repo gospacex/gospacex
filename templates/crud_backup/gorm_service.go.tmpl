@@ -1,0 +1,52 @@
+package service
+
+import (
+	"context"
+
+	"{{.OutputDir}}/internal/model"
+	"{{.OutputDir}}/internal/repository"
+)
+
+// {{.StructName}}Service {{.StructName}} 服务
+type {{.StructName}}Service struct {
+	repo repository.{{.StructName}}Repository
+}
+
+// New{{.StructName}}Service creates new service
+func New{{.StructName}}Service(repo repository.{{.StructName}}Repository) *{{.StructName}}Service {
+	return &{{.StructName}}Service{repo: repo}
+}
+
+// Create creates a new {{.StructName}}
+func (s *{{.StructName}}Service) Create(ctx context.Context, entity *model.{{.StructName}}) error {
+	return s.repo.Create(ctx, entity)
+}
+
+// GetByID gets {{.StructName}} by ID
+func (s *{{.StructName}}Service) GetByID(ctx context.Context, id int64) (*model.{{.StructName}}, error) {
+	return s.repo.GetByID(ctx, id)
+}
+
+// List lists {{.StructName}}
+func (s *{{.StructName}}Service) List(ctx context.Context, page, pageSize int) ([]*model.{{.StructName}}, int64, error) {
+	offset := (page - 1) * pageSize
+	entities, err := s.repo.List(ctx, offset, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+	count, err := s.repo.Count(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	return entities, count, nil
+}
+
+// Update updates a {{.StructName}}
+func (s *{{.StructName}}Service) Update(ctx context.Context, entity *model.{{.StructName}}) error {
+	return s.repo.Update(ctx, entity)
+}
+
+// Delete deletes a {{.StructName}}
+func (s *{{.StructName}}Service) Delete(ctx context.Context, id int64) error {
+	return s.repo.Delete(ctx, id)
+}

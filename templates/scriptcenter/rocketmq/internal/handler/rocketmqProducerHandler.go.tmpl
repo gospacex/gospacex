@@ -1,0 +1,27 @@
+package handler
+
+import (
+	"context"
+	"log"
+
+	"{{.ProjectName}}/internal/mq"
+	"{{.ProjectName}}/internal/model"
+)
+
+// RocketMQProducerHandler RocketMQ 消息生产者处理器
+type RocketMQProducerHandler struct {
+	producer *mq.RocketMQProducer
+}
+
+// NewRocketMQProducerHandler 创建处理器
+func NewRocketMQProducerHandler(producer *mq.RocketMQProducer) *RocketMQProducerHandler {
+	return &RocketMQProducerHandler{
+		producer: producer,
+	}
+}
+
+// Publish 发布文章事件到 RocketMQ
+func (h *RocketMQProducerHandler) Publish(ctx context.Context, article *model.EbArticle) error {
+	log.Printf("Publishing article event: %s to RocketMQ", article.Name)
+	return h.producer.Send(ctx, article)
+}

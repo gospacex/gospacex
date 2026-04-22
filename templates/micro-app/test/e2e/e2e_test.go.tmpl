@@ -1,0 +1,93 @@
+package test
+
+import (
+	"context"
+	"net"
+	"net/http"
+	"testing"
+	"time"
+
+	"{{.ModuleName}}/{{.BffDirName}}/cmd"
+	"{{.ModuleName}}/{{.SrvDirName}}/cmd"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+)
+
+// startSRV 启动微服务
+func startSRV(port int) error {
+	return nil // TODO: 实际启动 SRV 服务
+}
+
+// startBFF 启动 BFF
+func startBFF(port int) error {
+	return nil // TODO: 实际启动 BFF 服务
+}
+
+// Test{{.UpperName}}_E2E_Create 端到端创建测试
+func Test{{.UpperName}}_E2E_Create(t *testing.T) {
+	srvPort := {{.SRVPort}}
+	bffPort := {{.BFFPort}}
+
+	// 启动服务
+	// defer cleanup()
+
+	// 1. 通过 gRPC 调用微服务创建
+	conn, err := grpc.Dial(net.JoinHostPort("localhost", srvPort),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock())
+	if err != nil {
+		t.Fatalf("failed to connect to srv: %v", err)
+	}
+	defer conn.Close()
+
+	// client := {{.ModuleName}}.New{{.UpperName}}ServiceClient(conn)
+	// ctx := context.Background()
+	// resp, err := client.Create(ctx, &{{.ModuleName}}.Create{{.UpperName}}Req{
+	// 	Name: "test",
+	// })
+	// if err != nil {
+	// 	t.Errorf("srv Create failed: %v", err)
+	// }
+
+	// 2. 通过 HTTP 调用 BFF 创建
+	url := net.JoinHostPort("http://localhost", bffPort) + "/api/v1/{{.ModuleName}}s"
+	httpReq, err := http.NewRequest(http.MethodPost, url, nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	// resp, err := client.Do(httpReq)
+	// if err != nil {
+	// 	t.Errorf("bff Create failed: %v", err)
+	// }
+	_ = context.Background() // suppress unused warning
+}
+
+// Test{{.UpperName}}_E2E_Get 端到端获取测试
+func Test{{.UpperName}}_E2E_Get(t *testing.T) {
+	// 1. SRV: 创建测试数据
+	// 2. BFF: 通过 HTTP 获取
+	// 3. 验证数据一致性
+}
+
+// Test{{.UpperName}}_E2E_List 端到端列表测试
+func Test{{.UpperName}}_E2E_List(t *testing.T) {
+	// 1. SRV: 创建多条测试数据
+	// 2. BFF: 通过 HTTP 列出
+	// 3. 验证数量和内容
+}
+
+// Test{{.UpperName}}_E2E_Update 端到端更新测试
+func Test{{.UpperName}}_E2E_Update(t *testing.T) {
+	// 1. SRV: 创建测试数据
+	// 2. BFF: 发送更新请求
+	// 3. SRV: 验证更新成功
+}
+
+// Test{{.UpperName}}_E2E_Delete 端到端删除测试
+func Test{{.UpperName}}_E2E_Delete(t *testing.T) {
+	// 1. SRV: 创建测试数据
+	// 2. BFF: 发送删除请求
+	// 3. SRV: 验证已删除
+}

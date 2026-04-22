@@ -1,0 +1,24 @@
+
+// FindJoin{{.LeftUpper}}{{.RightUpper}}List 一对多联表查询
+func (r *Join{{.LeftUpper}}{{.RightUpper}}Repo) FindJoin{{.LeftUpper}}{{.RightUpper}}List(ctx context.Context, leftID uint) ([]*model.{{.RightUpper}}, error) {
+	var items []*model.{{.RightUpper}}
+	err := r.db.WithContext(ctx).
+		Where("{{.RightModule}}.{{.RightField}} = ?", leftID).
+		Find(&items).
+		Error
+	if err != nil {
+		return nil, fmt.Errorf("join query failed: %w", err)
+	}
+	return items, nil
+}
+
+// FindJoin{{.LeftUpper}}{{.RightUpper}}WithParent 一对多联表查询（含父记录）
+func (r *Join{{.LeftUpper}}{{.RightUpper}}Repo) FindJoin{{.LeftUpper}}{{.RightUpper}}WithParent(ctx context.Context, leftID uint) (*model.{{.LeftUpper}}, []*model.{{.RightUpper}}, error) {
+	var parent model.{{.LeftUpper}}
+	if err := r.db.WithContext(ctx).First(&parent, leftID).Error; err != nil {
+		return nil, nil, fmt.Errorf("find parent failed: %w", err)
+	}
+	var children []*model.{{.RightUpper}}
+	r.db.WithContext(ctx).Where("{{.RightModule}}.{{.RightField}} = ?", leftID).Find(&children)
+	return &parent, children, nil
+}

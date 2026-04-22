@@ -1,0 +1,123 @@
+package commands
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os/signal"
+	"syscall"
+
+	"{{.ProjectName}}/pkg/config"
+	"{{.ProjectName}}/pkg/database"
+	"{{.ProjectName}}/pkg/logger"
+	"github.com/gin-gonic/gin"
+	"github.com/spf13/cobra"
+)
+
+var startCmd = &cobra.Command{
+	Use:   "start",
+	Short: "启动应用",
+	Long: `启动脚本中心应用，初始化所有组件（数据库、Redis、日志、HTTP 服务器）。
+
+应用将在配置文件中指定的端口上运行 HTTP 服务器，并处理定时任务。`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// 获取配置文件路径
+		configPath, _ := cmd.Flags().GetString("config")
+		env, _ := cmd.Flags().GetString("env")
+
+		return runApp(configPath, env)
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(startCmd)
+	startCmd.Flags().String("host", "0.0.0.0", "HTTP 服务器监听地址")
+	startCmd.Flags().Int("port", 8080, "HTTP 服务器监听端口")
+}
+
+// runApp initializes all components and starts the application
+func runApp(configPath, env string) error {
+	// 1. 加载配置
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// 2. 初始化日志
+	mode := "debug"
+	if env == "production" {
+		mode = "release"
+	}
+	if err := logger.InitLogger(mode); err != nil {
+		return fmt.Errorf("failed to init logger: %w", err)
+	}
+	log.Println("Logger initialized")
+
+	// 3. 初始化数据库
+	if err := database.InitMySQL(cfg.MySQL); err != nil {
+		return fmt.Errorf("failed to init MySQL: %w", err)
+	}
+	log.Println("MySQL initialized")
+
+	if err := database.InitRedis(cfg.Redis); err != nil {
+		return fmt.Errorf("failed to init Redis: %w", err)
+	}
+	log.Println("Redis initialized")
+
+	// 4. 创建 Gin 引擎
+	gin.SetMode(mode)
+	r := gin.Default()
+
+	// 5. 注册路由
+	setupRoutes(r)
+
+	// 6. 获取服务器配置
+	host, _ := startCmd.Flags().GetString("host")
+	port, _ := startCmd.Flags().GetInt("port")
+	addr := fmt.Sprintf("%s:%d", host, port)
+
+	// 7. 优雅关闭
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	// 8. 在 goroutine 中启动服务器
+	go func() {
+		log.Printf("Server starting on http://%s", addr)
+		if err := r.Run(addr); err != nil {
+			log.Printf("Server error: %v", err)
+			stop()
+		}
+	}()
+
+	// 9. 等待关闭信号
+	<-ctx.Done()
+
+	// 10. 清理资源
+	log.Println("Shutting down...")
+	database.CloseMySQL()
+	database.CloseRedis()
+	logger.Logger.Sync()
+
+	return nil
+}
+
+// setupRoutes registers all HTTP routes
+func setupRoutes(r *gin.Engine) {
+	// Health check
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
+
+	// API v1
+	v1 := r.Group("/api/v1")
+	{
+		// 示例：订单相关路由
+		// orders := v1.Group("/orders")
+		// {
+		//     handler := handler.NewOrderHandler()
+		//     orders.POST("", handler.CreateOrder)
+		//     orders.GET("/:id", handler.GetOrder)
+		//     orders.GET("", handler.ListOrders)
+		// }
+	}
+}

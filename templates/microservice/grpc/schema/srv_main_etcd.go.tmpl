@@ -1,0 +1,68 @@
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"log"
+	"net"
+	"time"
+
+	"{{.AppName}}/pkg/config"
+	"{{.AppName}}/pkg/database"
+	"{{.AppName}}/{{.SrvDirName}}/internal/handler"
+	{{.Module}} "{{.AppName}}/common/kitexGen/{{.Module}}"
+
+	clientv3 "go.etcd.io/etcd/client/v3"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
+)
+
+var confPath string
+
+func init() {
+	flag.StringVar(&confPath, "config", "configs/config.yaml", "config file")
+}
+
+func main() {
+	flag.Parse()
+	// 先从本地文件加载，获取 Nacos 配置信息
+	cfg, _ := config.Load(confPath)
+	// 优先从 Nacos 加载，失败则使用本地配置
+	if nacosCfg, err := config.LoadWithFallback(confPath, &cfg.Nacos); err == nil {
+		cfg = nacosCfg
+	}
+	db, _ := database.NewDB(&cfg.Database)
+	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
+	lis, _ := net.Listen("tcp", addr)
+	s := grpc.NewServer()
+	{{.Module}}.Register{{.UpperModule}}ServiceServer(s, handler.New{{.UpperModule}}Handler(db))
+	reflection.Register(s)
+
+	// Etcd 服务注册
+	etcdClient, err := clientv3.New(clientv3.Config{
+		Endpoints:   []string{cfg.Registry.Address},
+		DialTimeout: 5 * time.Second,
+	})
+	if err != nil {
+		log.Printf("Warning: Failed to connect to Etcd: %v", err)
+	} else {
+		ctx := context.Background()
+		key := "/services/{{.Module}}/" + addr
+		lease, _ := etcdClient.Grant(ctx, 10)
+		etcdClient.Put(ctx, key, addr, clientv3.WithLease(lease.ID))
+		keepAliveCh, err := etcdClient.KeepAlive(ctx, lease.ID)
+		if err != nil {
+			log.Printf("Warning: Failed to keepalive with Etcd: %v", err)
+		} else {
+			go func() {
+				for range keepAliveCh {
+				}
+			}()
+			log.Printf("Registered with Etcd: %s", key)
+		}
+	}
+
+	log.Printf("Starting on %s", addr)
+	s.Serve(lis)
+}

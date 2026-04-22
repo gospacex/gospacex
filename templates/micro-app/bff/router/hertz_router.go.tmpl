@@ -1,0 +1,15 @@
+package router
+
+import (
+	"{{.AppName}}/{{.BffDirName}}/internal/handler"
+
+	"github.com/cloudwego/hertz/pkg/app/server"
+)
+
+func Register(h *server.Hertz) {
+{{range .Modules}}	v1 := h.Group("/api/v1")
+	{{.UpperName}}Handler := handler.New{{.UpperName}}Handler()
+	v1.GET("/{{.Name}}s", {{.UpperName}}Handler.List)
+	v1.GET("/{{.Name}}s/:id", {{.UpperName}}Handler.Get)
+	v1.POST("/{{.Name}}s", {{.UpperName}}Handler.Create)
+{{end}}}

@@ -1,0 +1,43 @@
+package commands
+
+import (
+	"context"
+	"fmt"
+
+	"{{.ProjectName}}/internal/handler"
+	"{{.ProjectName}}/pkg/database"
+	"{{.ProjectName}}/pkg/logger"
+	"github.com/spf13/cobra"
+)
+
+// {{.EntityNameLower}}Cmd represents the {{.EntityNameLower}} command
+var {{.EntityNameLower}}Cmd = &cobra.Command{
+	Use:   "{{.EntityNameLower}}",
+	Short: "{{.EntityName}} management",
+	Long:  `{{.EntityName}} management commands`,
+}
+
+var {{.EntityNameLower}}ListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List {{.EntityName}}s",
+	Run: func(cmd *cobra.Command, args []string) {
+		ctx := context.Background()
+		handler := handler.New{{.EntityName}}Handler(ctx)
+		
+		page := 1
+		pageSize := 10
+		
+		resp, total, err := handler.List{{.EntityName}}(page, pageSize)
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			return
+		}
+		
+		handler.Print{{.EntityName}}s(resp, total, page, pageSize)
+	},
+}
+
+func init() {
+	rootCmd.AddCommand({{.EntityNameLower}}Cmd)
+	{{.EntityNameLower}}Cmd.AddCommand({{.EntityNameLower}}ListCmd)
+}

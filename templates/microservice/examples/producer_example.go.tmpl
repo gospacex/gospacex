@@ -1,0 +1,41 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"{{.ModulePath}}/internal/producer"
+)
+
+func main() {
+	fmt.Println("=== {{.ProjectName}} Producer Demo ===")
+	
+	cfg := producer.KafkaConfig{
+		Brokers:    []string{"localhost:9092"},
+		Topic:      "{{.ProjectName}}-topic",
+		MaxRetries: 3,
+		RetryDelay: 100 * time.Millisecond,
+	}
+	
+	p, _ := producer.NewKafkaProducer(cfg)
+	defer p.Close()
+	
+	ctx := context.Background()
+	
+	for i := 0; i < 5; i++ {
+		key := fmt.Sprintf("key-%d", i)
+		value := fmt.Sprintf("message-%d", i)
+		
+		if err := p.SendMessage(ctx, key, value); err != nil {
+			fmt.Printf("Send failed: %v\n", err)
+		} else {
+			fmt.Printf("Sent: %s => %s\n", key, value)
+		}
+		
+		time.Sleep(500 * time.Millisecond)
+	}
+	
+	fmt.Println("Press Ctrl+C to exit")
+	select {}
+}

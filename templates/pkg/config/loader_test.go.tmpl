@@ -1,0 +1,94 @@
+package config
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
+
+// MockLoader 用于测试的 mock 加载器
+type MockLoader struct {
+	source Source
+	data   map[string]interface{}
+}
+
+func NewMockLoader(src Source, data map[string]interface{}) *MockLoader {
+	return &MockLoader{source: src, data: data}
+}
+
+func (m *MockLoader) Source() Source {
+	return m.source
+}
+
+func (m *MockLoader) Load() (map[string]interface{}, error) {
+	return m.data, nil
+}
+
+func (m *MockLoader) Watch(key string) <-chan *ConfigChange {
+	ch := make(chan *ConfigChange)
+	close(ch)
+	return ch
+}
+
+func TestManager_AddLoader(t *testing.T) {
+	m := NewManager()
+
+	// 添加加载器顺序混乱，期望会自动排序
+	m.AddLoader(NewMockLoader(SourceLocalFile, map[string]interface{}{"app.name": "local"}))
+	m.AddLoader(NewMockLoader(SourceRemote, map[string]interface{}{"app.name": "remote"}))
+	m.AddLoader(NewMockLoader(SourceEnv, map[string]interface{}{"app.port": "8080"}))
+	m.AddLoader(NewMockLoader(SourceDefault, map[string]interface{}{"app.name": "default", "debug": true}))
+
+	// 检查排序结果
+	assert.Equal(t, PriorityRemote, m.loaders[0].Source().Priority)
+	assert.Equal(t, PriorityEnv, m.loaders[1].Source().Priority)
+	assert.Equal(t, PriorityLocalFile, m.loaders[2].Source().Priority)
+	assert.Equal(t, PriorityDefault, m.loaders[3].Source().Priority)
+}
+
+func TestManager_Load_Merging(t *testing.T) {
+	m := NewManager()
+
+	// 高级别覆盖低级别的 app.name
+	m.AddLoader(NewMockLoader(SourceDefault, map[string]interface{}{
+		"app.name": "default",
+		"app.debug": false,
+	}))
+	m.AddLoader(NewMockLoader(SourceLocalFile, map[string]interface{}{
+		"app.name": "local",
+		"app.port": 8000,
+	}))
+	m.AddLoader(NewMockLoader(SourceEnv, map[string]interface{}{
+		"app.port": 8080,
+	}))
+	m.AddLoader(NewMockLoader(SourceRemote, map[string]interface{}{
+		"app.name": "remote",
+	}))
+
+	cfg, err := m.Load("")
+	assert.NoError(t, err)
+	assert.NotNil(t, cfg)
+
+	// 验证优先级覆盖：远程 > 环境 > 本地 > 默认
+	assert.Equal(t, "remote", m.Get("app.name"))
+	assert.Equal(t, 8080, m.Get("app.port"))
+	assert.Equal(t, false, m.Get("app.debug"))
+}
+
+func TestManager_GetSource(t *testing.T) {
+	m := NewManager()
+
+	m.AddLoader(NewMockLoader(SourceEnv, map[string]interface{}{"app.port": 8080}))
+	m.AddLoader(NewMockLoader(SourceDefault, map[string]interface{}{"app.name": "default"}))
+
+	_, err := m.Load("")
+	assert.NoError(t, err)
+
+	srcPort := m.GetSource("app.port")
+	assert.NotNil(t, srcPort)
+	assert.Equal(t, SourceEnv.Name, srcPort.Name)
+
+	srcName := m.GetSource("app.name")
+	assert.NotNil(t, srcName)
+	assert.Equal(t, SourceDefault.Name, srcName.Name)
+}

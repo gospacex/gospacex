@@ -1,0 +1,124 @@
+package search
+
+import (
+	"encoding/json"
+)
+
+// Query Elasticsearch 查询结构
+type Query struct {
+	From    int           `json:"from"`
+	Size    int           `json:"size"`
+	Query   QueryBody     `json:"query"`
+	Sort    []SortField   `json:"sort,omitempty"`
+	Source []string      `json:"_source,omitempty"`
+	Aggs    map[string]json.RawMessage `json:"aggs,omitempty"`
+	Highlight Highlight  `json:"highlight,omitempty"`
+}
+
+// QueryBody 查询体
+type QueryBody map[string]interface{}
+
+// MatchAllQuery 返回所有文档
+func MatchAllQuery() QueryBody {
+	return QueryBody{"match_all": map[string]interface{}{}}
+}
+
+// TermQuery 精确匹配查询
+func TermQuery(field, value string) QueryBody {
+	return QueryBody{"term": map[string]interface{}{field: value}}
+}
+
+// TermsQuery 多值精确匹配
+func TermsQuery(field string, values []interface{}) QueryBody {
+	return QueryBody{"terms": map[string]interface{}{field: values}}
+}
+
+// RangeQuery 范围查询
+func RangeQuery(field string, ops map[string]interface{}) QueryBody {
+	return QueryBody{"range": map[string]interface{}{field: ops}}
+}
+
+// BoolQuery 布尔查询
+func BoolQuery(must, mustNot, should, filter []interface{}) QueryBody {
+	boolQuery := make(map[string]interface{})
+	if len(must) > 0 {
+		boolQuery["must"] = must
+	}
+	if len(mustNot) > 0 {
+		boolQuery["must_not"] = mustNot
+	}
+	if len(should) > 0 {
+		boolQuery["should"] = should
+	}
+	if len(filter) > 0 {
+		boolQuery["filter"] = filter
+	}
+	return QueryBody{"bool": boolQuery}
+}
+
+// MatchQuery 全文匹配查询
+func MatchQuery(field, value string) QueryBody {
+	return QueryBody{"match": map[string]interface{}{field: value}}
+}
+
+// MultiMatchQuery 多字段匹配
+func MultiMatchQuery(query string, fields []string) QueryBody {
+	return QueryBody{"multi_match": map[string]interface{}{
+		"query":  query,
+		"fields": fields,
+	}}
+}
+
+// WildcardQuery 通配符查询
+func WildcardQuery(field, value string) QueryBody {
+	return QueryBody{"wildcard": map[string]interface{}{field: value}}
+}
+
+// PrefixQuery 前缀查询
+func PrefixQuery(field, value string) QueryBody {
+	return QueryBody{"prefix": map[string]interface{}{field: value}}
+}
+
+// RegexpQuery 正则查询
+func RegexpQuery(field, value string) QueryBody {
+	return QueryBody{"regexp": map[string]interface{}{field: value}}
+}
+
+// FuzzyQuery 模糊查询
+func FuzzyQuery(field string, value interface{}) QueryBody {
+	return QueryBody{"fuzzy": map[string]interface{}{field: value}}
+}
+
+// ScriptQuery 脚本查询
+func ScriptQuery(script string) QueryBody {
+	return QueryBody{"script": map[string]interface{}{"script": map[string]interface{}{"source": script}}
+}
+
+// SortField 排序字段
+type SortField map[string]interface{}
+
+// Asc 升序
+func Asc(field string) SortField {
+	return SortField{field: map[string]interface{}{"order": "asc"}}
+}
+
+// Desc 降序
+func Desc(field string) SortField {
+	return SortField{field: map[string]interface{}{"order": "desc"}}
+}
+
+// Highlight 高亮
+type Highlight struct {
+	Fields    map[string]interface{} `json:"fields"`
+	PreTags  []string             `json:"pre_tags,omitempty"`
+	PostTags []string             `json:"post_tags,omitempty"`
+}
+
+// NewHighlight 创建高亮
+func NewHighlight(fields map[string]interface{}) Highlight {
+	return Highlight{
+		Fields:   fields,
+		PreTags:  []string{"<em>"},
+		PostTags: []string{"</em>"},
+	}
+}

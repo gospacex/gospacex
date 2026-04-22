@@ -1,0 +1,65 @@
+package mq
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/streadway/amqp"
+	"{{.ProjectName}}/internal/model"
+)
+
+// RabbitmqDelay 延迟消息支持
+type RabbitmqDelay struct {
+	channel   *amqp.Channel
+	exchange string
+	delay    time.Duration
+}
+
+// NewRabbitmqDelay 创建延迟消息生产者
+func NewRabbitmqDelay(channel *amqp.Channel, exchange string, delay time.Duration) *RabbitmqDelay {
+	return &RabbitmqDelay{
+		channel:   channel,
+		exchange: exchange,
+		delay:    delay,
+	}
+}
+
+// Publish 发布延迟消息
+func (d *RabbitmqDelay) Publish(ctx context.Context, article *model.EbArticle) error {
+	data, err := json.Marshal(article)
+	if err != nil {
+		return fmt.Errorf("marshal article: %w", err)
+	}
+
+	msg := amqp.Publishing{
+		ContentType: "application/json",
+		Body:        data,
+		// RabbitMQ 延迟消息通过设置 expiration 实现
+		Expiration: fmt.Sprintf("%d", int(d.delay.Milliseconds())),
+	}
+
+	return d.channel.Publish(
+		d.exchange,
+		"",
+		false,
+		false,
+		msg,
+	)
+}
+
+// IsHealthy 检查健康
+func (d *RabbitmqDelay) IsHealthy() error {
+	if d.channel == nil {
+		return fmt.Errorf("channel not initialized")
+	}
+	return nil
+}
+
+// Close 关闭
+func (d *RabbitmqDelay) Close() error {
+	if d.channel != nil {
+		return d.channel.Close()
+	}
+	return nil
+}

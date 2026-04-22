@@ -1,0 +1,68 @@
+package dtm
+
+import (
+	"testing"
+)
+
+func TestDefaultConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	
+	if cfg.Server != "http://localhost:36789" {
+		t.Errorf("Server = %v, want http://localhost:36789", cfg.Server)
+	}
+	
+	if cfg.Mode != "saga" {
+		t.Errorf("Mode = %v, want saga", cfg.Mode)
+	}
+	
+	if cfg.RetryLimit != 3 {
+		t.Errorf("RetryLimit = %v, want 3", cfg.RetryLimit)
+	}
+	
+	if cfg.Timeout != 60 {
+		t.Errorf("Timeout = %v, want 60", cfg.Timeout)
+	}
+}
+
+func TestConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     *Config
+		wantErr bool
+	}{
+		{
+			name:    "valid config",
+			cfg:     DefaultConfig(),
+			wantErr: false,
+		},
+		{
+			name:    "empty server",
+			cfg:     &Config{Server: "", Mode: "saga"},
+			wantErr: true,
+		},
+		{
+			name:    "invalid mode",
+			cfg:     &Config{Server: "http://localhost:36789", Mode: "invalid"},
+			wantErr: true,
+		},
+		{
+			name:    "zero retry limit",
+			cfg:     &Config{Server: "http://localhost:36789", Mode: "saga", RetryLimit: 0},
+			wantErr: true,
+		},
+		{
+			name:    "zero timeout",
+			cfg:     &Config{Server: "http://localhost:36789", Mode: "saga", Timeout: 0},
+			wantErr: true,
+		},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cfg.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}

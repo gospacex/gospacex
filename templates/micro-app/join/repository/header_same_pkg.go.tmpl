@@ -1,0 +1,25 @@
+package repository
+
+import (
+	"context"
+	"fmt"
+
+	"{{.LeftImport}}"
+
+	"gorm.io/gorm"
+)
+
+// Join{{.LeftUpper}}{{.RightUpper}}Result 联表查询结果
+type Join{{.LeftUpper}}{{.RightUpper}}Result struct {
+	{{.LeftUpper}} model.{{.LeftUpper}}
+	{{.RightUpper}} model.{{.RightUpper}}
+}
+
+// Join{{.LeftUpper}}{{.RightUpper}}Repo 联表查询 Repository
+type Join{{.LeftUpper}}{{.RightUpper}}Repo struct {
+	db *gorm.DB
+}
+
+func NewJoin{{.LeftUpper}}{{.RightUpper}}Repo(db *gorm.DB) *Join{{.LeftUpper}}{{.RightUpper}}Repo {
+	return &Join{{.LeftUpper}}{{.RightUpper}}Repo{db: db}
+}

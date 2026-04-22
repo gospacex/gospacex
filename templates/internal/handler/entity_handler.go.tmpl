@@ -1,0 +1,70 @@
+package handler
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strconv"
+
+	"{{.ProjectName}}/internal/service"
+	"{{.ProjectName}}/pkg/database"
+	"{{.ProjectName}}/pkg/logger"
+)
+
+type {{.EntityName}}Handler struct {
+	service *service.{{.EntityName}}Service
+}
+
+func New{{.EntityName}}Handler(ctx context.Context) *{{.EntityName}}Handler {
+	return &{{.EntityName}}Handler{
+		service: service.New{{.EntityName}}Service(ctx, database.DB),
+	}
+}
+
+type Create{{.EntityName}}Request struct {
+{{- range .Fields }}
+	{{.Name}} {{.Type}} ` + "`" + `json:"{{.JsonName}}"` + "`" + `
+{{- end }}
+}
+
+func (h *{{.EntityName}}Handler) Create{{.EntityName}}(req *Create{{.EntityName}}Request) (*service.{{.EntityName}}Resp, error) {
+	{{.EntityNameLower}} := &service.{{.EntityName}}Resp{
+{{- range .Fields }}
+		{{.Name}}: req.{{.Name}},
+{{- end }}
+	}
+
+	resp, err := h.service.Create({{.EntityNameLower}})
+	if err != nil {
+		logger.Error("Failed to create {{.EntityNameLower}}: %v", err)
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+func (h *{{.EntityName}}Handler) Get{{.EntityName}}(idStr string) (*service.{{.EntityName}}Resp, error) {
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		logger.Error("Invalid {{.EntityNameLower}} id: %v", err)
+		return nil, err
+	}
+
+	resp, err := h.service.GetByID(id)
+	if err != nil {
+		logger.Error("Failed to get {{.EntityNameLower}}: %v", err)
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+func (h *{{.EntityName}}Handler) List{{.EntityName}}(page, pageSize int) ([]*service.{{.EntityName}}Resp, int64, error) {
+	resp, total, err := h.service.List(page, pageSize)
+	if err != nil {
+		logger.Error("Failed to list {{.EntityNameLower}}s: %v", err)
+		return nil, 0, err
+	}
+
+	return resp, total, nil
+}

@@ -1,0 +1,50 @@
+package repository
+
+import (
+	"context"
+	"{{.AppName}}/pkg/database"
+	"{{.AppName}}/{{.SrvDirName}}/internal/model"
+	"gorm.io/gorm"
+)
+
+type {{.UpperModule}}Repo struct { db *gorm.DB }
+
+func New{{.UpperModule}}Repo(db *gorm.DB) *{{.UpperModule}}Repo {
+	if db == nil {
+		db, _ = database.NewDB(nil)
+	}
+	return &{{.UpperModule}}Repo{db: db}
+}
+
+func (r *{{.UpperModule}}Repo) Create(ctx context.Context, m *model.{{.UpperModule}}) error {
+	return r.db.WithContext(ctx).Create(m).Error
+}
+func (r *{{.UpperModule}}Repo) GetByID(ctx context.Context, id uint) (*model.{{.UpperModule}}, error) {
+	var m model.{{.UpperModule}}
+{{- if .HasSoftDelete}}
+	if err := r.db.WithContext(ctx).Where("id = ? AND {{.SoftDeleteCol}} = 0", id).First(&m).Error; err != nil {
+{{- else}}
+	if err := r.db.WithContext(ctx).First(&m, id).Error; err != nil {
+{{- end}}
+		return nil, err
+	}
+	return &m, nil
+}
+func (r *{{.UpperModule}}Repo) List(ctx context.Context) ([]*model.{{.UpperModule}}, error) {
+	var list []*model.{{.UpperModule}}
+{{- if .HasSoftDelete}}
+	return list, r.db.WithContext(ctx).Where("{{.SoftDeleteCol}} = 0").Find(&list).Error
+{{- else}}
+	return list, r.db.WithContext(ctx).Find(&list).Error
+{{- end}}
+}
+func (r *{{.UpperModule}}Repo) Update(ctx context.Context, m *model.{{.UpperModule}}) error {
+	return r.db.WithContext(ctx).Save(m).Error
+}
+func (r *{{.UpperModule}}Repo) Delete(ctx context.Context, id uint) error {
+{{- if .HasSoftDelete}}
+	return r.db.WithContext(ctx).Model(&model.{{.UpperModule}}{}).Where("id = ?", id).Update("{{.SoftDeleteCol}}", 1).Error
+{{- else}}
+	return r.db.WithContext(ctx).Delete(&model.{{.UpperModule}}{}, id).Error
+{{- end}}
+}

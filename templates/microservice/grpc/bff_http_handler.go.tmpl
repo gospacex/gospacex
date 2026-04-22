@@ -1,0 +1,158 @@
+// +build !gen
+
+package main
+
+import (
+	"context"
+	"net/http"
+	"strconv"
+
+	"github.com/gin-gonic/gin"
+
+	pb "{{.ProtoImportPath}}"
+)
+
+// {{.ServiceName}}Handler {{.ServiceComment}} HTTP处理器
+type {{.ServiceName}}Handler struct {
+	client *GRPCClient
+}
+
+// New{{.ServiceName}}Handler 创建{{.ServiceComment}}处理器
+func New{{.ServiceName}}Handler(client *GRPCClient) *{{.ServiceName}}Handler {
+	return &{{.ServiceName}}Handler{client: client}
+}
+
+// RegisterRoutes 注册路由
+func (h *{{.ServiceName}}Handler) RegisterRoutes(r *gin.RouterGroup) {
+	{{.LowerServiceName}} := r.Group("/{{.LowerServiceName}}")
+	{
+		{{.LowerServiceName}}.POST("", h.Create)
+		{{.LowerServiceName}}.PUT("/:id", h.Update)
+		{{.LowerServiceName}}.DELETE("/:id", h.Delete)
+		{{.LowerServiceName}}.GET("/:id", h.GetByID)
+		{{.LowerServiceName}}.GET("", h.List)
+		{{.LowerServiceName}}.GET("/page", h.Page)
+	}
+}
+
+// Create 创建记录
+// POST /api/v1/{{.LowerServiceName}}
+func (h *{{.ServiceName}}Handler) Create(c *gin.Context) {
+	var req pb.{{.ServiceName}}Request
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+		return
+	}
+
+	req.RequestId = c.GetString("request_id")
+	resp, err := h.client.Create(context.Background(), &req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// Update 更新记录
+// PUT /api/v1/{{.LowerServiceName}}/:id
+func (h *{{.ServiceName}}Handler) Update(c *gin.Context) {
+	id := c.Param("id")
+
+	var req pb.{{.ServiceName}}Request
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+		return
+	}
+
+	req.RequestId = c.GetString("request_id")
+	// req.{{.PrimaryKey}} = id  // 设置主键
+
+	resp, err := h.client.Update(context.Background(), &req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// Delete 删除记录
+// DELETE /api/v1/{{.LowerServiceName}}/:id
+func (h *{{.ServiceName}}Handler) Delete(c *gin.Context) {
+	id := c.Param("id")
+
+	req := pb.{{.ServiceName}}Request{
+		RequestId: c.GetString("request_id"),
+		// {{.PrimaryKeyCamel}}: id,
+	}
+
+	resp, err := h.client.Delete(context.Background(), &req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// GetByID 根据ID获取记录
+// GET /api/v1/{{.LowerServiceName}}/:id
+func (h *{{.ServiceName}}Handler) GetByID(c *gin.Context) {
+	id := c.Param("id")
+
+	req := pb.{{.ServiceName}}Request{
+		RequestId: c.GetString("request_id"),
+		// {{.PrimaryKeyCamel}}: id,
+	}
+
+	resp, err := h.client.GetByID(context.Background(), &req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// List 获取列表
+// GET /api/v1/{{.LowerServiceName}}
+func (h *{{.ServiceName}}Handler) List(c *gin.Context) {
+	req := pb.{{.ServiceName}}Request{
+		RequestId: c.GetString("request_id"),
+	}
+
+	// 解析查询参数
+	if ids := c.Query("ids"); ids != "" {
+		// req.Ids = strings.Split(ids, ",")
+	}
+
+	resp, err := h.client.List(context.Background(), &req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// Page 分页获取
+// GET /api/v1/{{.LowerServiceName}}/page?page=1&page_size=10
+func (h *{{.ServiceName}}Handler) Page(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
+
+	req := pb.{{.ServiceName}}Request{
+		RequestId: c.GetString("request_id"),
+		// Page: int32(page),
+		// PageSize: int32(pageSize),
+	}
+
+	resp, err := h.client.Page(context.Background(), &req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}

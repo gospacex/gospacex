@@ -1,0 +1,185 @@
+package middleware
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/jaeger"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"google.golang.org/grpc"
+)
+
+// JaegerConfig Jaeger 配置
+// 
+// YAML 配置示例:
+// ```yaml
+// middleware:
+//   tracing:
+//     jaeger:
+//       enabled: true
+//       endpoint: "http://localhost:14268/api/traces"
+//       service_name: "my-service"
+//       sampling_rate: 1.0
+// ```
+type JaegerConfig struct {
+	Enabled     bool    `yaml:"enabled" json:"enabled"`
+	Endpoint    string  `yaml:"endpoint" json:"endpoint"`
+	ServiceName string  `yaml:"service_name" json:"service_name"`
+	SamplingRate float64 `yaml:"sampling_rate" json:"sampling_rate"` // 采样率 (0.0-1.0, 默认 1.0)
+}
+
+// defaultJaegerConfig 返回默认配置
+func defaultJaegerConfig() JaegerConfig {
+	return JaegerConfig{
+		Enabled:      true,
+		SamplingRate: 1.0,
+	}
+}
+
+// InitJaeger 初始化 Jaeger 追踪
+func InitJaeger(cfg JaegerConfig) (*sdktrace.TracerProvider, error) {
+	if !cfg.Enabled {
+		return nil, nil
+	}
+
+	// 应用默认值
+	if cfg.SamplingRate <= 0 {
+		cfg.SamplingRate = 1.0
+	}
+	if cfg.SamplingRate > 1.0 {
+		cfg.SamplingRate = 1.0
+	}
+
+	// 创建 Jaeger exporter
+	exporter, err := jaeger.New(jaeger.WithCollectorEndpoint(
+		jaeger.WithEndpoint(cfg.Endpoint),
+	))
+	if err != nil {
+		return nil, fmt.Errorf("create jaeger exporter failed: %w", err)
+	}
+
+	// 创建 TracerProvider
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(cfg.SamplingRate))),
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceNameKey.String(cfg.ServiceName),
+		)),
+	)
+
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+
+	return tp, nil
+}
+
+// GetTracer 获取 Tracer
+func GetTracer(name string) trace.Tracer {
+	return otel.Tracer(name)
+}
+
+// NewHTTPMiddleware 创建 HTTP 中间件，自动追踪所有 HTTP 请求
+// 用法：handler = otelhttp.NewHandler(handler, "operation-name")
+// 或使用此函数：wrappedHandler = NewHTTPMiddleware(tracer)(handler)
+func NewHTTPMiddleware(tracer trace.Tracer) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return otelhttp.NewHandler(next, "http.handler",
+			otelhttp.WithTracer(tracer),
+			otelhttp.WithSpanNameFormatter(func(operation string, r *http.Request) string {
+				return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
+			}),
+			otelhttp.WithAttributeFormatter(func(attribute key, value interface{}) attribute.KeyValue {
+				return attribute.String(string(attribute.Key), fmt.Sprintf("%v", value))
+			}),
+		).ServeHTTP
+	}
+}
+
+// NewGRPCInterceptor 创建 gRPC 拦截器，自动追踪所有 gRPC 调用
+// 用法：grpcServer := grpc.NewServer(grpc.UnaryInterceptor(NewGRPCInterceptor(tracer)))
+func NewGRPCInterceptor(tracer trace.Tracer) grpc.UnaryServerInterceptor {
+	return otelgrpc.UnaryServerInterceptor(
+		otelgrpc.WithTracerProvider(tracer.TracerProvider()),
+		otelgrpc.WithMessageEvents(otelgrpc.ReceivedEvents, otelgrpc.SentEvents),
+	)
+}
+
+// SpanFromContext 从上下文中提取当前 span
+func SpanFromContext(ctx context.Context) trace.Span {
+	return trace.SpanFromContext(ctx)
+}
+
+// StartSpan 启动新的 span
+// 返回更新后的上下文和 span
+func StartSpan(ctx context.Context, tracer trace.Tracer, spanName string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
+	return tracer.Start(ctx, spanName, opts...)
+}
+
+// RecordEvent 在 span 中记录事件
+func RecordEvent(span trace.Span, eventName string, attrs ...attribute.KeyValue) {
+	if span != nil && span.IsRecording() {
+		span.AddEvent(eventName, trace.WithAttributes(attrs...))
+	}
+}
+
+// RecordError 在 span 中记录错误
+func RecordError(span trace.Span, err error) {
+	if span != nil && span.IsRecording() && err != nil {
+		span.RecordError(err)
+	}
+}
+
+// SetSpanAttributes 设置 span 属性
+func SetSpanAttributes(span trace.Span, attrs ...attribute.KeyValue) {
+	if span != nil && span.IsRecording() {
+		span.SetAttributes(attrs...)
+	}
+}
+
+// TraceHTTPClient 追踪 HTTP 客户端请求
+func TraceHTTPClient(ctx context.Context, client *http.Client, req *http.Request, tracer trace.Tracer) (*http.Response, error) {
+	ctx, span := tracer.Start(ctx, fmt.Sprintf("HTTP %s %s", req.Method, req.URL.String()))
+	defer span.End()
+
+	// 设置 span 属性
+	span.SetAttributes(
+		semconv.HTTPMethodKey.String(req.Method),
+		semconv.HTTPURLKey.String(req.URL.String()),
+	)
+
+	// 添加追踪头
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+
+	startTime := time.Now()
+	resp, err := client.Do(req)
+	duration := time.Since(startTime)
+
+	if err != nil {
+		RecordError(span, err)
+		span.SetAttributes(semconv.HTTPStatusCodeKey.Int(0))
+	} else {
+		span.SetAttributes(semconv.HTTPStatusCodeKey.Int(resp.StatusCode))
+	}
+
+	// 记录响应时间
+	RecordEvent(span, "http.response",
+		attribute.Int("status_code", resp.StatusCode),
+		attribute.Int64("duration_ms", duration.Milliseconds()),
+	)
+
+	return resp, err
+}

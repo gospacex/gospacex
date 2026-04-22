@@ -1,0 +1,118 @@
+package rpc
+
+import (
+	"testing"
+	"time"
+
+	"github.com/cloudwego/kitex/pkg/circuitbreaker"
+	"github.com/stretchr/testify/assert"
+)
+
+func TestDefaultCircuitBreaker_ClosedState(t *testing.T) {
+	cb := NewDefaultCircuitBreaker()
+	cb.WithFailureThreshold(0.5) // 50%
+
+	// 初始状态关闭
+	assert.Equal(t, circuitbreaker.Closed, cb.State())
+
+	// 全部成功，保持关闭
+	for i := 0; i < 50; i++ {
+		cb.OnSuccess(nil, nil)
+	}
+	assert.Equal(t, circuitbreaker.Closed, cb.State())
+}
+
+func TestDefaultCircuitBreaker_OpenWhenFailureExceedThreshold(t *testing.T) {
+	cb := NewDefaultCircuitBreaker()
+	cb.WithFailureThreshold(0.5)
+	cb.WithResetTimeout(1 * time.Second)
+
+	// 窗口大小是 100，60次失败应该触发
+	for i := 0; i < 60; i++ {
+		cb.OnFailure(nil, nil)
+	}
+	// 40次成功
+	for i := 0; i < 40; i++ {
+		cb.OnSuccess(nil, nil)
+	}
+
+	// 失败率 60% > 50%，应该打开
+	assert.Equal(t, circuitbreaker.Open, cb.State())
+
+	// 打开状态下检查应该拒绝请求
+	err := cb.Check()
+	assert.Error(t, err)
+	assert.Equal(t, "circuit breaker is open", err.Error())
+}
+
+func TestDefaultCircuitBreaker_HalfOpenAfterTimeout(t *testing.T) {
+	cb := NewDefaultCircuitBreaker()
+	cb.WithFailureThreshold(0.5)
+	cb.WithResetTimeout(100 * time.Millisecond)
+
+	// 触发打开
+	for i := 0; i < 60; i++ {
+		cb.OnFailure(nil, nil)
+	}
+	assert.Equal(t, circuitbreaker.Open, cb.State())
+
+	// 等待超时
+	time.Sleep(150 * time.Millisecond)
+
+	// 检查应该允许一次请求（半开）
+	err := cb.Check()
+	assert.NoError(t, err)
+	// 状态变为半开？当前实现在 Check 时转换
+	// 实际验证：此时允许请求，下次失败会重新打开
+}
+
+func TestDefaultCircuitBreaker_CloseAfterSuccessInHalfOpen(t *testing.T) {
+	cb := NewDefaultCircuitBreaker()
+	cb.WithFailureThreshold(0.5)
+	cb.WithResetTimeout(10 * time.Millisecond)
+
+	// 触发打开
+	for i := 0; i < 100; i++ {
+		cb.OnFailure(nil, nil)
+	}
+	assert.Equal(t, circuitbreaker.Open, cb.State())
+
+	// 等待超时
+	time.Sleep(20 * time.Millisecond)
+
+	// 允许请求，成功后应该关闭
+	err := cb.Check()
+	assert.NoError(t, err)
+	cb.OnSuccess(nil, nil)
+
+	// 验证状态变为关闭
+	// 这里因为成功在半开状态会直接关闭
+	// 重新检查应该允许所有请求
+	err = cb.Check()
+	assert.NoError(t, err)
+}
+
+func TestDefaultCircuitBreaker_ReopenAfterFailureInHalfOpen(t *testing.T) {
+	cb := NewDefaultCircuitBreaker()
+	cb.WithFailureThreshold(0.5)
+	cb.WithResetTimeout(10 * time.Millisecond)
+
+	// 触发打开
+	for i := 0; i < 100; i++ {
+		cb.OnFailure(nil, nil)
+	}
+	assert.Equal(t, circuitbreaker.Open, cb.State())
+
+	// 等待超时
+	time.Sleep(20 * time.Millisecond)
+
+	// 允许请求，失败后重新打开
+	err := cb.Check()
+	assert.NoError(t, err)
+	cb.OnFailure(nil, nil)
+
+	// 验证状态重新打开
+	assert.Equal(t, circuitbreaker.Open, cb.State())
+	err = cb.Check()
+	assert.Error(t, err)
+}

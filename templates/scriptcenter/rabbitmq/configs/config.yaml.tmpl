@@ -1,0 +1,25 @@
+# {{.ProjectName}} - Script Center with RabbitMQ Configuration
+
+app:
+  name: {{.ProjectName}}
+  environment: development
+
+# 数据库配置
+database:
+  types: [{{range .DB}}{{.}}, {{end}}]
+{{- if .MySQL}}
+  mysql:
+    host: {{.MySQLHost}}
+    port: {{.MySQLPort}}
+    user: {{.MySQLUser}}
+    password: {{.MySQLPassword}}
+    database: {{.MySQLDatabase}}
+{{end}}
+
+# RabbitMQ 配置
+rabbitmq:
+  enabled: true
+  url: amqp://guest:guest@localhost:5672/
+  exchange: article-events
+  queue: article-queue
+  enable_delay: false

@@ -1,0 +1,29 @@
+package commands
+
+import (
+	"github.com/spf13/cobra"
+)
+
+var (
+	cfgFile string
+	rootCmd = &cobra.Command{
+		Use:   "{{.ProjectName}}",
+		Short: "脚本中心 - 基于 Cobra CLI 的 RabbitMQ 消费者/生产者任务",
+		Long: `脚本中心是一个基于 Cobra CLI 的任务调度平台。
+本项目集成 RabbitMQ 消息队列，支持交换机和队列配置。`,
+	}
+)
+
+// Execute executes the root command
+func Execute() error {
+	return rootCmd.Execute()
+}
+
+func init() {
+	cobra.OnInitialize(initConfig)
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "配置文件路径 (默认：configs/config.yaml)")
+}
+
+func initConfig() {
+	_ = cfgFile
+}

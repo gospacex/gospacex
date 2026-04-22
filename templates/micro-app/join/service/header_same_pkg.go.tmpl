@@ -1,0 +1,18 @@
+package service
+
+import (
+	"context"
+
+	"{{.LeftImport}}"
+
+	"{{.LeftRepoImport}}"
+)
+
+// Join{{.LeftUpper}}{{.RightUpper}}Service 联表查询 Service
+type Join{{.LeftUpper}}{{.RightUpper}}Service struct {
+	joinRepo *repository.Join{{.LeftUpper}}{{.RightUpper}}Repo
+}
+
+func NewJoin{{.LeftUpper}}{{.RightUpper}}Service(joinRepo *repository.Join{{.LeftUpper}}{{.RightUpper}}Repo) *Join{{.LeftUpper}}{{.RightUpper}}Service {
+	return &Join{{.LeftUpper}}{{.RightUpper}}Service{joinRepo: joinRepo}
+}

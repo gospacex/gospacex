@@ -1,0 +1,62 @@
+package handler
+
+import (
+	"context"
+
+	"{{.GoModuleName}}/pkg/rpc"
+
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
+)
+
+// BFFHandler BFF 聚合处理器
+type BFFHandler struct {
+	// 这里存储各个微服务的 RPC 客户端
+	userClient    rpc.Client
+	orderClient   rpc.Client
+	productClient rpc.Client
+}
+
+// NewBFFHandler 创建 BFF 处理器
+func NewBFFHandler() *BFFHandler {
+	return &BFFHandler{
+		// 从 rpc 包获取已初始化的客户端
+		// TODO: 根据实际依赖注入
+	}
+}
+
+// Register 注册路由
+func (h *BFFHandler) Register(group *app.RouterGroup) {
+	// 示例：聚合用户和订单信息
+	group.GET("/user/:id/orders", h.GetUserWithOrders)
+}
+
+// GetUserWithOrders 聚合用户信息和订单列表
+// 调用用户服务 + 订单服务，聚合结果返回
+func (h *BFFHandler) GetUserWithOrders(c context.Context, ctx *app.RequestContext) {
+	userID := ctx.Param("id")
+
+	// 1. 调用用户服务获取用户信息
+	// user, err := h.userClient.GetUser(c, userID)
+	// if err != nil {
+	// 	ctx.JSON(consts.StatusInternalServerError, map[string]interface{}{
+	// 		"error": err.Error(),
+	// 	})
+	// 	return
+	// }
+
+	// 2. 调用订单服务获取用户订单列表
+	// orders, err := h.orderClient.ListOrdersByUser(c, userID)
+	// if err != nil {
+	// 	ctx.JSON(consts.StatusInternalServerError, map[string]interface{}{
+	// 		"error": err.Error(),
+	// 	})
+	// 	return
+	// }
+
+	// 3. 聚合数据返回给前端
+	ctx.JSON(consts.StatusOK, map[string]interface{}{
+		// "user":   user,
+		// "orders": orders,
+	})
+}

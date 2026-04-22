@@ -1,0 +1,27 @@
+package handler
+
+import (
+	"context"
+	"log"
+
+	"{{.ProjectName}}/internal/mq"
+	"{{.ProjectName}}/internal/model"
+)
+
+// RabbitmqProducerHandler RabbitMQ 消息生产者处理器
+type RabbitmqProducerHandler struct {
+	producer *mq.RabbitmqProducer
+}
+
+// NewRabbitmqProducerHandler 创建处理器
+func NewRabbitmqProducerHandler(producer *mq.RabbitmqProducer) *RabbitmqProducerHandler {
+	return &RabbitmqProducerHandler{
+		producer: producer,
+	}
+}
+
+// Publish 发布文章事件到 RabbitMQ
+func (h *RabbitmqProducerHandler) Publish(ctx context.Context, article *model.EbArticle) error {
+	log.Printf("Publishing article event: %s to RabbitMQ", article.Name)
+	return h.producer.Publish(ctx, article)
+}

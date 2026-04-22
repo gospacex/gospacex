@@ -1,0 +1,276 @@
+package generator
+
+import (
+	"database/sql"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	_ "github.com/go-sql-driver/mysql"
+)
+
+type CRUDGenerator struct {
+	host, port, user, password, database, table, output string
+	fields                                             []Field
+}
+
+type Field struct {
+	Name, Type, GoType string
+}
+
+func NewCRUDGenerator(host, port, user, password, database, table, output string) *CRUDGenerator {
+	return &CRUDGenerator{host: host, port: port, user: user, password: password, database: database, table: table, output: output}
+}
+
+func (g *CRUDGenerator) connectDB() error {
+	db, err := sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true", g.user, g.password, g.host, g.port, g.database))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	return db.Ping()
+}
+
+func (g *CRUDGenerator) defaultFields() {
+	g.fields = []Field{
+		{Name: "id", Type: "bigint", GoType: "int64"},
+		{Name: "order_id", Type: "bigint", GoType: "int64"},
+		{Name: "user_id", Type: "bigint", GoType: "int64"},
+		{Name: "address", Type: "text", GoType: "string"},
+		{Name: "product_id", Type: "bigint", GoType: "int64"},
+		{Name: "stock_num", Type: "int", GoType: "int64"},
+		{Name: "product_snapshot", Type: "longtext", GoType: "string"},
+		{Name: "status", Type: "tinyint", GoType: "bool"},
+	}
+}
+
+func (g *CRUDGenerator) Generate() error {
+	g.defaultFields()
+	if err := g.readTableStructure(); err != nil {
+		fmt.Printf("Warning: cannot connect database (%v), using default fields\n", err)
+	}
+	for _, d := range []string{"internal/model", "internal/service", "internal/handler", "cmd/commands"} {
+		os.MkdirAll(filepath.Join(g.output, d), 0o755)
+	}
+	e, sn := g.entityName(), toSnakeCase(g.entityName())
+	os.WriteFile(filepath.Join(g.output, "internal/model", sn+".go"), []byte(g.genModel(e)), 0o644)
+	os.WriteFile(filepath.Join(g.output, "internal/service", sn+"_service.go"), []byte(g.genService(e)), 0o644)
+	os.WriteFile(filepath.Join(g.output, "internal/handler", sn+"_handler.go"), []byte(g.genHandler(e)), 0o644)
+	os.WriteFile(filepath.Join(g.output, "cmd/commands", sn+".go"), []byte(g.genCommand(e)), 0o644)
+	return nil
+}
+
+func (g *CRUDGenerator) readTableStructure() error {
+	db, _ := sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true", g.user, g.password, g.host, g.port, g.database))
+	if db == nil {
+		return fmt.Errorf("db is nil")
+	}
+	defer db.Close()
+	rows, err := db.Query("SELECT COLUMN_NAME,DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? ORDER BY ORDINAL_POSITION", g.database, g.table)
+	if err != nil || rows == nil {
+		return err
+	}
+	defer rows.Close()
+	g.fields = nil
+	for rows.Next() {
+		var f Field
+		rows.Scan(&f.Name, &f.Type)
+		f.GoType = g.mapType(f.Type)
+		g.fields = append(g.fields, f)
+	}
+	return nil
+}
+
+func (g *CRUDGenerator) mapType(t string) string {
+	switch strings.ToLower(t) {
+	case "bigint", "int", "mediumint", "smallint":
+		return "int64"
+	case "varchar", "text", "char", "longtext", "mediumtext":
+		return "string"
+	case "datetime", "timestamp", "date":
+		return "time.Time"
+	case "decimal", "float", "double":
+		return "float64"
+	case "bit", "tinyint":
+		return "bool"
+	default:
+		return "string"
+	}
+}
+
+func (g *CRUDGenerator) entityName() string {
+	n := strings.TrimPrefix(g.table, "t_")
+	if n == "" {
+		return "Order"
+	}
+	p := strings.Split(n, "_")
+	for i := range p {
+		if len(p[i]) > 0 {
+			p[i] = strings.ToUpper(string(p[i][0])) + p[i][1:]
+		}
+	}
+	return strings.Join(p, "")
+}
+
+func (g *CRUDGenerator) goName(n string) string {
+	n = strings.TrimPrefix(n, "id_")
+	p := strings.Split(n, "_")
+	for i := range p {
+		if len(p[i]) > 0 {
+			p[i] = strings.ToUpper(string(p[i][0])) + p[i][1:]
+		}
+	}
+	r := strings.Join(p, "")
+	if len(r) > 0 {
+		r = strings.ToUpper(string(r[0])) + r[1:]
+	}
+	return r
+}
+
+func (g *CRUDGenerator) isAudit(n string) bool {
+	l := strings.ToLower(n)
+	return l == "created_at" || l == "updated_at" || l == "deleted_at"
+}
+
+func (g *CRUDGenerator) genModel(e string) string {
+	s := "package model\n\nimport (\n\t\"time\"\n\t\"gorm.io/gorm\"\n)\n\n// " + e + " " + g.table + " model\ntype " + e + " struct {\n\tId int64 `gorm:\"column:id;primaryKey;autoIncrement\" json:\"id\"`\n\tCreatedAt time.Time `gorm:\"column:created_at\" json:\"created_at\"`\n\tUpdatedAt time.Time `gorm:\"column:updated_at\" json:\"updated_at\"`\n\tDeletedAt gorm.DeletedAt `gorm:\"column:deleted_at;index\" json:\"deleted_at\"`\n"
+	for _, f := range g.fields {
+		gn := g.goName(f.Name)
+		if g.isAudit(f.Name) || strings.ToLower(f.Name) == "id" {
+			continue
+		}
+		s += fmt.Sprintf("\t%s %s `gorm:\"column:%s;type:%s\" json:\"%s\"`\n", gn, f.GoType, f.Name, strings.ToLower(f.Type), f.Name)
+	}
+	s += "}\n\nfunc (s " + e + ") TableName() string { return \"" + g.table + "\" }\n"
+	return s
+}
+
+func (g *CRUDGenerator) genService(e string) string {
+	s := "package service\n\nimport (\n\t\"context\"\n\n\t\"github.com/gospacex/gpx-scripts/internal/model\"\n\t\"gorm.io/gorm\"\n)\n\ntype " + e + " struct {\n\tId              int64  `json:\"id\"`\n\tCreatedAt       string `json:\"created_at\"`\n\tUpdatedAt       string `json:\"updated_at\"`\n\tDeletedAt       string `json:\"deleted_at\"`\n"
+	for _, f := range g.fields {
+		gn := g.goName(f.Name)
+		if g.isAudit(f.Name) || strings.ToLower(f.Name) == "id" {
+			continue
+		}
+		s += fmt.Sprintf("\t%-15s %s `json:\"%s\"`\n", gn, f.GoType, f.Name)
+	}
+	s += "}\n\ntype " + e + "Service struct {\n\tctx context.Context\n\tdb  *gorm.DB\n}\n\nfunc New" + e + "Service(ctx context.Context, db *gorm.DB) *" + e + "Service {\n\treturn &" + e + "Service{\n\t\tctx: ctx,\n\t\tdb:  db,\n\t}\n}\n\n"
+
+	// Create method
+	s += "// Create " + e + "\nfunc (s *" + e + "Service) Create(req *" + e + ") (resp *" + e + ", err error) {\n\tentity := &model." + e + "{\n"
+	for _, f := range g.fields {
+		gn := g.goName(f.Name)
+		if g.isAudit(f.Name) || strings.ToLower(f.Name) == "id" {
+			continue
+		}
+		s += "\t\t" + gn + ": req." + gn + ",\n"
+	}
+	s += "\t}\n\t\n\terr = s.db.WithContext(s.ctx).Create(entity).Error\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\t\n\treturn &" + e + "{\n\t\tId:              entity.Id,\n\t\tCreatedAt:       entity.CreatedAt.Format(\"2006-01-02 15:04:05\"),\n\t\tUpdatedAt:       entity.UpdatedAt.Format(\"2006-01-02 15:04:05\"),"
+	for _, f := range g.fields {
+		gn := g.goName(f.Name)
+		if g.isAudit(f.Name) || strings.ToLower(f.Name) == "id" {
+			continue
+		}
+		s += "\n\t\t" + gn + ": entity." + gn + ","
+	}
+	s += "\n\t}, nil\n}\n\n"
+
+	// GetByID method
+	s += "// GetByID gets " + e + " by ID\nfunc (s *" + e + "Service) GetByID(id int64) (resp *" + e + ", err error) {\n\tvar entity model." + e + "\n\terr = s.db.WithContext(s.ctx).First(&entity, id).Error\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\t\n\treturn &" + e + "{\n\t\tId:              entity.Id,\n\t\tCreatedAt:       entity.CreatedAt.Format(\"2006-01-02 15:04:05\"),\n\t\tUpdatedAt:       entity.UpdatedAt.Format(\"2006-01-02 15:04:05\"),"
+	for _, f := range g.fields {
+		gn := g.goName(f.Name)
+		if g.isAudit(f.Name) || strings.ToLower(f.Name) == "id" {
+			continue
+		}
+		s += "\n\t\t" + gn + ": entity." + gn + ","
+	}
+	s += "\n\t}, nil\n}\n\n"
+
+	// List method
+	s += "// List " + e + " with pagination\nfunc (s *" + e + "Service) List(page, pageSize int) (resp []*" + e + ", total int64, err error) {\n\tvar entities []model." + e + "\n\terr = s.db.WithContext(s.ctx).Model(&model." + e + "{}).Count(&total).Error\n\tif err != nil {\n\t\treturn nil, 0, err\n\t}\n\t\n\toffset := (page - 1) * pageSize\n\terr = s.db.WithContext(s.ctx).Offset(offset).Limit(pageSize).Find(&entities).Error\n\tif err != nil {\n\t\treturn nil, 0, err\n\t}\n\t\n\tfor _, e := range entities {\n\t\tresp = append(resp, &" + e + "{\n\t\t\tId:              e.Id,\n\t\t\tCreatedAt:       e.CreatedAt.Format(\"2006-01-02 15:04:05\"),\n\t\t\tUpdatedAt:       e.UpdatedAt.Format(\"2006-01-02 15:04:05\"),"
+	for _, f := range g.fields {
+		gn := g.goName(f.Name)
+		if g.isAudit(f.Name) || strings.ToLower(f.Name) == "id" {
+			continue
+		}
+		s += "\n\t\t\t" + gn + ": e." + gn + ","
+	}
+	s += "\n\t\t})\n\t}\n\t\n\treturn resp, total, nil\n}\n\n"
+
+	// Update method
+	s += "// Update " + e + "\nfunc (s *" + e + "Service) Update(req *" + e + ") (err error) {\n\tupdates := map[string]interface{}{\n"
+	for _, f := range g.fields {
+		gn := g.goName(f.Name)
+		if g.isAudit(f.Name) || strings.ToLower(f.Name) == "id" {
+			continue
+		}
+		s += fmt.Sprintf("\t\t\"%s\": req.%s,\n", f.Name, gn)
+	}
+	s += "\t}\n\t\n\terr = s.db.WithContext(s.ctx).Model(&model." + e + "{}).Where(\"id = ?\", req.Id).Updates(updates).Error\n\treturn err\n}\n\n"
+
+	// Delete method
+	s += "// Delete " + e + " by ID\nfunc (s *" + e + "Service) Delete(id int64) (err error) {\n\terr = s.db.WithContext(s.ctx).Delete(&model." + e + "{}, id).Error\n\treturn err\n}\n\n// " + e + " request/response types\ntype " + e + "Response struct {\n\tID int64 `json:\"id\"`\n}\n\ntype " + e + "ListResponse struct {\n\tItems []*" + e + "Response `json:\"items\"`\n\tTotal int64 `json:\"total\"`\n}\n"
+	return s
+}
+
+func (g *CRUDGenerator) genHandler(e string) string {
+	l := strings.ToLower(e)
+	s := "package handler\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"fmt\"\n\t\"strconv\"\n\t\"github.com/gospacex/gpx-scripts/internal/service\"\n\t\"github.com/gospacex/gpx-scripts/pkg/database\"\n\t\"github.com/gospacex/gpx-scripts/pkg/logger\"\n)\n\ntype " + e + "Handler struct{service*service." + e + "Service}\nfunc New" + e + "Handler(ctx context.Context)*" + e + "Handler{return&" + e + "Handler{service:service.New" + e + "Service(ctx,database.DB)}}\n\n"
+	var reqFlds, createAs string
+	for _, f := range g.fields {
+		gn := g.goName(f.Name)
+		if g.isAudit(f.Name) || strings.ToLower(f.Name) == "id" {
+			continue
+		}
+		reqFlds += fmt.Sprintf("\t%s %s`json:\"%s\"`\n", gn, f.GoType, f.Name)
+		createAs += "\t\t" + gn + ":req." + gn + ",\n"
+	}
+	s += "type Create" + e + "Request struct{\n" + reqFlds + "}\n\nfunc(h*" + e + "Handler)Create" + e + "(req*Create" + e + "Request)(*service." + e + ",error){\n\torder:=&service." + e + "{\n" + createAs + "\t}\n\tresp,err:=h.service.Create(order)\n\tif err!=nil{logger.Error(\"Failed to create " + l + ":%v\",err);return nil,err}\n\treturn resp,nil\n}\n\n"
+	s += "func(h*" + e + "Handler)Get" + e + "(idStr string)(*service." + e + ",error){\n\tid,_:=strconv.ParseInt(idStr,10,64)\n\tresp,err:=h.service.GetByID(id)\n\tif err!=nil{logger.Error(\"Failed to get " + l + ":%v\",err);return nil,err}\n\treturn resp,nil\n}\n\n"
+	s += "func(h*" + e + "Handler)List" + e + "s(page,pageSize int)([]*service." + e + ",int64,error){\n\tresp,total,err:=h.service.List(page,pageSize)\n\tif err!=nil{logger.Error(\"Failed to list " + l + "s:%v\",err);return nil,0,err}\n\treturn resp,total,nil\n}\n\n"
+	var updFlds, updAs string
+	for _, f := range g.fields {
+		gn := g.goName(f.Name)
+		if g.isAudit(f.Name) {
+			continue
+		}
+		if strings.ToLower(f.Name) == "id" {
+			updFlds += "\tId int64`json:\"id\"`\n"
+			continue
+		}
+		updFlds += fmt.Sprintf("\t%s %s`json:\"%s\"`\n", gn, f.GoType, f.Name)
+		updAs += "\t\t" + gn + ":req." + gn + ",\n"
+	}
+	s += "type Update" + e + "Request struct{\n" + updFlds + "}\n\nfunc(h*" + e + "Handler)Update" + e + "(idStr string,req*Update" + e + "Request)error{\n\tid,_:=strconv.ParseInt(idStr,10,64)\n\torder:=&service." + e + "{Id:id,\n" + updAs + "\t}\n\terr:=h.service.Update(order)\n\tif err!=nil{logger.Error(\"Failed to update " + l + ":%v\",err);return err}\n\treturn nil\n}\n\n"
+	s += "func(h*" + e + "Handler)Delete" + e + "(idStr string)error{\n\tid,_:=strconv.ParseInt(idStr,10,64)\n\terr:=h.service.Delete(id)\n\tif err!=nil{logger.Error(\"Failed to delete " + l + ":%v\",err);return err}\n\treturn nil\n}\n\n"
+	s += "func(h*" + e + "Handler)Print" + e + "(o*service." + e + ") {d,_:=json.MarshalIndent(o,\"\",\"  \");fmt.Printf(\"%s\\n\",string(d))}\n"
+	s += "func(h*" + e + "Handler)Print" + e + "s(os []*service." + e + ",total,page,pageSize int){d,_:=json.MarshalIndent(os,\"\",\"  \");fmt.Printf(\"%ss (Total:%d,Page:%d,PageSize:%d):\\n%s\\n\",total,page,pageSize,string(d))}\n"
+	return s
+}
+
+func (g *CRUDGenerator) genCommand(e string) string {
+	l := strings.ToLower(e)
+	s := "package commands\n\nimport (\n\t\"context\"\n\t\"fmt\"\n\t\"github.com/gospacex/gpx-scripts/internal/handler\"\n\t\"github.com/gospacex/gpx-scripts/pkg/config\"\n\t\"github.com/gospacex/gpx-scripts/pkg/database\"\n\t\"github.com/gospacex/gpx-scripts/pkg/logger\"\n\t\"github.com/spf13/cobra\"\n)\n\nvar " + l + "Cmd=&cobra.Command{Use:\"" + l + "\",Short:\"" + l + " management\",\nPersistentPreRun:func(cmd*cobra.Command,args[]string){config.Load(\"configs/config.yaml\");logger.Init();database.InitMySQL()}}\n\n"
+	var flagVals string
+	for _, f := range g.fields {
+		gn := g.goName(f.Name)
+		if g.isAudit(f.Name) || strings.ToLower(f.Name) == "id" {
+			continue
+		}
+		if f.GoType == "int64" {
+			flagVals += gn + ":0,"
+		} else if f.GoType == "string" {
+			flagVals += gn + ":\"\","
+		} else if f.GoType == "bool" {
+			flagVals += gn + ":false,"
+		}
+	}
+	s += "var create" + l + "Cmd=&cobra.Command{Use:\"create\",Short:\"Create " + l + "\",\nRunE:func(cmd*cobra.Command,args[]string)error{\n\th:=handler.New" + e + "Handler(context.Background())\n\treq:=&handler.Create" + e + "Request{" + flagVals + "}\n\tresp,err:=h.Create" + e + "(req)\n\tif err!=nil{return err}\n\th.Print" + e + "(resp)\n\treturn nil\n}}\n\n"
+	s += "var get" + l + "Cmd=&cobra.Command{Use:\"get [id]\",Short:\"Get " + l + "\",Args:cobra.ExactArgs(1),\nRunE:func(cmd*cobra.Command,args[]string)error{\n\th:=handler.New" + e + "Handler(context.Background())\n\tresp,err:=h.Get" + e + "(args[0])\n\tif err!=nil{return err}\n\th.Print" + e + "(resp)\n\treturn nil\n}}\n\n"
+	s += "var list" + l + "Cmd=&cobra.Command{Use:\"list\",Short:\"List " + l + "s\",\nRunE:func(cmd*cobra.Command,args[]string)error{\n\tpage,_:=cmd.Flags().GetInt(\"page\")\n\tpageSize,_:=cmd.Flags().GetInt(\"page-size\")\n\th:=handler.New" + e + "Handler(context.Background())\n\tresp,total,_:=h.List" + e + "s(page,pageSize)\n\th.Print" + e + "s(resp,int(total),page,pageSize)\n\treturn nil\n}}\n\n"
+	s += "var update" + l + "Cmd=&cobra.Command{Use:\"update [id]\",Short:\"Update " + l + "\",Args:cobra.ExactArgs(1),\nRunE:func(cmd*cobra.Command,args[]string)error{\n\th:=handler.New" + e + "Handler(context.Background())\n\treq:=&handler.Update" + e + "Request{Id:0}\n\terr:=h.Update" + e + "(args[0],req)\n\tif err!=nil{return err}\n\tfmt.Println(\"" + l + " updated\")\n\treturn nil\n}}\n\n"
+	s += "var delete" + l + "Cmd=&cobra.Command{Use:\"delete [id]\",Short:\"Delete " + l + "\",Args:cobra.ExactArgs(1),\nRunE:func(cmd*cobra.Command,args[]string)error{\n\th:=handler.New" + e + "Handler(context.Background())\n\treturn h.Delete" + e + "(args[0])\n}}\n\n"
+	s += "func init(){\n\trootCmd.AddCommand(" + l + "Cmd)\n\t" + l + "Cmd.AddCommand(create" + l + "Cmd,get" + l + "Cmd,list" + l + "Cmd,update" + l + "Cmd,delete" + l + "Cmd)\n\tlist" + l + "Cmd.Flags().Int(\"page\",1,\"Page\")\n\tlist" + l + "Cmd.Flags().Int(\"page-size\",10,\"PageSize\")\n}\n"
+	return s
+}

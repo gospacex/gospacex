@@ -1,0 +1,333 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
+)
+
+// Config 脚本中心配置结构
+type Config struct {
+	Server        ServerConfig         `yaml:"server"`
+	MySQL         MySQLConfig          `yaml:"mysql"`
+	PostgreSQL    PostgreSQLConfig     `yaml:"postgresql"`
+	Redis         RedisConfig          `yaml:"redis"`
+	MongoDB       MongoDBConfig        `yaml:"mongodb"`
+	Elasticsearch ElasticsearchConfig  `yaml:"elasticsearch"`
+	Etcd          EtcdConfig           `yaml:"etcd"`
+	Kafka         KafkaConfig          `yaml:"kafka"`
+	RabbitMQ      RabbitMQConfig       `yaml:"rabbitmq"`
+	RocketMQ      RocketMQConfig       `yaml:"rocketmq"`
+	Log           LogConfig            `yaml:"log"`
+	Scheduler     SchedulerConfig      `yaml:"scheduler"`
+}
+
+// ServerConfig 服务器配置
+type ServerConfig struct {
+	Port int    `yaml:"port"`
+	Mode string `yaml:"mode"` // debug, release
+}
+
+// MySQLConfig MySQL 配置
+type MySQLConfig struct {
+	Host         string `yaml:"host"`
+	Port         int    `yaml:"port"`
+	User         string `yaml:"user"`
+	Password     string `yaml:"password"`
+	DBName       string `yaml:"dbname"`
+	MaxIdleConns int    `yaml:"max_idle_conns"`
+	MaxOpenConns int    `yaml:"max_open_conns"`
+}
+
+// PostgreSQLConfig PostgreSQL 配置
+type PostgreSQLConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	Host     string `yaml:"host"`
+	Port     int    `yaml:"port"`
+	User     string `yaml:"user"`
+	Password string `yaml:"password"`
+	DBName   string `yaml:"dbname"`
+	Schema   string `yaml:"schema"`
+}
+
+// RedisConfig Redis 配置
+type RedisConfig struct {
+	Host     string `yaml:"host"`
+	Port     int    `yaml:"port"`
+	Password string `yaml:"password"`
+	DB       int    `yaml:"db"`
+	PoolSize int    `yaml:"pool_size"`
+}
+
+// MongoDBConfig MongoDB 配置
+type MongoDBConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	URI      string `yaml:"uri"`
+	Database string `yaml:"database"`
+}
+
+// ElasticsearchConfig Elasticsearch 配置
+type ElasticsearchConfig struct {
+	Enabled       bool     `yaml:"enabled"`
+	Addresses     []string `yaml:"addresses"`
+	Username      string   `yaml:"username"`
+	Password      string   `yaml:"password"`
+	Index         string   `yaml:"index"`
+	SyncFromMySQL bool     `yaml:"sync_from_mysql"`
+}
+
+// EtcdConfig etcd 配置
+type EtcdConfig struct {
+	Enabled     bool          `yaml:"enabled"`
+	Endpoints   []string      `yaml:"endpoints"`
+	DialTimeout time.Duration `yaml:"dial_timeout"`
+}
+
+// KafkaConfig Kafka 配置
+type KafkaConfig struct {
+	Enabled       bool     `yaml:"enabled"`
+	Brokers       []string `yaml:"brokers"`
+	Topic         string   `yaml:"topic"`
+	ConsumerGroup string   `yaml:"consumer_group"`
+}
+
+// RabbitMQConfig RabbitMQ 配置
+type RabbitMQConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	Addr       string `yaml:"addr"`
+	Vhost      string `yaml:"vhost"`
+	Username   string `yaml:"username"`
+	Password   string `yaml:"password"`
+	Exchange   string `yaml:"exchange"`
+	Queue      string `yaml:"queue"`
+}
+
+// RocketMQConfig RocketMQ 配置
+type RocketMQConfig struct {
+	Enabled     bool   `yaml:"enabled"`
+	NameServer  string `yaml:"name_server"`
+	Topic       string `yaml:"topic"`
+	ConsumerGroup string `yaml:"consumer_group"`
+	ProducerGroup string `yaml:"producer_group"`
+}
+
+// LogConfig 日志配置
+type LogConfig struct {
+	Level  string `yaml:"level"`
+	Format string `yaml:"format"`
+	Output string `yaml:"output"`
+}
+
+// SchedulerConfig 任务调度配置
+type SchedulerConfig struct {
+	Enabled      bool   `yaml:"enabled"`
+	Location     string `yaml:"location"`
+	MaxConcurrent int   `yaml:"max_concurrent"`
+}
+
+var (
+	globalConfig *Config
+	configMu     sync.RWMutex
+)
+
+// Load 从文件加载配置
+func Load(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("error reading config file: %w", err)
+	}
+
+	return LoadFromString(string(data))
+}
+
+// LoadFromString 从 YAML 字符串加载配置
+func LoadFromString(content string) (*Config, error) {
+	cfg := &Config{}
+	if err := yaml.Unmarshal([]byte(content), cfg); err != nil {
+		return nil, fmt.Errorf("error unmarshaling config: %w", err)
+	}
+
+	// Apply defaults
+	applyDefaults(cfg)
+
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("config validation failed: %w", err)
+	}
+
+	configMu.Lock()
+	globalConfig = cfg
+	configMu.Unlock()
+
+	return cfg, nil
+}
+
+// Get 获取全局配置
+func Get() *Config {
+	configMu.RLock()
+	defer configMu.RUnlock()
+
+	if globalConfig == nil {
+		cfg, err := Load("configs/config.yaml")
+		if err != nil {
+			globalConfig = defaultConfig()
+		} else {
+			globalConfig = cfg
+		}
+	}
+	return globalConfig
+}
+
+// Set 设置全局配置（测试用）
+func Set(cfg *Config) {
+	configMu.Lock()
+	defer configMu.Unlock()
+	globalConfig = cfg
+}
+
+// Validate validates the configuration
+func (c *Config) Validate() error {
+	if c.Server.Port <= 0 || c.Server.Port > 65535 {
+		return fmt.Errorf("server.port must be between 1 and 65535")
+	}
+	if c.Server.Mode != "" && c.Server.Mode != "debug" && c.Server.Mode != "release" {
+		return fmt.Errorf("server.mode must be 'debug' or 'release'")
+	}
+	if c.MySQL.Host == "" {
+		return fmt.Errorf("mysql.host is required")
+	}
+	if c.MySQL.Port <= 0 || c.MySQL.Port > 65535 {
+		return fmt.Errorf("mysql.port must be between 1 and 65535")
+	}
+	if c.MySQL.User == "" {
+		return fmt.Errorf("mysql.user is required")
+	}
+	if c.MySQL.DBName == "" {
+		return fmt.Errorf("mysql.dbname is required")
+	}
+	return nil
+}
+
+// applyDefaults applies default values
+func applyDefaults(cfg *Config) {
+	if cfg.MySQL.MaxIdleConns == 0 {
+		cfg.MySQL.MaxIdleConns = 10
+	}
+	if cfg.MySQL.MaxOpenConns == 0 {
+		cfg.MySQL.MaxOpenConns = 100
+	}
+	if cfg.Redis.PoolSize == 0 {
+		cfg.Redis.PoolSize = 100
+	}
+	if cfg.Log.Level == "" {
+		cfg.Log.Level = "info"
+	}
+	if cfg.Log.Format == "" {
+		cfg.Log.Format = "json"
+	}
+	if cfg.Log.Output == "" {
+		cfg.Log.Output = "stdout"
+	}
+	if !cfg.Scheduler.Enabled {
+		cfg.Scheduler.Enabled = true
+	}
+	if cfg.Scheduler.Location == "" {
+		cfg.Scheduler.Location = "Local"
+	}
+	if cfg.Scheduler.MaxConcurrent == 0 {
+		cfg.Scheduler.MaxConcurrent = 10
+	}
+}
+
+// defaultConfig returns default script center configuration
+func defaultConfig() *Config {
+	return &Config{
+		Server: ServerConfig{
+			Port: 8080,
+			Mode: "debug",
+		},
+		MySQL: MySQLConfig{
+			Host:         "localhost",
+			Port:         3306,
+			MaxIdleConns: 10,
+			MaxOpenConns: 100,
+		},
+		Redis: RedisConfig{
+			Host:     "localhost",
+			Port:     6379,
+			PoolSize: 100,
+		},
+		Scheduler: SchedulerConfig{
+			Enabled:       true,
+			Location:      "Local",
+			MaxConcurrent: 10,
+		},
+		Log: LogConfig{
+			Level:  "info",
+			Format: "json",
+			Output: "stdout",
+		},
+	}
+}
+
+// LoadWithViper loads config using Viper
+func LoadWithViper(path string) (*Config, error) {
+	v := viper.New()
+	v.SetConfigFile(path)
+	v.SetConfigType("yaml")
+
+	// 设置默认值
+	v.SetDefault("server.port", 8080)
+	v.SetDefault("server.mode", "debug")
+	v.SetDefault("mysql.max_idle_conns", 10)
+	v.SetDefault("mysql.max_open_conns", 100)
+	v.SetDefault("redis.pool_size", 100)
+	v.SetDefault("log.level", "info")
+	v.SetDefault("log.format", "json")
+	v.SetDefault("scheduler.enabled", true)
+	v.SetDefault("scheduler.location", "Local")
+	v.SetDefault("scheduler.max_concurrent", 10)
+
+	v.AutomaticEnv()
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+
+	if err := v.ReadInConfig(); err != nil {
+		return nil, fmt.Errorf("error reading config: %w", err)
+	}
+
+	var cfg Config
+	if err := v.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("error unmarshaling config: %w", err)
+	}
+
+	return &cfg, nil
+}
+
+// GetDSN returns MySQL DSN connection string
+func (c *MySQLConfig) GetDSN() string {
+	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+		c.User, c.Password, c.Host, c.Port, c.DBName)
+}
+
+// GetAddr returns Redis address
+func (c *RedisConfig) GetAddr() string {
+	return fmt.Sprintf("%s:%d", c.Host, c.Port)
+}
+
+// GetPostgreSQLDSN returns PostgreSQL DSN connection string
+func (c *PostgreSQLConfig) GetDSN() string {
+	return fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=UTC",
+		c.Host, c.User, c.Password, c.DBName, c.Port)
+}
+
+// GetMongoDBURI returns MongoDB connection URI
+func (c *MongoDBConfig) GetURI() string {
+	if c.URI != "" {
+		return c.URI
+	}
+	return fmt.Sprintf("mongodb://%s", c.Database)
+}

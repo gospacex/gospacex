@@ -1,0 +1,111 @@
+package main
+
+import (
+	"context"
+	
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/{{.ModuleName}}/pkg/rpc"
+	"github.com/{{.ModuleName}}/kitexGen/user"
+	"github.com/{{.ModuleName}}/pkg/errno"
+)
+
+// RegisterUser handles user registration
+// @router /api/v1/user/register [POST]
+func RegisterUser(ctx context.Context, c *app.RequestContext) {
+	var req RegisterRequest
+	if err := c.Bind(&req); err != nil {
+		SendResponse(c, errno.ErrInvalidParams, nil)
+		return
+	}
+	
+	// Call RPC client
+	resp, err := rpc.UserClient.RegisterUser(ctx, &user.RegisterUserRequest{
+		Username: req.Username,
+		Password: req.Password,
+		Email:    req.Email,
+	})
+	if err != nil {
+		SendResponse(c, errno.ConvertErr(err), nil)
+		return
+	}
+	
+	SendResponse(c, errno.Success, resp)
+}
+
+// Login handles user login
+func Login(ctx context.Context, c *app.RequestContext) {
+	var req LoginRequest
+	if err := c.Bind(&req); err != nil {
+		SendResponse(c, errno.ErrInvalidParams, nil)
+		return
+	}
+	
+	resp, err := rpc.UserClient.Login(ctx, &user.LoginRequest{
+		Username: req.Username,
+		Password: req.Password,
+	})
+	if err != nil {
+		SendResponse(c, errno.ConvertErr(err), nil)
+		return
+	}
+	
+	SendResponse(c, errno.Success, resp)
+}
+
+// GetUserProfile gets user profile
+func GetUserProfile(ctx context.Context, c *app.RequestContext) {
+	userID := c.GetString("user_id")
+	
+	resp, err := rpc.UserClient.GetProfile(ctx, &user.GetProfileRequest{
+		UserId: userID,
+	})
+	if err != nil {
+		SendResponse(c, errno.ConvertErr(err), nil)
+		return
+	}
+	
+	SendResponse(c, errno.Success, resp)
+}
+
+// HealthCheck health check endpoint
+func HealthCheck(ctx context.Context, c *app.RequestContext) {
+	c.JSON(200, map[string]interface{}{
+		"status": "healthy",
+	})
+}
+
+// Ping simple ping endpoint
+func Ping(ctx context.Context, c *app.RequestContext) {
+	c.JSON(200, map[string]interface{}{
+		"message": "pong",
+	})
+}
+
+// SendResponse sends unified response
+func SendResponse(c *app.RequestContext, errno *errno.ErrNo, data interface{}) {
+	c.JSON(200, Response{
+		Code: errno.Code,
+		Msg:  errno.Msg,
+		Data: data,
+	})
+}
+
+// Response unified response structure
+type Response struct {
+	Code int         `json:"code"`
+	Msg  string      `json:"msg"`
+	Data interface{} `json:"data"`
+}
+
+// RegisterRequest user registration request
+type RegisterRequest struct {
+	Username string `json:"username" vd:"len($)>0"`
+	Password string `json:"password" vd:"len($)>=6"`
+	Email    string `json:"email" vd:"email($)"`
+}
+
+// LoginRequest user login request
+type LoginRequest struct {
+	Username string `json:"username" vd:"len($)>0"`
+	Password string `json:"password" vd:"len($)>0"`
+}

@@ -1,0 +1,82 @@
+package handler
+
+import (
+	"context"
+
+	pb "{{.AppName}}/common/kitexGen/{{.Module}}"
+	"{{.AppName}}/{{.SrvDirName}}/internal/model"
+	"{{.AppName}}/{{.SrvDirName}}/internal/repository"
+	"{{.AppName}}/{{.SrvDirName}}/internal/service"
+
+	"gorm.io/gorm"
+)
+
+type {{.UpperModule}}Handler struct {
+	pb.Unimplemented{{.UpperModule}}ServiceServer
+	svc *service.{{.UpperModule}}Service
+}
+
+func New{{.UpperModule}}Handler(db *gorm.DB) *{{.UpperModule}}Handler {
+	return &{{.UpperModule}}Handler{
+		svc: service.New{{.UpperModule}}Service(
+			{{.RepoInitCode}},
+		),
+	}
+}
+
+func (h *{{.UpperModule}}Handler) Create(ctx context.Context, req *pb.Create{{.UpperModule}}Req) (*pb.Create{{.UpperModule}}Resp, error) {
+	m := &model.{{.UpperModule}}{
+{{- range .CreateFields}}
+		{{.ProtoGoName}}: req.{{.ProtoGoName}},
+{{- end}}
+	}
+	if err := h.svc.Create(ctx, m); err != nil {
+		return nil, err
+	}
+	return &pb.Create{{.UpperModule}}Resp{ {{.PKProtoGoName}}: {{.PKRespConvert}} }, nil
+}
+
+func (h *{{.UpperModule}}Handler) Get(ctx context.Context, req *pb.Get{{.UpperModule}}Req) (*pb.Get{{.UpperModule}}Resp, error) {
+	m, err := h.svc.Get(ctx, {{.PKReqConvert}})
+	if err != nil {
+		return nil, err
+	}
+	return &pb.Get{{.UpperModule}}Resp{
+{{- range .Columns}}
+		{{.ProtoGoName}}: {{.ModelToRespCode}},
+{{- end}}
+	}, nil
+}
+
+func (h *{{.UpperModule}}Handler) List(ctx context.Context, req *pb.List{{.UpperModule}}Req) (*pb.List{{.UpperModule}}Resp, error) {
+	list, err := h.svc.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var items []*pb.{{.UpperModule}}Item
+	for _, m := range list {
+		items = append(items, &pb.{{.UpperModule}}Item{
+{{- range .Columns}}
+			{{.ProtoGoName}}: {{.ModelToRespCode}},
+{{- end}}
+		})
+	}
+	return &pb.List{{.UpperModule}}Resp{Items: items}, nil
+}
+
+func (h *{{.UpperModule}}Handler) Update(ctx context.Context, req *pb.Update{{.UpperModule}}Req) (*pb.Update{{.UpperModule}}Resp, error) {
+	m, err := h.svc.Get(ctx, {{.PKUpdateReqConvert}})
+	if err != nil {
+		return nil, err
+	}
+{{- range .UpdateFields}}
+	if req.{{.ProtoGoName}} != {{.ZeroValue}} {
+		m.{{.ProtoGoName}} = req.{{.ProtoGoName}}
+	}
+{{- end}}
+	return &pb.Update{{.UpperModule}}Resp{Success: true}, h.svc.Update(ctx, m)
+}
+
+func (h *{{.UpperModule}}Handler) Delete(ctx context.Context, req *pb.Delete{{.UpperModule}}Req) (*pb.Delete{{.UpperModule}}Resp, error) {
+	return &pb.Delete{{.UpperModule}}Resp{Success: true}, h.svc.Delete(ctx, {{.PKDeleteReqConvert}})
+}

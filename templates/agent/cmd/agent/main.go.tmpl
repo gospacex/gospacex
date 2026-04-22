@@ -1,0 +1,28 @@
+package main
+
+import (
+	"context"
+	"log"
+	"{{ .ModuleName }}/configs"
+	"{{ .ModuleName }}/internal/agent"
+)
+
+func main() {
+	// 1. 加载配置
+	cfg, err := configs.Load()
+	if err != nil {
+		log.Fatalf("load config failed: %v", err)
+	}
+
+	// 2. 创建 Agent
+	agt, err := agent.NewAgent(cfg.Agent)
+	if err != nil {
+		log.Fatalf("create agent failed: %v", err)
+	}
+
+	// 3. 启动 Agent
+	log.Println("Starting agent...")
+	if err := agt.Run(context.Background()); err != nil {
+		log.Fatalf("agent run failed: %v", err)
+	}
+}

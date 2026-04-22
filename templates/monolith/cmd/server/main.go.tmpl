@@ -1,0 +1,30 @@
+package main
+
+import (
+	"log"
+	"{{ .ModuleName }}/configs"
+	"{{ .ModuleName }}/internal/handler"
+	"github.com/gin-gonic/gin"
+)
+
+func main() {
+	// 1. 加载配置
+	cfg, err := configs.Load()
+	if err != nil {
+		log.Fatalf("load config failed: %v", err)
+	}
+
+	// 2. 创建 Gin 引擎
+	r := gin.Default()
+
+	// 3. 注册路由
+	handler.RegisterRoutes(r)
+
+	// 4. 启动服务器
+	addr := cfg.Server.Host + ":" + cfg.Server.Port
+	log.Printf("Starting server on %s", addr)
+	
+	if err := r.Run(addr); err != nil {
+		log.Fatalf("server run failed: %v", err)
+	}
+}

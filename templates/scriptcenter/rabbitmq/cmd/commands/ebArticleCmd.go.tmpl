@@ -1,0 +1,80 @@
+package commands
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"strconv"
+
+	"{{.ProjectName}}/internal/model"
+	"{{.ProjectName}}/internal/service"
+	"github.com/spf13/cobra"
+)
+
+var (
+	articleName string
+	articleData string
+)
+
+// ebArticleCmd 文章事件命令
+var ebArticleCmd = &cobra.Command{
+	Use:   "article",
+	Short: "文章事件管理命令",
+	Long:  `文章事件命令 - 用于测试 RabbitMQ 消息生产和消费`,
+}
+
+// articleCreateCmd 创建文章事件
+var articleCreateCmd = &cobra.Command{
+	Use:   "create",
+	Short: "创建文章事件并发送到 RabbitMQ",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := context.Background()
+		svc := service.NewEbArticleService()
+
+		entity := &model.EbArticle{
+			Name: articleName,
+			Data: articleData,
+		}
+
+		if err := svc.Create(ctx, entity); err != nil {
+			return fmt.Errorf("create article failed: %w", err)
+		}
+
+		log.Printf("✓ Article event created and sent to RabbitMQ")
+		return nil
+	},
+}
+
+// articleGetCmd 查询文章
+var articleGetCmd = &cobra.Command{
+	Use:   "get [id]",
+	Short: "查询文章",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := context.Background()
+		svc := service.NewEbArticleService()
+
+		id, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid ID: %w", err)
+		}
+
+		entity, err := svc.GetByID(ctx, id)
+		if err != nil {
+			return fmt.Errorf("get article failed: %w", err)
+		}
+
+		log.Printf("Article: ID=%d, Name=%s, Data=%s", entity.ID, entity.Name, entity.Data)
+		return nil
+	},
+}
+
+func init() {
+	ebArticleCmd.AddCommand(articleCreateCmd)
+	ebArticleCmd.AddCommand(articleGetCmd)
+
+	articleCreateCmd.Flags().StringVar(&articleName, "name", "", "文章名称 (required)")
+	articleCreateCmd.Flags().StringVar(&articleData, "data", "", "文章数据")
+	articleCreateCmd.MarkFlagRequired("name")
+
+	rootCmd.AddCommand(ebArticleCmd)
+}

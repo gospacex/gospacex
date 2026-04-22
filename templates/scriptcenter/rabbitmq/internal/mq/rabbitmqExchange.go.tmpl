@@ -1,0 +1,43 @@
+package mq
+
+import (
+	"fmt"
+
+	"github.com/streadway/amqp"
+)
+
+// RabbitmqExchange 交换机声明
+type RabbitmqExchange struct {
+	name       string
+	exchangeType string
+	durable    bool
+	autoDelete bool
+}
+
+// NewRabbitmqExchange 创建交换机
+func NewRabbitmqExchange(channel *amqp.Channel, name string, exchangeType string, durable, autoDelete bool) (*RabbitmqExchange, error) {
+	err := channel.ExchangeDeclare(
+		name,
+		exchangeType,
+		durable,
+		autoDelete,
+		false, // internal
+		false, // no-wait
+		nil,    // arguments
+	)
+	if err != nil {
+		return nil, fmt.Errorf("declare exchange: %w", err)
+	}
+
+	return &RabbitmqExchange{
+		name:       name,
+		exchangeType: exchangeType,
+		durable:    durable,
+		autoDelete: autoDelete,
+	}, nil
+}
+
+// Name 获取交换机名称
+func (e *RabbitmqExchange) Name() string {
+	return e.name
+}

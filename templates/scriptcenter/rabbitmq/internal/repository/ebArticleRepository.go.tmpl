@@ -1,0 +1,70 @@
+package repository
+
+import (
+	"context"
+
+	"{{.ProjectName}}/internal/model"
+	"gorm.io/gorm"
+)
+
+// EbArticleRepository 文章仓储
+type EbArticleRepository struct {
+	db *gorm.DB
+}
+
+// NewEbArticleRepository 创建仓储
+func NewEbArticleRepository(db *gorm.DB) *EbArticleRepository {
+	return &EbArticleRepository{
+		db: db,
+	}
+}
+
+// Create 创建文章
+func (r *EbArticleRepository) Create(ctx context.Context, article *model.EbArticle) error {
+	return r.db.WithContext(ctx).Create(article).Error
+}
+
+// GetByID 获取文章
+func (r *EbArticleRepository) GetByID(ctx context.Context, id int64) (*model.EbArticle, error) {
+	var article model.EbArticle
+	err := r.db.WithContext(ctx).First(&article, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &article, nil
+}
+
+// List 列表查询
+func (r *EbArticleRepository) List(ctx context.Context, offset, limit int) ([]*model.EbArticle, int64, error) {
+	var articles []*model.EbArticle
+	var count int64
+
+	err := r.db.WithContext(ctx).Model(&model.EbArticle{}).Count(&count).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	err = r.db.WithContext(ctx).Offset(offset).Limit(limit).Find(&articles).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return articles, count, nil
+}
+
+// Update 更新文章
+func (r *EbArticleRepository) Update(ctx context.Context, article *model.EbArticle) error {
+	return r.db.WithContext(ctx).Save(article).Error
+}
+
+// Delete 删除文章
+func (r *EbArticleRepository) Delete(ctx context.Context, id int64) error {
+	return r.db.WithContext(ctx).Delete(&model.EbArticle{}, id).Error
+}
+
+// Count 统计数量
+func (r *EbArticleRepository) Count(ctx context.Context) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&model.EbArticle{}).Count(&count).Error
+	return count, err
+}

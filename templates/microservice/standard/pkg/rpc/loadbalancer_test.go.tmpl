@@ -1,0 +1,64 @@
+package rpc
+
+import (
+	"testing"
+
+	"github.com/cloudwego/kitex/pkg/loadbalance"
+	"github.com/cloudwego/kitex/pkg/rpcinfo"
+	"github.com/stretchr/testify/assert"
+)
+
+func TestRoundRobinLoadBalancer(t *testing.T) {
+	lb := NewRoundRobinLoadBalancer()
+	instances := []*rpcinfo.EndpointInfo{
+		{Address: "127.0.0.1:8001"},
+		{Address: "127.0.0.1:8002"},
+		{Address: "127.0.0.1:8003"},
+	}
+
+	picker := lb.GetPicker(&loadbalance.DefaultInfo{Instances: instances})
+	assert.NotNil(t, picker)
+
+	// 检查轮询顺序
+	addr1 := picker.Next(nil).Address
+	addr2 := picker.Next(nil).Address
+	addr3 := picker.Next(nil).Address
+	addr4 := picker.Next(nil).Address // 绕一圈回来
+
+	assert.Equal(t, "127.0.0.1:8001", addr1)
+	assert.Equal(t, "127.0.0.1:8002", addr2)
+	assert.Equal(t, "127.0.0.1:8003", addr3)
+	assert.Equal(t, "127.0.0.1:8001", addr4)
+}
+
+func TestRandomLoadBalancer(t *testing.T) {
+	lb := NewRandomLoadBalancer()
+	instances := []*rpcinfo.EndpointInfo{
+		{Address: "instance-1"},
+		{Address: "instance-2"},
+		{Address: "instance-3"},
+		{Address: "instance-4"},
+		{Address: "instance-5"},
+	}
+
+	picker := lb.GetPicker(&loadbalance.DefaultInfo{Instances: instances})
+	assert.NotNil(t, picker)
+
+	// 随机选取多次，应该都在实例列表里
+	seen := make(map[string]bool)
+	for i := 0; i < 100; i++ {
+		inst := picker.Next(nil)
+		assert.NotNil(t, inst)
+		seen[inst.Address] = true
+	}
+
+	// 100次随机应该能覆盖大部分实例
+	assert.True(t, len(seen) >= 3) // 至少命中3个，概率上很稳定
+}
+
+func TestLoadBalancer_EmptyInstances(t *testing.T) {
+	lb := NewRoundRobinLoadBalancer()
+	picker := lb.GetPicker(&loadbalance.DefaultInfo{Instances: []*rpcinfo.EndpointInfo{}})
+	inst := picker.Next(nil)
+	assert.Nil(t, inst) // 空实例应该返回 nil
+}

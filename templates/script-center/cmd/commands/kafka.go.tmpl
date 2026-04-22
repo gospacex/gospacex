@@ -1,0 +1,123 @@
+package commands
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"github.com/gospacex/{{.ProjectName}}/internal/consumer"
+	"github.com/gospacex/{{.ProjectName}}/internal/producer"
+	"github.com/gospacex/{{.ProjectName}}/pkg/config"
+	"github.com/gospacex/{{.ProjectName}}/pkg/middleware"
+	"github.com/spf13/cobra"
+)
+
+var kafkaCmd = &cobra.Command{
+	Use:   "kafka",
+	Short: "Kafka message queue management",
+	Long:  `Kafka 消息队列管理命令`,
+}
+
+// kafkaProduceCmd 发送 Kafka 消息
+var kafkaProduceCmd = &cobra.Command{
+	Use:   "produce [event-type] [order-id]",
+	Short: "Send order event to Kafka",
+	Long:  `发送订单事件到 Kafka，例如：kafka produce created 12345`,
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg := config.Get()
+
+		// 创建 Kafka 生产者
+		kafkaCfg := middleware.KafkaConfig{
+			Brokers:    cfg.Kafka.Brokers,
+			Topic:      cfg.Kafka.Topic,
+			MaxRetries: 3,
+		}
+
+		kafkaProducer, err := middleware.NewKafkaProducer(kafkaCfg)
+		if err != nil {
+			return fmt.Errorf("create kafka producer failed: %w", err)
+		}
+		defer kafkaProducer.Close()
+
+		orderProducer := producer.NewKafkaOrderProducer(kafkaProducer, cfg.Kafka.Topic)
+		ctx := context.Background()
+
+		eventType := args[0]
+		orderID := cmd.Flag("order-id").Value.String()
+		if orderID == "" {
+			orderID = args[1]
+		}
+
+		switch eventType {
+		case "created":
+			data := fmt.Sprintf(`{"event":"order.created","order_id":%s}`, orderID)
+			if err := orderProducer.SendOrderCreated(ctx, 12345, data); err != nil {
+				return fmt.Errorf("send order created failed: %w", err)
+			}
+			fmt.Println("✓ Order created event sent")
+
+		case "updated":
+			data := fmt.Sprintf(`{"event":"order.updated","order_id":%s}`, orderID)
+			if err := orderProducer.SendOrderUpdated(ctx, 12345, data); err != nil {
+				return fmt.Errorf("send order updated failed: %w", err)
+			}
+			fmt.Println("✓ Order updated event sent")
+
+		case "deleted":
+			if err := orderProducer.SendOrderDeleted(ctx, 12345); err != nil {
+				return fmt.Errorf("send order deleted failed: %w", err)
+			}
+			fmt.Println("✓ Order deleted event sent")
+
+		default:
+			return fmt.Errorf("unknown event type: %s (supported: created, updated, deleted)", eventType)
+		}
+
+		return nil
+	},
+}
+
+// kafkaConsumeCmd 消费 Kafka 消息
+var kafkaConsumeCmd = &cobra.Command{
+	Use:   "consume",
+	Short: "Start consuming messages from Kafka",
+	Long:  `启动 Kafka 消费者，持续监听并处理消息`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg := config.Get()
+
+		// 创建 Kafka 消费者配置
+		kafkaCfg := middleware.KafkaConfig{
+			Brokers:       cfg.Kafka.Brokers,
+			Topic:         cfg.Kafka.Topic,
+			ConsumerGroup: cfg.Kafka.ConsumerGroup,
+			MaxRetries:    3,
+		}
+
+		// 创建事件处理器
+		handler := consumer.NewOrderEventHandler()
+
+		log.Printf("Starting Kafka consumer for topic: %s, group: %s\n", kafkaCfg.Topic, kafkaCfg.ConsumerGroup)
+
+		// 启动消费者
+		kafkaConsumer, err := consumer.StartKafkaConsumer(kafkaCfg, handler)
+		if err != nil {
+			return fmt.Errorf("start kafka consumer failed: %w", err)
+		}
+		defer kafkaConsumer.Close()
+
+		// 等待退出信号
+		<-cmd.Context().Done()
+		log.Println("Stopping Kafka consumer...")
+
+		return nil
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(kafkaCmd)
+	kafkaCmd.AddCommand(kafkaProduceCmd, kafkaConsumeCmd)
+
+	// 添加全局标志
+	kafkaProduceCmd.Flags().String("order-id", "", "Order ID (也可以使用位置参数)")
+}

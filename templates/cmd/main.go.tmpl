@@ -1,0 +1,24 @@
+package main
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/{{.ProjectName}}/cmd/commands"
+	"github.com/{{.ProjectName}}/pkg/database"
+	"github.com/{{.ProjectName}}/pkg/logger"
+)
+
+func main() {
+	// Initialize logger
+	logger.Init()
+	
+	// Initialize database
+	database.InitMySQL()
+	
+	// Execute commands
+	if err := commands.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}

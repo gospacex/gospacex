@@ -1,0 +1,122 @@
+package handler
+
+import (
+	"context"
+	"strconv"
+
+	"{{.AppName}}/{{.BffDirName}}/internal/rpcClient"
+	"{{.AppName}}/common/kitexGen/{{.Module}}"
+
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
+)
+
+type {{.UpperModule}}Handler struct {
+	client *rpcclient.{{.UpperModule}}Client
+}
+
+func New{{.UpperModule}}Handler() *{{.UpperModule}}Handler {
+	return &{{.UpperModule}}Handler{}
+}
+
+func (h *{{.UpperModule}}Handler) Create(ctx context.Context, c *app.RequestContext) {
+	var req struct {
+{{range .CreateFields}}		{{.GoType}} {{.Name}} `json:"{{.Name}}"`
+{{end}}	}
+	if err := c.Bind(&req); err != nil {
+		c.JSON(consts.StatusBadRequest, map[string]interface{}{"error": err.Error()})
+		return
+	}
+
+	rpcReq := &{{.Module}}.Create{{.UpperModule}}Req{
+{{range .CreateFields}}		{{.ProtoGoName}}: req.{{.Name}},
+{{end}}	}
+
+	resp, err := h.client.Create(ctx, rpcReq)
+	if err != nil {
+		c.JSON(consts.StatusInternalServerError, map[string]interface{}{"error": err.Error()})
+		return
+	}
+	c.JSON(consts.StatusOK, map[string]interface{}{"id": resp.{{.PKProtoGoName}}})
+}
+
+func (h *{{.UpperModule}}Handler) Get(ctx context.Context, c *app.RequestContext) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(consts.StatusBadRequest, map[string]interface{}{"error": "invalid id"})
+		return
+	}
+
+	resp, err := h.client.Get(ctx, {{.PKGoType}}(id))
+	if err != nil {
+		c.JSON(consts.StatusInternalServerError, map[string]interface{}{"error": err.Error()})
+		return
+	}
+
+	c.JSON(consts.StatusOK, map[string]interface{}{
+{{range .Columns}}		"{{.Name}}": resp.{{.ProtoGoName}},
+{{end}}	})
+}
+
+func (h *{{.UpperModule}}Handler) List(ctx context.Context, c *app.RequestContext) {
+	resp, err := h.client.List(ctx)
+	if err != nil {
+		c.JSON(consts.StatusInternalServerError, map[string]interface{}{"error": err.Error()})
+		return
+	}
+
+	var items []map[string]interface{}
+	for _, item := range resp.Items {
+		items = append(items, map[string]interface{}{
+{{range .Columns}}			"{{.Name}}": item.{{.ProtoGoName}},
+{{end}}		})
+	}
+	c.JSON(consts.StatusOK, map[string]interface{}{"items": items})
+}
+
+func (h *{{.UpperModule}}Handler) Update(ctx context.Context, c *app.RequestContext) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(consts.StatusBadRequest, map[string]interface{}{"error": "invalid id"})
+		return
+	}
+
+	var req struct {
+		ID {{.PKGoType}} `json:"id"`
+{{range .UpdateFields}}		{{.GoType}} {{.Name}} `json:"{{.Name}}"`
+{{end}}	}
+	if err := c.Bind(&req); err != nil {
+		c.JSON(consts.StatusBadRequest, map[string]interface{}{"error": err.Error()})
+		return
+	}
+
+	rpcReq := &{{.Module}}.Update{{.UpperModule}}Req{
+		{{.PKProtoGoName}}: {{.PKGoType}}(id),
+{{range .UpdateFields}}		{{.ProtoGoName}}: req.{{.Name}},
+{{end}}	}
+
+	resp, err := h.client.Update(ctx, rpcReq)
+	if err != nil {
+		c.JSON(consts.StatusInternalServerError, map[string]interface{}{"error": err.Error()})
+		return
+	}
+	c.JSON(consts.StatusOK, map[string]interface{}{"success": resp.Success})
+}
+
+func (h *{{.UpperModule}}Handler) Delete(ctx context.Context, c *app.RequestContext) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(consts.StatusBadRequest, map[string]interface{}{"error": "invalid id"})
+		return
+	}
+
+	resp, err := h.client.Delete(ctx, {{.PKGoType}}(id))
+	if err != nil {
+		c.JSON(consts.StatusInternalServerError, map[string]interface{}{"error": err.Error()})
+		return
+	}
+	c.JSON(consts.StatusOK, map[string]interface{}{"success": resp.Success})
+}

@@ -1,0 +1,21 @@
+package model
+{{- if or .HasCreatedAt .HasUpdatedAt}}
+
+import "time"
+{{- end}}
+
+type {{.UpperModule}} struct {
+{{- range .Columns}}
+{{- if and (ne .Name "created_at") (ne .Name "updated_at") (ne .Name "createdAt") (ne .Name "updatedAt") (ne .Name "create_time") (ne .Name "update_time")}}
+	{{.ProtoGoName}} {{.GoType}} `{{.GormTag}}`
+{{- end}}
+{{- end}}
+{{- if .HasCreatedAt}}
+	CreatedAt time.Time `gorm:"autoCreateTime"`
+{{- end}}
+{{- if .HasUpdatedAt}}
+	UpdatedAt time.Time `gorm:"autoUpdateTime"`
+{{- end}}
+}
+
+func ({{.UpperModule}}) TableName() string { return "{{.TableName}}" }

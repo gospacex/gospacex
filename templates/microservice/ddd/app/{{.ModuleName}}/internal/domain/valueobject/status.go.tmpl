@@ -1,0 +1,11 @@
+package domain
+
+type ArticleStatus struct {
+	Value string
+}
+
+var (
+	StatusDraft     = ArticleStatus{"draft"}
+	StatusPublished = ArticleStatus{"published"}
+	StatusArchived  = ArticleStatus{"archived"}
+)

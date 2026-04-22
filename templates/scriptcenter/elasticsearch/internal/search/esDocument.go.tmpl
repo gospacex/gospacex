@@ -1,0 +1,187 @@
+package search
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/elastic/go-elasticsearch/v8/esapi"
+)
+
+// DocumentOps 文档操作
+type DocumentOps struct {
+	client   *elasticsearch.Client
+	indexName string
+}
+
+// NewDocumentOps 创建文档操作
+func NewDocumentOps(client *elasticsearch.Client, indexName string) *DocumentOps {
+	return &DocumentOps{client: client, indexName: indexName}
+}
+
+// Index 索引文档
+func (d *DocumentOps) Index(ctx context.Context, id string, doc interface{}) error {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(doc); err != nil {
+		return fmt.Errorf("编码文档失败: %w", err)
+	}
+
+	req := esapi.IndexRequest{
+		Index:      d.indexName,
+		DocumentID: id,
+		Body:       &buf,
+		Refresh:    "true",
+	}
+
+	res, err := req.Do(ctx, d.client)
+	if err != nil {
+		return fmt.Errorf("索引文档失败: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("索引文档响应错误: %s", res.String())
+	}
+	return nil
+}
+
+// Get 获取文档
+func (d *DocumentOps) Get(ctx context.Context, id string) ([]byte, error) {
+	req := esapi.GetRequest{
+		Index:      d.indexName,
+		DocumentID: id,
+	}
+
+	res, err := req.Do(ctx, d.client)
+	if err != nil {
+		return nil, fmt.Errorf("获取文档失败: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		if res.StatusCode == 404 {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("获取文档响应错误: %s", res.String())
+	}
+
+	return res.Body.Bytes(), nil
+}
+
+// Delete 删除文档
+func (d *DocumentOps) Delete(ctx context.Context, id string) error {
+	req := esapi.DeleteRequest{
+		Index:      d.indexName,
+		DocumentID: id,
+		Refresh:   "true",
+	}
+
+	res, err := req.Do(ctx, d.client)
+	if err != nil {
+		return fmt.Errorf("删除文档失败: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("删除文档响应错误: %s", res.String())
+	}
+	return nil
+}
+
+// Update 更新文档
+func (d *DocumentOps) Update(ctx context.Context, id string, doc interface{}) error {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(doc); err != nil {
+		return fmt.Errorf("编码文档失败: %w", err)
+	}
+
+	req := esapi.UpdateRequest{
+		Index:      d.indexName,
+		DocumentID: id,
+		Body:       &buf,
+		Refresh:    "true",
+	}
+
+	res, err := req.Do(ctx, d.client)
+	if err != nil {
+		return fmt.Errorf("更新文档失败: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("更新文档响应错误: %s", res.String())
+	}
+	return nil
+}
+
+// Exists 检查文档是否存在
+func (d *DocumentOps) Exists(ctx context.Context, id string) (bool, error) {
+	req := esapi.ExistsRequest{
+		Index:      d.indexName,
+		DocumentID: id,
+	}
+
+	res, err := req.Do(ctx, d.client)
+	if err != nil {
+		return false, fmt.Errorf("检查文档失败: %w", err)
+	}
+	defer res.Body.Close()
+
+	return res.StatusCode == 200, nil
+}
+
+// MGet 批量获取文档
+func (d *DocumentOps) MGet(ctx context.Context, ids []string) (map[string]json.RawMessage, error) {
+	query := map[string]interface{}{
+		"docs": ids,
+	}
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(query); err != nil {
+		return nil, fmt.Errorf("编码查询失败: %w", err)
+	}
+
+	res, err := d.client.Mget(
+		&buf,
+		d.client.Mget.WithContext(ctx),
+		d.client.Mget.WithIndex(d.indexName),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("批量获取文档失败: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, fmt.Errorf("批量获取文档响应错误: %s", res.String())
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("解码结果失败: %w", err)
+	}
+
+	docs, ok := result["docs"].([]interface{})
+	if !ok {
+		return nil, nil
+	}
+
+	resultMap := make(map[string]json.RawMessage)
+	for _, doc := range docs {
+		docMap, ok := doc.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		if found, ok := docMap["found"].(bool); ok && found {
+			if source, ok := docMap["_source"].(map[string]interface{}); ok {
+				sourceBytes, _ := json.Marshal(source)
+				id, _ := docMap["_id"].(string)
+				resultMap[id] = sourceBytes
+			}
+		}
+	}
+
+	return resultMap, nil
+}

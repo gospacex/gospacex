@@ -1,0 +1,5 @@
+
+// GetJoin{{.LeftUpper}}{{.RightUpper}} 获取一对一联表数据
+func (s *Join{{.LeftUpper}}{{.RightUpper}}Service) GetJoin{{.LeftUpper}}{{.RightUpper}}(ctx context.Context, id uint) (*repository.Join{{.LeftUpper}}{{.RightUpper}}Result, error) {
+	return s.joinRepo.FindJoin{{.LeftUpper}}{{.RightUpper}}(ctx, id)
+}

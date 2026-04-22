@@ -1,0 +1,24 @@
+
+// FindJoin{{.LeftUpper}}{{.RightUpper}}List 多对一联表查询
+func (r *Join{{.LeftUpper}}{{.RightUpper}}Repo) FindJoin{{.LeftUpper}}{{.RightUpper}}List(ctx context.Context, rightID uint) ([]*model.{{.LeftUpper}}, error) {
+	var items []*model.{{.LeftUpper}}
+	err := r.db.WithContext(ctx).
+		Where("{{.LeftModule}}.{{.LeftField}} = ?", rightID).
+		Find(&items).
+		Error
+	if err != nil {
+		return nil, fmt.Errorf("join query failed: %w", err)
+	}
+	return items, nil
+}
+
+// FindJoin{{.LeftUpper}}{{.RightUpper}}WithDetail 多对一联表查询（含右表详情）
+func (r *Join{{.LeftUpper}}{{.RightUpper}}Repo) FindJoin{{.LeftUpper}}{{.RightUpper}}WithDetail(ctx context.Context, rightID uint) ([]*model.{{.LeftUpper}}, *model.{{.RightUpper}}, error) {
+	var detail model.{{.RightUpper}}
+	if err := r.db.WithContext(ctx).First(&detail, rightID).Error; err != nil {
+		return nil, nil, fmt.Errorf("find detail failed: %w", err)
+	}
+	var items []*model.{{.LeftUpper}}
+	r.db.WithContext(ctx).Where("{{.LeftModule}}.{{.LeftField}} = ?", rightID).Find(&items)
+	return items, &detail, nil
+}

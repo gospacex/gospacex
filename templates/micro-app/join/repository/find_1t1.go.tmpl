@@ -1,0 +1,16 @@
+
+// FindJoin{{.LeftUpper}}{{.RightUpper}} 一对一联表查询
+func (r *Join{{.LeftUpper}}{{.RightUpper}}Repo) FindJoin{{.LeftUpper}}{{.RightUpper}}(ctx context.Context, id uint) (*Join{{.LeftUpper}}{{.RightUpper}}Result, error) {
+	var result Join{{.LeftUpper}}{{.RightUpper}}Result
+	err := r.db.WithContext(ctx).
+		Model(&model.{{.LeftUpper}}{}).
+		Select("{{.LeftModule}}.*, {{.RightModule}}.*").
+		Joins("JOIN {{.RightModule}} ON {{.RightModule}}.{{.RightField}} = {{.LeftModule}}.{{.LeftField}}").
+		Where("{{.LeftModule}}.id = ?", id).
+		Scan(&result).
+		Error
+	if err != nil {
+		return nil, fmt.Errorf("join query failed: %w", err)
+	}
+	return &result, nil
+}

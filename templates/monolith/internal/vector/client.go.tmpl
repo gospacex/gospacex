@@ -1,0 +1,111 @@
+package vector
+
+// ZVecConfig ZVec 配置
+type ZVecConfig struct {
+	Host        string
+	Port        int
+	Timeout     int
+	Collection  string
+}
+
+// ZVecClient ZVec 向量数据库客户端
+type ZVecClient struct {
+	host       string
+	port       int
+	collection string
+}
+
+// NewZVecClient 创建 ZVec 客户端
+func NewZVecClient(cfg *ZVecConfig) (*ZVecClient, error) {
+	if cfg.Host == "" {
+		cfg.Host = "localhost"
+	}
+	if cfg.Port == 0 {
+		cfg.Port = 8080
+	}
+
+	return &ZVecClient{
+		host:       cfg.Host,
+		port:       cfg.Port,
+		collection: cfg.Collection,
+	}, nil
+}
+
+// Vector 向量
+type Vector struct {
+	ID       string
+	Vector   []float32
+	Metadata map[string]interface{}
+}
+
+// SearchResult 搜索结果
+type SearchResult struct {
+	ID       string
+	Score    float32
+	Metadata map[string]interface{}
+}
+
+// Insert 插入向量
+func (c *ZVecClient) Insert(ctx context.Context, vectors []Vector) error {
+	// TODO: 实现 ZVec HTTP API 调用
+	// POST /api/v1/collection/{collection}/insert
+	return nil
+}
+
+// Search 搜索向量
+func (c *ZVecClient) Search(ctx context.Context, query []float32, topK int) ([]SearchResult, error) {
+	// TODO: 实现 ZVec HTTP API 调用
+	// POST /api/v1/collection/{collection}/search
+	return nil, nil
+}
+
+// Delete 删除向量
+func (c *ZVecClient) Delete(ctx context.Context, ids []string) error {
+	// TODO: 实现 ZVec HTTP API 调用
+	// DELETE /api/v1/collection/{collection}/delete
+	return nil
+}
+
+// GetURL 获取服务 URL
+func (c *ZVecClient) GetURL() string {
+	return fmt.Sprintf("http://%s:%d", c.host, c.port)
+}
+
+// NewZVecClient 兼容旧接口
+func NewZVecClient(config interface{}) (*ZVecClient, error) {
+	cfg, ok := config.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid zvec config")
+	}
+
+	return NewZVecClient(&ZVecConfig{
+		Host:       getString(cfg, "host"),
+		Port:       getInt(cfg, "port"),
+		Collection: getString(cfg, "collection"),
+	})
+}
+
+func getString(m map[string]interface{}, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+func getInt(m map[string]interface{}, key string) int {
+	if v, ok := m[key].(int); ok {
+		return v
+	}
+	if v, ok := m[key].(float64); ok {
+		return int(v)
+	}
+	return 0
+}
+
+var fmt = struct {
+	Sprintf func(format string, a ...interface{}) string
+}{
+	Sprintf: func(format string, a ...interface{}) string {
+		return fmt.Sprintf(format, a...)
+	},
+}

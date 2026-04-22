@@ -1,0 +1,35 @@
+package service
+
+import (
+	"context"
+
+	"{{.ProjectName}}/internal/mq"
+	"{{.ProjectName}}/internal/model"
+)
+
+// KafkaProducerService Kafka 生产者服务
+type KafkaProducerService interface {
+	Publish(ctx context.Context, article *model.EbArticle) error
+	CheckHealth() error
+}
+
+type kafkaProducerService struct {
+	producer *mq.KafkaProducer
+}
+
+// NewKafkaProducerService 创建服务
+func NewKafkaProducerService(producer *mq.KafkaProducer) KafkaProducerService {
+	return &kafkaProducerService{
+		producer: producer,
+	}
+}
+
+// Publish 发布文章事件
+func (s *kafkaProducerService) Publish(ctx context.Context, article *model.EbArticle) error {
+	return s.producer.Publish(ctx, article)
+}
+
+// CheckHealth 检查健康
+func (s *kafkaProducerService) CheckHealth() error {
+	return s.producer.IsHealthy()
+}

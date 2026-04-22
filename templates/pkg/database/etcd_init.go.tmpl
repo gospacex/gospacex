@@ -1,0 +1,59 @@
+package database
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	clientv3 "go.etcd.io/etcd/client/v3"
+)
+
+// EtcdClient 全局 etcd 客户端
+var EtcdClient *clientv3.Client
+
+// InitEtcd 初始化 etcd 连接
+func InitEtcd() {
+	endpoints := getEnvSlice("ETCD_ENDPOINTS", "localhost:2379")
+	dialTimeout := getEnvDuration("ETCD_DIAL_TIMEOUT", 5*time.Second)
+
+	var err error
+	EtcdClient, err = clientv3.New(clientv3.Config{
+		Endpoints:   endpoints,
+		DialTimeout: dialTimeout,
+	})
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create etcd client: %v", err))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if _, err := EtcdClient.Get(ctx, "health"); err != nil {
+		panic(fmt.Sprintf("Failed to connect to etcd: %v", err))
+	}
+}
+
+// CloseEtcd 关闭 etcd 连接
+func CloseEtcd() {
+	if EtcdClient != nil {
+		EtcdClient.Close()
+	}
+}
+
+// getEnvSlice 获取环境变量 (切片)
+func getEnvSlice(key, defaultVal string) []string {
+	if val := os.Getenv(key); val != "" {
+		return strings.Split(val, ",")
+	}
+	return strings.Split(defaultVal, ",")
+}
+
+// getEnvDuration 获取环境变量 (时长)
+func getEnvDuration(key string, defaultVal time.Duration) time.Duration {
+	if val := os.Getenv(key); val != "" {
+		if d, err := time.ParseDuration(val); err == nil {
+			return d
+		}
+	}
+	return defaultVal
+}

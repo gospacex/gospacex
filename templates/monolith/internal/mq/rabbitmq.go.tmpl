@@ -1,0 +1,199 @@
+package mq
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	amqp "github.com/rabbitmq/amqp091-go"
+)
+
+// RabbitMQConfig RabbitMQ 配置
+type RabbitMQConfig struct {
+	URL      string
+	Exchange string
+	Queue    string
+}
+
+// RabbitMQProducer RabbitMQ 生产者
+type RabbitMQProducer struct {
+	conn     *amqp.Connection
+	channel  *amqp.Channel
+	exchange string
+}
+
+// NewRabbitMQProducer 创建 RabbitMQ 生产者
+func NewRabbitMQProducer(cfg *RabbitMQConfig) (*RabbitMQProducer, error) {
+	conn, err := amqp.Dial(cfg.URL)
+	if err != nil {
+		return nil, fmt.Errorf("connect to rabbitmq: %w", err)
+	}
+
+	ch, err := conn.Channel()
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("open channel: %w", err)
+	}
+
+	// 声明交换机
+	if cfg.Exchange != "" {
+		if err := ch.ExchangeDeclare(
+			cfg.Exchange,
+			"topic",
+			true,
+			false,
+			false,
+			false,
+			nil,
+		); err != nil {
+			ch.Close()
+			conn.Close()
+			return nil, fmt.Errorf("declare exchange: %w", err)
+		}
+	}
+
+	return &RabbitMQProducer{
+		conn:     conn,
+		channel:  ch,
+		exchange: cfg.Exchange,
+	}, nil
+}
+
+// Send 发送消息
+func (p *RabbitMQProducer) Send(ctx context.Context, msg *Message) error {
+	return p.channel.PublishWithContext(
+		ctx,
+		p.exchange,
+		msg.Topic,
+		false,
+		false,
+		amqp.Publishing{
+			ContentType: "application/json",
+			Body:        msg.Value,
+			Timestamp:   time.Now(),
+		},
+	)
+}
+
+// Close 关闭连接
+func (p *RabbitMQProducer) Close() error {
+	if err := p.channel.Close(); err != nil {
+		return err
+	}
+	return p.conn.Close()
+}
+
+// RabbitMQConsumer RabbitMQ 消费者
+type RabbitMQConsumer struct {
+	conn    *amqp.Connection
+	channel *amqp.Channel
+	queue   string
+	handler func(msg *Message) error
+	cancel  context.CancelFunc
+	wg      sync.WaitGroup
+}
+
+// NewRabbitMQConsumer 创建 RabbitMQ 消费者
+func NewRabbitMQConsumer(cfg *RabbitMQConfig, handler func(msg *Message) error) (*RabbitMQConsumer, error) {
+	conn, err := amqp.Dial(cfg.URL)
+	if err != nil {
+		return nil, fmt.Errorf("connect to rabbitmq: %w", err)
+	}
+
+	ch, err := conn.Channel()
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("open channel: %w", err)
+	}
+
+	// 声明队列
+	q, err := ch.QueueDeclare(
+		cfg.Queue,
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		ch.Close()
+		conn.Close()
+		return nil, fmt.Errorf("declare queue: %w", err)
+	}
+
+	return &RabbitMQConsumer{
+		conn:    conn,
+		channel: ch,
+		queue:   q.Name,
+		handler: handler,
+	}, nil
+}
+
+// Start 启动消费者
+func (c *RabbitMQConsumer) Start() error {
+	ctx, cancel := context.WithCancel(context.Background())
+	c.cancel = cancel
+
+	msgs, err := c.channel.Consume(
+		c.queue,
+		"",
+		false,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		cancel()
+		return fmt.Errorf("start consuming: %w", err)
+	}
+
+	c.wg.Add(1)
+	go func() {
+		defer c.wg.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg, ok := <-msgs:
+				if !ok {
+					return
+				}
+				c.handler(&Message{
+					Topic: msg.RoutingKey,
+					Value: msg.Body,
+				})
+				msg.Ack(false)
+			}
+		}
+	}()
+
+	return nil
+}
+
+// Stop 停止消费者
+func (c *RabbitMQConsumer) Stop() error {
+	c.cancel()
+	c.wg.Wait()
+	if err := c.channel.Close(); err != nil {
+		return err
+	}
+	return c.conn.Close()
+}
+
+// NewRabbitMQProducer 兼容旧接口
+func NewRabbitMQProducer(config interface{}) (Producer, error) {
+	cfg, ok := config.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid rabbitmq config")
+	}
+
+	url, _ := cfg["url"].(string)
+	exchange, _ := cfg["exchange"].(string)
+
+	return NewRabbitMQProducer(&RabbitMQConfig{
+		URL:      url,
+		Exchange: exchange,
+	})
+}

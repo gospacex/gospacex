@@ -1,0 +1,16 @@
+server:
+  host: "0.0.0.0"
+  port: "8080"
+
+database:
+  mysql:
+    enabled: true
+    dsn: "${DB_DSN}"
+    pool:
+      max_idle_conns: 10
+      max_open_conns: 100
+
+log:
+  level: "info"
+  format: "json"
+  output: "stdout"
