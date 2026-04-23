@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"database/sql"
+	"encoding/json"
 	"os/exec"
 	"runtime"
 	"fmt"
@@ -14,6 +15,8 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
+	"github.com/pelletier/go-toml/v2"
 )
 
 var (
@@ -38,6 +41,7 @@ var (
 	microAppJoinStyle     []string // 联表关系: table1:table2=1t1|1tn|nt1
 	microAppMiddleware    bool     // 是否生成中间件/拦截器
 	microAppConfig        string   // 配置中心: nacos|viper(默认)
+	microAppConfigFile    string   // 配置文件路径: yaml/json/toml
 )
 
 var newMicroAppCmd = &cobra.Command{
@@ -66,6 +70,52 @@ type JoinConfig struct {
 	RightTable string // 右表名
 	RightField string // 右表字段
 	Style      string // 1t1, 1tn, nt1
+}
+
+// ConfigFileConfig 微应用配置文件的结构，支持 YAML/JSON/TOML 三种格式
+type ConfigFileConfig struct {
+	Name     string   `yaml:"name" json:"name" toml:"name"`
+	Output   string   `yaml:"output" json:"output" toml:"output"`
+	BFF      string   `yaml:"bff" json:"bff" toml:"bff"`
+	Modules  []string `yaml:"modules" json:"modules" toml:"modules"`
+	Database struct {
+		Host     string   `yaml:"host" json:"host" toml:"host"`
+		Port     int      `yaml:"port" json:"port" toml:"port"`
+		User     string   `yaml:"user" json:"user" toml:"user"`
+		Password string   `yaml:"password" json:"password" toml:"password"`
+		Name     string   `yaml:"name" json:"name" toml:"name"`
+		Tables   []string `yaml:"tables" json:"tables" toml:"tables"`
+	} `yaml:"database" json:"database" toml:"database"`
+}
+
+// parseConfigFile 解析配置文件，支持 yaml/json/toml 三种格式
+func parseConfigFile(configPath string) (*ConfigFileConfig, error) {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("read config file failed: %w", err)
+	}
+
+	var cfg ConfigFileConfig
+	ext := strings.ToLower(filepath.Ext(configPath))
+
+	switch ext {
+	case ".yaml", ".yml":
+		if err := yaml.Unmarshal(data, &cfg); err != nil {
+			return nil, fmt.Errorf("parse yaml config failed: %w", err)
+		}
+	case ".json":
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			return nil, fmt.Errorf("parse json config failed: %w", err)
+		}
+	case ".toml":
+		if err := toml.Unmarshal(data, &cfg); err != nil {
+			return nil, fmt.Errorf("parse toml config failed: %w", err)
+		}
+	default:
+		return nil, fmt.Errorf("unsupported config file format: %s (supported: yaml, json, toml)", ext)
+	}
+
+	return &cfg, nil
 }
 
 // readTableSchema 读取数据库表结构
@@ -142,6 +192,46 @@ func mysqlTypeToProto(mysqlType, colTypeFull, colName string) string {
 }
 
 func runNewMicroApp(cmd *cobra.Command, args []string) error {
+	// 如果指定了 --config-file，从配置文件加载参数
+	if microAppConfigFile != "" {
+		cfg, err := parseConfigFile(microAppConfigFile)
+		if err != nil {
+			return fmt.Errorf("failed to load config file: %w", err)
+		}
+		// 覆盖命令行参数
+		if cfg.Name != "" {
+			microAppName = cfg.Name
+		}
+		if cfg.Output != "" {
+			microAppOutputDir = cfg.Output
+		}
+		if cfg.BFF != "" {
+			microAppBFFName = cfg.BFF
+		}
+		if len(cfg.Modules) > 0 {
+			microAppModules = cfg.Modules
+		}
+		if cfg.Database.Host != "" {
+			microAppDBHost = cfg.Database.Host
+		}
+		if cfg.Database.Port > 0 {
+			microAppDBPort = fmt.Sprintf("%d", cfg.Database.Port)
+		}
+		if cfg.Database.User != "" {
+			microAppDBUser = cfg.Database.User
+		}
+		if cfg.Database.Password != "" {
+			microAppDBPassword = cfg.Database.Password
+		}
+		if cfg.Database.Name != "" {
+			microAppDBName = cfg.Database.Name
+		}
+		if len(cfg.Database.Tables) > 0 {
+			// tables 可以有多个，用逗号分隔的字符串
+			microAppDBTable = strings.Join(cfg.Database.Tables, ",")
+		}
+	}
+
 	// 合并 --srvs 到 --modules
 	if len(microAppSrvs) > 0 {
 		microAppModules = append(microAppModules, microAppSrvs...)
@@ -2235,11 +2325,7 @@ func init() {
 	newMicroAppCmd.Flags().StringArrayVar(&microAppJoinStyle, "djs", nil, "联表关系（简写），格式: table1:table2=1t1|1tn|nt1|ntn（可多次指定）")
 	newMicroAppCmd.Flags().BoolVar(&microAppMiddleware, "middleware", false, "生成中间件（BFF: middleware, SRV: interceptor）")
 	newMicroAppCmd.Flags().StringVar(&microAppConfig, "config", "", "配置中心: nacos|viper（默认从本地 config.yaml 读取）")
-
-	_ = newMicroAppCmd.MarkFlagRequired("name")
-	_ = newMicroAppCmd.MarkFlagRequired("output")
-	_ = newMicroAppCmd.MarkFlagRequired("bff")
-	_ = newMicroAppCmd.MarkFlagRequired("modules")
+	newMicroAppCmd.Flags().StringVar(&microAppConfigFile, "config-file", "", "从配置文件读取参数，支持 yaml/json/toml 格式")
 }
 
 // =============================================================================
