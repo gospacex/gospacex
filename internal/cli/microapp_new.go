@@ -3,10 +3,12 @@ package cli
 import (
 	"bytes"
 	"database/sql"
+	"os/exec"
 	"runtime"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"text/template"
 
@@ -39,10 +41,11 @@ var (
 )
 
 var newMicroAppCmd = &cobra.Command{
-	Use:   "micro-app",
-	Short: "Create micro-app project (BFF + Microservices)",
-	Long:  "Create a complete micro-app project with BFF layer and multiple microservices.",
-	RunE:  runNewMicroApp,
+	Use:     "micro-app",
+	Aliases: []string{"micro"},
+	Short:   "Create micro-app project (BFF + Microservices)",
+	Long:    "Create a complete micro-app project with BFF layer and multiple microservices.",
+	RunE:    runNewMicroApp,
 }
 
 // ColumnInfo 表字段信息
@@ -473,17 +476,23 @@ func runNewMicroApp(cmd *cobra.Command, args []string) error {
 
 	// 生成测试代码（如果 --test 启用）
 	if microAppTest {
+		bffPort := 8080
+		srvPort := 8001
 		genTestDirs(projectDir, microAppBFFName, microAppModules, hasDBTable, tableColumns, moduleTableName)
+		genShellScripts(projectDir, microAppBFFName, microAppModules, bffPort, srvPort)
 	}
 
 	genScripts(projectDir, microAppModules)
 	genMakefile(projectDir, microAppModules)
 	genReadme(projectDir, microAppBFFName, microAppModules)
+	genGoMod(projectDir)
+
+	runGenProtoScript(projectDir)
+
 	genGitignore(projectDir)
 	cleanHiddenFiles(projectDir)
 
 	fmt.Printf("\nDone! Project at: %s\n", projectDir)
-	fmt.Println("Next: cd " + projectDir + " && go mod init github.com/yourorg/" + microAppName)
 	return nil
 }
 
@@ -729,6 +738,7 @@ func genConfig(projectDir string) {
 	content := `package config
 
 import (
+	"fmt"
 	"os"
 	"gopkg.in/yaml.v3"
 )
@@ -760,11 +770,11 @@ type RegistryConfig struct {
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("config file not found: %s (error: %v)", path, err)
 	}
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("config file parse error: %v", err)
 	}
 	return &cfg, nil
 }
@@ -1448,6 +1458,58 @@ configs/local*.yaml
 	if _, err := os.Stat(gitignorePath); os.IsNotExist(err) {
 		os.WriteFile(gitignorePath, []byte(content), 0644)
 	}
+}
+
+// genGoMod 生成 go.mod 文件（包含 replace 指令）
+func genGoMod(projectDir string) {
+	goVersion := getGoVersion()
+	content := fmt.Sprintf(`module %s
+
+go %s
+
+replace %s => .
+`, microAppName, goVersion, microAppName)
+
+	gomodPath := filepath.Join(projectDir, "go.mod")
+	os.WriteFile(gomodPath, []byte(content), 0644)
+	fmt.Printf("  Generated: go.mod (go %s)\n", goVersion)
+}
+
+func getGoVersion() string {
+	cmd := exec.Command("go", "version")
+	output, err := cmd.Output()
+	if err != nil {
+		return "1.21"
+	}
+	re := regexp.MustCompile(`go(\d+\.\d+)`)
+	matches := re.FindStringSubmatch(string(output))
+	if len(matches) > 1 {
+		return matches[1]
+	}
+	return "1.21"
+}
+
+func runGenProtoScript(projectDir string) {
+	scriptPath := filepath.Join(projectDir, "scripts", "gen_proto.sh")
+	absPath, err := filepath.Abs(scriptPath)
+	if err != nil {
+		fmt.Printf("  Warning: failed to get absolute path: %v\n", err)
+		return
+	}
+	if _, err := os.Stat(absPath); os.IsNotExist(err) {
+		fmt.Printf("  Skipped: %s not found\n", absPath)
+		return
+	}
+
+	cmd := exec.Command("bash", absPath)
+	cmd.Dir = projectDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Printf("  Warning: gen_proto.sh failed: %v\n", err)
+		fmt.Printf("  Output: %s\n", string(output))
+		return
+	}
+	fmt.Printf("  Executed: scripts/gen_proto.sh\n")
 }
 
 // cleanHiddenFiles 清理项目目录中的 Windows/macOS 系统隐藏文件
@@ -2213,6 +2275,64 @@ func genTestDirs(projectDir, bffName string, modules []string, hasDBTable bool, 
 	}
 
 	fmt.Println("✓ Test directories and code generated")
+}
+
+// genShellScripts 生成测试 shell 脚本（tests/ 目录）
+func genShellScripts(projectDir, bffName string, modules []string, bffPort, srvPort int) {
+	testsDir := filepath.Join(projectDir, "tests")
+	os.MkdirAll(testsDir, 0755)
+
+	type testModule struct {
+		Name      string
+		UpperName string
+		Package   string
+	}
+	var testModules []testModule
+	for _, m := range modules {
+		upper := strings.ToUpper(m[:1]) + m[1:]
+		testModules = append(testModules, testModule{
+			Name:      m,
+			UpperName: upper,
+			Package:   m,
+		})
+	}
+
+	// BFF 测试脚本
+	bffTmplPath := filepath.Join(getTemplatesDir(), "micro-app", "test", "scripts", "run_bff_tests.sh.tmpl")
+	bffTmplBytes, err := os.ReadFile(bffTmplPath)
+	if err != nil {
+		fmt.Printf("ERROR reading BFF test script template: %v\n", err)
+	} else {
+		bffContent, err := executeTemplate(string(bffTmplBytes), map[string]interface{}{
+			"BFFPort": bffPort,
+			"Modules": testModules,
+		})
+		if err != nil {
+			fmt.Printf("ERROR executing BFF test script template: %v\n", err)
+		} else {
+			os.WriteFile(filepath.Join(testsDir, "run_bff_tests.sh"), []byte(bffContent), 0755)
+			fmt.Printf("  Generated: tests/run_bff_tests.sh\n")
+		}
+	}
+
+	// Service 测试脚本
+	srvTmplPath := filepath.Join(getTemplatesDir(), "micro-app", "test", "scripts", "run_srv_tests.sh.tmpl")
+	srvTmplBytes, err := os.ReadFile(srvTmplPath)
+	if err != nil {
+		fmt.Printf("ERROR reading Service test script template: %v\n", err)
+	} else {
+		srvContent, err := executeTemplate(string(srvTmplBytes), map[string]interface{}{
+			"SRVPort":   srvPort,
+			"Modules":   testModules,
+			"ProtoPath":  "common/idl/" + modules[0] + ".proto",
+		})
+		if err != nil {
+			fmt.Printf("ERROR executing Service test script template: %v\n", err)
+		} else {
+			os.WriteFile(filepath.Join(testsDir, "run_srv_tests.sh"), []byte(srvContent), 0755)
+			fmt.Printf("  Generated: tests/run_srv_tests.sh\n")
+		}
+	}
 }
 
 // genBFFTestFile 生成 BFF 层接口测试（基于 httptest）

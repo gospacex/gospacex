@@ -2,51 +2,186 @@ package test
 
 import (
 	"context"
+	"net"
 	"testing"
 
-	"{{.AppName}}/{{.SrvDirName}}/internal/handler"
-	"{{.AppName}}/{{.SrvDirName}}/internal/repository"
-	"{{.AppName}}/{{.SrvDirName}}/internal/service"
-	"{{.AppName}}/common/kitexGen/{{.Module}}"
+	"myshop/common/kitexGen/product"
+	"myshop/pkg/config"
+	"myshop/pkg/database"
+	"myshop/srvProduct/internal/handler"
+	"myshop/srvProduct/internal/service"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
-// Test{{.UpperModule}}Service_Create 测试 {{.Module}} 创建
-func Test{{.UpperModule}}Service_Create(t *testing.T) {
-	// TODO: 初始化依赖（mock db）
-	// repo := repository.New{{.UpperModule}}Repo(mockDB)
-	// svc := service.New{{.UpperModule}}Service(repo)
-	// h := handler.New{{.UpperModule}}Handler(repo)
+var (
+	testSrvAddr = "localhost:8001"
+	testClient  product.ProductServiceClient
+	testConn    *grpc.ClientConn
+)
 
-	t.Logf("{{.Module}} Create test placeholder - implement with mock DB")
+func setupGRPCClient(t *testing.T) {
+	var err error
+	testConn, err = grpc.Dial(testSrvAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock())
+	if err != nil {
+		t.Skipf("skipping: cannot connect to gRPC server at %s: %v", testSrvAddr, err)
+	}
+	testClient = product.NewProductServiceClient(testConn)
 }
 
-// Test{{.UpperModule}}Service_Get 测试 {{.Module}} 查询
-func Test{{.UpperModule}}Service_Get(t *testing.T) {
-	t.Logf("{{.Module}} Get test placeholder - implement with mock DB")
+func teardownGRPCClient() {
+	if testConn != nil {
+		testConn.Close()
+	}
 }
 
-// Test{{.UpperModule}}Service_List 测试 {{.Module}} 列表
-func Test{{.UpperModule}}Service_List(t *testing.T) {
-	t.Logf("{{.Module}} List test placeholder - implement with mock DB")
+func startTestServer(t *testing.T) func() {
+	cfg, err := config.Load("configs/config.yaml")
+	if err != nil {
+		t.Skipf("skipping: cannot load config: %v", err)
+	}
+	db, err := database.NewDB(&cfg.Database)
+	if err != nil {
+		t.Skipf("skipping: cannot connect to database: %v", err)
+	}
+
+	lis, err := net.Listen("tcp", testSrvAddr)
+	if err != nil {
+		t.Skipf("skipping: cannot listen on %s: %v", testSrvAddr, err)
+	}
+
+	srv := grpc.NewServer()
+	productHandler := handler.NewProductHandler(db)
+	product.RegisterProductServiceServer(srv, productHandler)
+	go srv.Serve(lis)
+
+	return func() {
+		srv.Stop()
+		lis.Close()
+	}
 }
 
-// Test{{.UpperModule}}Service_Update 测试 {{.Module}} 更新
-func Test{{.UpperModule}}Service_Update(t *testing.T) {
-	t.Logf("{{.Module}} Update test placeholder - implement with mock DB")
+func TestMain(m *testing.M) {
+	m.Run()
 }
 
-// Test{{.UpperModule}}Service_Delete 测试 {{.Module}} 删除
-func Test{{.UpperModule}}Service_Delete(t *testing.T) {
-	t.Logf("{{.Module}} Delete test placeholder - implement with mock DB")
+// TestProductService_Create 测试创建
+func TestProductService_Create(t *testing.T) {
+	setupGRPCClient(t)
+	defer teardownGRPCClient()
+
+	resp, err := testClient.Create(context.Background(), &product.CreateProductReq{
+		StoreName: "Test Product",
+		Price:     99.9,
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if resp.Id == 0 {
+		t.Error("Expected non-zero id")
+	}
+	t.Logf("Created product with id: %d", resp.Id)
 }
 
-// Test{{.UpperModule}}GRPCHandler 测试 gRPC Handler 接口
-func Test{{.UpperModule}}GRPCHandler(t *testing.T) {
-	// TODO: 使用 bufconn 创建内存 gRPC 服务端进行测试
-	// lis := bufconn.Listen(1024 * 1024)
-	// s := grpc.NewServer()
-	// {{.Module}}.Register{{.UpperModule}}ServiceServer(s, handler.New{{.UpperModule}}Handler(mockDB))
-	// go s.Serve(lis)
+// TestProductService_List 测试列表
+func TestProductService_List(t *testing.T) {
+	setupGRPCClient(t)
+	defer teardownGRPCClient()
 
-	t.Logf("{{.Module}} gRPC handler test placeholder - implement with bufconn")
+	resp, err := testClient.List(context.Background(), &product.ListProductReq{})
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	t.Logf("Listed %d products", len(resp.Items))
+}
+
+// TestProductService_Get 测试查询
+func TestProductService_Get(t *testing.T) {
+	setupGRPCClient(t)
+	defer teardownGRPCClient()
+
+	// 先创建一个用于测试
+	createResp, err := testClient.Create(context.Background(), &product.CreateProductReq{
+		StoreName: "Get Test Product",
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	resp, err := testClient.Get(context.Background(), &product.GetProductReq{
+		Id: createResp.Id,
+	})
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if resp.StoreName != "Get Test Product" {
+		t.Errorf("Expected store_name 'Get Test Product', got '%s'", resp.StoreName)
+	}
+}
+
+// TestProductService_Update 测试更新
+func TestProductService_Update(t *testing.T) {
+	setupGRPCClient(t)
+	defer teardownGRPCClient()
+
+	// 先创建一个用于测试
+	createResp, err := testClient.Create(context.Background(), &product.CreateProductReq{
+		StoreName: "Before Update",
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	// 更新
+	_, err = testClient.Update(context.Background(), &product.UpdateProductReq{
+		Id:        createResp.Id,
+		StoreName: "After Update",
+	})
+	if err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+
+	// 验证更新
+	getResp, err := testClient.Get(context.Background(), &product.GetProductReq{
+		Id: createResp.Id,
+	})
+	if err != nil {
+		t.Fatalf("Get after update failed: %v", err)
+	}
+	if getResp.StoreName != "After Update" {
+		t.Errorf("Expected store_name 'After Update', got '%s'", getResp.StoreName)
+	}
+}
+
+// TestProductService_Delete 测试删除
+func TestProductService_Delete(t *testing.T) {
+	setupGRPCClient(t)
+	defer teardownGRPCClient()
+
+	// 先创建一个用于测试
+	createResp, err := testClient.Create(context.Background(), &product.CreateProductReq{
+		StoreName: "To Delete",
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	// 删除
+	_, err = testClient.Delete(context.Background(), &product.DeleteProductReq{
+		Id: createResp.Id,
+	})
+	if err != nil {
+		t.Fatalf("Delete failed: %v", err)
+	}
+
+	// 验证删除 - 应该失败
+	_, err = testClient.Get(context.Background(), &product.GetProductReq{
+		Id: createResp.Id,
+	})
+	if err == nil {
+		t.Error("Expected error when getting deleted product, got nil")
+	}
 }

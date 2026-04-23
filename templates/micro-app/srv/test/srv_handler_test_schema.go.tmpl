@@ -1,103 +1,180 @@
 package test
 
 import (
+	"context"
+	"net"
 	"testing"
 
-	"{{.AppName}}/{{.SrvDirName}}/internal/model"
+	"myshop/common/kitexGen/product"
+	"myshop/pkg/config"
+	"myshop/pkg/database"
+	"myshop/srvProduct/internal/handler"
+	"myshop/srvProduct/internal/service"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
-// Test{{.UpperModule}}Model_TableName 测试模型表名
-func Test{{.UpperModule}}Model_TableName(t *testing.T) {
-	m := model.{{.UpperModule}}{}
-	expected := "{{.TableName}}"
-	if m.TableName() != expected {
-		t.Errorf("expected table name %s, got %s", expected, m.TableName())
+var (
+	testSrvAddr = "localhost:8001"
+	testClient  product.ProductServiceClient
+	testConn    *grpc.ClientConn
+)
+
+func setupGRPCClient(t *testing.T) {
+	var err error
+	testConn, err = grpc.Dial(testSrvAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock())
+	if err != nil {
+		t.Skipf("skipping: cannot connect to gRPC server at %s: %v", testSrvAddr, err)
+	}
+	testClient = product.NewProductServiceClient(testConn)
+}
+
+func teardownGRPCClient() {
+	if testConn != nil {
+		testConn.Close()
 	}
 }
 
-// Test{{.UpperModule}}Service_Create 测试 {{.Module}} 创建接口
-func Test{{.UpperModule}}Service_Create(t *testing.T) {
-	// TODO: 初始化 mock DB
-	// repo := repository.New{{.UpperModule}}Repo(mockDB)
-	// svc := service.New{{.UpperModule}}Service(repo)
-	// h := handler.New{{.UpperModule}}Handler(mockDB)
+func startTestServer(t *testing.T) func() {
+	cfg, err := config.Load("configs/config.yaml")
+	if err != nil {
+		t.Skipf("skipping: cannot load config: %v", err)
+	}
+	db, err := database.NewDB(&cfg.Database)
+	if err != nil {
+		t.Skipf("skipping: cannot connect to database: %v", err)
+	}
 
-	// req := &{{.Module}}.Create{{.UpperModule}}Req{
-{{range .CreateFields}}		// {{.ProtoGoName}}: {{.ZeroValue}},
-{{end}}	// }
-	// resp, err := h.Create(context.Background(), req)
-	// if err != nil {
-	// 	t.Fatalf("Create failed: %v", err)
-	// }
-	// if resp.{{.PKProtoGoName}} == 0 {
-	// 	t.Error("expected non-zero ID")
-	// }
+	lis, err := net.Listen("tcp", testSrvAddr)
+	if err != nil {
+		t.Skipf("skipping: cannot listen on %s: %v", testSrvAddr, err)
+	}
 
-	t.Logf("{{.Module}} Create test - implement with mock DB")
+	srv := grpc.NewServer()
+	productHandler := handler.NewProductHandler(db)
+	product.RegisterProductServiceServer(srv, productHandler)
+	go srv.Serve(lis)
+
+	return func() {
+		srv.Stop()
+		lis.Close()
+	}
 }
 
-// Test{{.UpperModule}}Service_Get 测试 {{.Module}} 查询接口
-func Test{{.UpperModule}}Service_Get(t *testing.T) {
-	// req := &{{.Module}}.Get{{.UpperModule}}Req{ {{.PKProtoGoName}}: 1 }
-	// resp, err := h.Get(context.Background(), req)
-	// if err != nil {
-	// 	t.Fatalf("Get failed: %v", err)
-	// }
-
-	t.Logf("{{.Module}} Get test - implement with mock DB")
+func TestMain(m *testing.M) {
+	m.Run()
 }
 
-// Test{{.UpperModule}}Service_List 测试 {{.Module}} 列表接口
-func Test{{.UpperModule}}Service_List(t *testing.T) {
-	// req := &{{.Module}}.List{{.UpperModule}}Req{}
-	// resp, err := h.List(context.Background(), req)
-	// if err != nil {
-	// 	t.Fatalf("List failed: %v", err)
-	// }
-	// if len(resp.Items) == 0 {
-	// 	t.Log("no items returned (may be expected with empty mock DB)")
-	// }
+// TestProductService_Create 测试创建
+func TestProductService_Create(t *testing.T) {
+	setupGRPCClient(t)
+	defer teardownGRPCClient()
 
-	t.Logf("{{.Module}} List test - implement with mock DB")
+	resp, err := testClient.Create(context.Background(), &product.CreateProductReq{
+		StoreName: "Test Product",
+		Price:     99.9,
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if resp.Id == 0 {
+		t.Error("Expected non-zero id")
+	}
+	t.Logf("Created product with id: %d", resp.Id)
 }
 
-// Test{{.UpperModule}}Service_Update 测试 {{.Module}} 更新接口
-func Test{{.UpperModule}}Service_Update(t *testing.T) {
-	// req := &{{.Module}}.Update{{.UpperModule}}Req{
-{{range .UpdateFields}}		// {{.ProtoGoName}}: {{.ZeroValue}},
-{{end}}	// }
-	// resp, err := h.Update(context.Background(), req)
-	// if err != nil {
-	// 	t.Fatalf("Update failed: %v", err)
-	// }
-	// if !resp.Success {
-	// 	t.Error("expected success")
-	// }
+// TestProductService_List 测试列表
+func TestProductService_List(t *testing.T) {
+	setupGRPCClient(t)
+	defer teardownGRPCClient()
 
-	t.Logf("{{.Module}} Update test - implement with mock DB")
+	resp, err := testClient.List(context.Background(), &product.ListProductReq{})
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	t.Logf("Listed %d products", len(resp.Items))
 }
 
-// Test{{.UpperModule}}Service_Delete 测试 {{.Module}} 删除接口
-func Test{{.UpperModule}}Service_Delete(t *testing.T) {
-	// req := &{{.Module}}.Delete{{.UpperModule}}Req{ {{.PKProtoGoName}}: 1 }
-	// resp, err := h.Delete(context.Background(), req)
-	// if err != nil {
-	// 	t.Fatalf("Delete failed: %v", err)
-	// }
-	// if !resp.Success {
-	// 	t.Error("expected success")
-	// }
+// TestProductService_Get 测试查询
+func TestProductService_Get(t *testing.T) {
+	setupGRPCClient(t)
+	defer teardownGRPCClient()
 
-	t.Logf("{{.Module}} Delete test - implement with mock DB")
+	createResp, err := testClient.Create(context.Background(), &product.CreateProductReq{
+		StoreName: "Get Test Product",
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	resp, err := testClient.Get(context.Background(), &product.GetProductReq{
+		Id: createResp.Id,
+	})
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if resp.StoreName != "Get Test Product" {
+		t.Errorf("Expected store_name 'Get Test Product', got '%s'", resp.StoreName)
+	}
 }
 
-// Test{{.UpperModule}}GRPCHandler 测试 gRPC Handler
-func Test{{.UpperModule}}GRPCHandler(t *testing.T) {
-	// TODO: 使用 bufconn 创建内存 gRPC 服务端进行测试
-	// lis := bufconn.Listen(1024 * 1024)
-	// s := grpc.NewServer()
-	// {{.Module}}.Register{{.UpperModule}}ServiceServer(s, handler.New{{.UpperModule}}Handler(mockDB))
-	// go s.Serve(lis)
+// TestProductService_Update 测试更新
+func TestProductService_Update(t *testing.T) {
+	setupGRPCClient(t)
+	defer teardownGRPCClient()
 
-	t.Logf("{{.Module}} gRPC handler test - implement with bufconn")
+	createResp, err := testClient.Create(context.Background(), &product.CreateProductReq{
+		StoreName: "Before Update",
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	_, err = testClient.Update(context.Background(), &product.UpdateProductReq{
+		Id:        createResp.Id,
+		StoreName: "After Update",
+	})
+	if err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+
+	getResp, err := testClient.Get(context.Background(), &product.GetProductReq{
+		Id: createResp.Id,
+	})
+	if err != nil {
+		t.Fatalf("Get after update failed: %v", err)
+	}
+	if getResp.StoreName != "After Update" {
+		t.Errorf("Expected store_name 'After Update', got '%s'", getResp.StoreName)
+	}
+}
+
+// TestProductService_Delete 测试删除
+func TestProductService_Delete(t *testing.T) {
+	setupGRPCClient(t)
+	defer teardownGRPCClient()
+
+	createResp, err := testClient.Create(context.Background(), &product.CreateProductReq{
+		StoreName: "To Delete",
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	_, err = testClient.Delete(context.Background(), &product.DeleteProductReq{
+		Id: createResp.Id,
+	})
+	if err != nil {
+		t.Fatalf("Delete failed: %v", err)
+	}
+
+	_, err = testClient.Get(context.Background(), &product.GetProductReq{
+		Id: createResp.Id,
+	})
+	if err == nil {
+		t.Error("Expected error when getting deleted product, got nil")
+	}
 }

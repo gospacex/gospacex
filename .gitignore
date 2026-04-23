@@ -30,7 +30,7 @@ go.work.sum
 .opencode/
 .claudecode/
 .gsd/
-.openspec/
+openspec/
 .spec-kit/
 opencode.lock
 claudecode.lock
@@ -40,5 +40,8 @@ spec-kit.lock
 
 docs
 output
+
+examples
+data
 
 

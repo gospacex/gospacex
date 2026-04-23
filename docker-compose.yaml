@@ -27,7 +27,7 @@ services:
       MYSQL_DATABASE: gorm
       MYSQL_USER: gorm
       MYSQL_PASSWORD: gorm
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_PASSWORD: 123456
     restart: always
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]

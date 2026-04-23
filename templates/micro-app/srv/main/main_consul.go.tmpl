@@ -24,10 +24,25 @@ func init() {
 
 func main() {
 	flag.Parse()
-	cfg, _ := config.Load(confPath)
-	db, _ := database.NewDB(&cfg.Database)
+	cfg, err := config.Load(confPath)
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
+	if cfg == nil {
+		log.Fatal("Config is nil - check if config file exists: " + confPath)
+	}
+	db, err := database.NewDB(&cfg.Database)
+	if err != nil {
+		log.Fatalf("Failed to connect database: %v", err)
+	}
+	if db == nil {
+		log.Fatal("Database connection is nil")
+	}
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-	lis, _ := net.Listen("tcp", addr)
+	lis, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatalf("Failed to listen: %v", err)
+	}
 	s := grpc.NewServer()
 	{{.Module}}.Register{{.UpperModule}}ServiceServer(s, handler.New{{.UpperModule}}Handler(db))
 	reflection.Register(s)
@@ -40,9 +55,9 @@ func main() {
 		log.Printf("Warning: Failed to connect to Consul: %v", err)
 	} else {
 		registration := &api.AgentServiceRegistration{
-			ID:      "{{.Module}}",
-			Name:    "{{.Module}}",
-			Port:    cfg.Server.Port,
+			ID:   "{{.Module}}",
+			Name: "{{.Module}}",
+			Port: cfg.Server.Port,
 			Address: cfg.Server.Host,
 			Check: &api.AgentServiceCheck{
 				GRPC:     addr,

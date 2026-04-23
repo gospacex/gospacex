@@ -40,16 +40,6 @@ func Execute() error {
 		GetScriptCenterCmd(),
 	)
 
-	// 添加 micro 别名（指向 micro-app）
-	microCmd := &cobra.Command{
-		Use:     "micro",
-		Short:   "Create micro-app project (alias for micro-app)",
-		Long:    `Create micro-app project - alias for 'micro-app' command.`,
-		Aliases: []string{"micro-app"},
-		RunE:    runNewMicroApp,
-	}
-	rootCmd.AddCommand(microCmd)
-
 	return rootCmd.Execute()
 }
 

@@ -8,7 +8,6 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/grpc v1.62.1
-	google.golang.org/protobuf v1.36.10
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/gorm v1.31.1
@@ -52,4 +51,5 @@ require (
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240314234333-6e1732d8331c // indirect
+	google.golang.org/protobuf v1.36.10 // indirect
 )
