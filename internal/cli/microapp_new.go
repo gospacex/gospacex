@@ -52,6 +52,22 @@ var newMicroAppCmd = &cobra.Command{
 	RunE:    runNewMicroApp,
 }
 
+func runNewMicroApp(cmd *cobra.Command, args []string) error {
+	// 检测是否进入交互式模式
+	if detectInteractiveMode() {
+		cfg, err := runInteractiveMode()
+		if err != nil {
+			return err
+		}
+		// 将交互式配置转换为命令行变量
+		if err := applyInteractiveConfig(cfg); err != nil {
+			return err
+		}
+	}
+	// 执行原有逻辑
+	return runNewMicroAppWithFlags()
+}
+
 // ColumnInfo 表字段信息
 type ColumnInfo struct {
 	Name       string // 字段名
@@ -86,6 +102,40 @@ type ConfigFileConfig struct {
 		Name     string   `yaml:"name" json:"name" toml:"name"`
 		Tables   []string `yaml:"tables" json:"tables" toml:"tables"`
 	} `yaml:"database" json:"database" toml:"database"`
+}
+
+// InteractiveConfig 交互式配置结果
+type InteractiveConfig struct {
+	Mode           string   // "default" or "diy"
+	ProjectName     string   // 项目名称
+	BFFName         string   // BFF 名称
+	Modules         []string // 模块列表
+	Style           string   // standard, ddd, serviceMesh
+	IDLType         string   // proto, thrift
+	StorageTypes    []string // sql, cache, nosql, es, mq
+	RegistryEnabled bool     // 是否启用注册中心
+	RegistryType    string   // nacos, consul, etcd, zookeeper, polaris
+	RegistryAddr    string   // 注册中心地址
+	ConfigEnabled   bool     // 是否启用配置中心
+	ConfigType      string   // nacos, apollo, consul, etcd, zookeeper
+	ConfigAddr      string   // 配置中心地址
+	ConfigFormat    string   // yaml, json, properties
+	SQLType         string   // mysql, pg
+	SQLHost         string
+	SQLPort         string
+	SQLUser         string
+	SQLPassword     string
+	SQLDatabase     string
+	SQLTables       []string
+	CacheType       string   // redis, memcached, dragonfly, keydb
+	CacheHost       string
+	CachePort       string
+	CachePassword   string
+	CacheDB         string
+	MQTypes         []string // rabbitmq, rocketmq, kafka, pulsar, redis-stream
+	DTMType         string   // XA, TCC, saga, msg
+	EnableTracing   bool
+	EnableTest      bool
 }
 
 // parseConfigFile 解析配置文件，支持 yaml/json/toml 三种格式
@@ -191,7 +241,358 @@ func mysqlTypeToProto(mysqlType, colTypeFull, colName string) string {
 	}
 }
 
-func runNewMicroApp(cmd *cobra.Command, args []string) error {
+// detectInteractiveMode 检测是否进入交互式模式
+// 无参数或参数只有 "micro" 时进入交互式模式
+func detectInteractiveMode() bool {
+	if len(os.Args) <= 2 {
+		return true
+	}
+	return false
+}
+
+// runInteractiveMode 启动交互式配置模式
+func runInteractiveMode() (*InteractiveConfig, error) {
+	fmt.Println("╔══════════════════════════════════════════════════════════════════╗")
+	fmt.Println("║                    欢迎使用微应用生成器                              ║")
+	fmt.Println("║              GoSpaceX Micro-App Generator v1.0                    ║")
+	fmt.Println("╚══════════════════════════════════════════════════════════════════╝")
+	fmt.Println()
+
+	for {
+		fmt.Println("请选择生成模式：")
+		fmt.Println("  A. 默认标准微服（快速生成，使用默认配置）")
+		fmt.Println("  B. 自定义配置（DIY 配置看板）")
+		fmt.Println()
+		fmt.Print("请输入选项 [A/B]: ")
+
+		var choice string
+		fmt.Scanln(&choice)
+		choice = strings.TrimSpace(strings.ToUpper(choice))
+
+		switch choice {
+		case "A":
+			return handleOptionA()
+		case "B":
+			return handleOptionB()
+		default:
+			fmt.Println("无效选项，请输入 A 或 B")
+			fmt.Println()
+		}
+	}
+}
+
+// handleOptionA 默认模式处理
+func handleOptionA() (*InteractiveConfig, error) {
+	fmt.Println()
+	fmt.Println("正在使用默认配置生成...")
+	return &InteractiveConfig{
+		Mode:           "default",
+		Style:          "standard",
+		IDLType:        "proto",
+		StorageTypes:   []string{"sql", "cache"},
+		RegistryEnabled: false,
+		ConfigEnabled:  false,
+		CacheType:      "redis",
+		EnableTest:     false,
+	}, nil
+}
+
+// handleOptionB DIY 配置看板
+func handleOptionB() (*InteractiveConfig, error) {
+	cfg := &InteractiveConfig{
+		Mode:           "diy",
+		StorageTypes:  []string{},
+		MQTypes:        []string{},
+		SQLTables:      []string{},
+	}
+
+	fmt.Println()
+	fmt.Println("╔══════════════════════════════════════════════════════════════════╗")
+	fmt.Println("║                        DIY 微服务配置看板                           ║")
+	fmt.Println("╚══════════════════════════════════════════════════════════════════╝")
+
+	// 阶段 1: 基础信息
+	fmt.Println()
+	fmt.Println("【阶段 1】基础信息")
+	cfg.Style = selectOption("  微服务类型", []string{"standard", "ddd", "serviceMesh"}, "standard")
+	cfg.IDLType = selectOption("  IDL 类型", []string{"proto", "thrift"}, "proto")
+
+	// 阶段 2: 服务命名
+	fmt.Println()
+	fmt.Println("【阶段 2】服务命名")
+	fmt.Print("  项目名称: ")
+	fmt.Scanln(&cfg.ProjectName)
+	if cfg.ProjectName == "" {
+		cfg.ProjectName = "myapp"
+	}
+	fmt.Print("  BFF 名称 (默认: bffH5): ")
+	var bffName string
+	fmt.Scanln(&bffName)
+	if bffName == "" {
+		bffName = "bffH5"
+	}
+	cfg.BFFName = bffName
+	cfg.Modules = inputModules()
+
+	// 阶段 3: 数据存储选型
+	fmt.Println()
+	fmt.Println("【阶段 3】数据存储选型")
+	fmt.Println("  可选: sql, cache, nosql, es, mq (多个用逗号分隔)")
+	fmt.Print("  请选择: ")
+	var storageInput string
+	fmt.Scanln(&storageInput)
+	if storageInput == "" {
+		cfg.StorageTypes = []string{"sql", "cache"}
+	} else {
+		cfg.StorageTypes = strings.Split(strings.ToLower(storageInput), ",")
+		for i := range cfg.StorageTypes {
+			cfg.StorageTypes[i] = strings.TrimSpace(cfg.StorageTypes[i])
+		}
+	}
+
+	// 阶段 4: 注册中心
+	fmt.Println()
+	fmt.Println("【阶段 4】注册中心")
+	cfg.RegistryEnabled = selectYesNo("  启用注册中心")
+	if cfg.RegistryEnabled {
+		cfg.RegistryType = selectOption("  类型", []string{"nacos", "consul", "etcd", "zookeeper", "polaris"}, "nacos")
+		fmt.Print("  连接地址 (默认: 127.0.0.1:8848): ")
+		fmt.Scanln(&cfg.RegistryAddr)
+		if cfg.RegistryAddr == "" {
+			cfg.RegistryAddr = "127.0.0.1:8848"
+		}
+	}
+
+	// 阶段 5: 配置中心
+	fmt.Println()
+	fmt.Println("【阶段 5】配置中心")
+	cfg.ConfigEnabled = selectYesNo("  启用配置中心")
+	if cfg.ConfigEnabled {
+		cfg.ConfigType = selectOption("  类型", []string{"nacos", "apollo", "consul", "etcd", "zookeeper"}, "nacos")
+		fmt.Print("  连接地址 (默认: 127.0.0.1:8848): ")
+		fmt.Scanln(&cfg.ConfigAddr)
+		if cfg.ConfigAddr == "" {
+			cfg.ConfigAddr = "127.0.0.1:8848"
+		}
+		cfg.ConfigFormat = selectOption("  配置格式", []string{"yaml", "json", "properties"}, "yaml")
+	}
+
+	// 阶段 6: SQL 配置 (条件显示)
+	if contains(cfg.StorageTypes, "sql") {
+		fmt.Println()
+		fmt.Println("【阶段 6】SQL 配置")
+		cfg.SQLType = selectOption("  SQL 类型", []string{"mysql", "pg"}, "mysql")
+		fmt.Print("  主机: ")
+		fmt.Scanln(&cfg.SQLHost)
+		if cfg.SQLHost == "" {
+			cfg.SQLHost = "127.0.0.1"
+		}
+		fmt.Print("  端口 (默认: 3306): ")
+		fmt.Scanln(&cfg.SQLPort)
+		if cfg.SQLPort == "" {
+			cfg.SQLPort = "3306"
+		}
+		fmt.Print("  用户 (默认: root): ")
+		fmt.Scanln(&cfg.SQLUser)
+		if cfg.SQLUser == "" {
+			cfg.SQLUser = "root"
+		}
+		fmt.Print("  密码: ")
+		fmt.Scanln(&cfg.SQLPassword)
+		fmt.Print("  数据库名: ")
+		fmt.Scanln(&cfg.SQLDatabase)
+		fmt.Print("  表名 (多个用逗号分隔): ")
+		var tablesInput string
+		fmt.Scanln(&tablesInput)
+		if tablesInput != "" {
+			cfg.SQLTables = strings.Split(tablesInput, ",")
+		}
+	}
+
+	// 阶段 7: Cache 配置 (条件显示)
+	if contains(cfg.StorageTypes, "cache") {
+		fmt.Println()
+		fmt.Println("【阶段 7】Cache 配置")
+		cfg.CacheType = selectOption("  Cache 类型", []string{"redis", "memcached", "dragonfly", "keydb"}, "redis")
+		fmt.Print("  主机 (默认: 127.0.0.1): ")
+		fmt.Scanln(&cfg.CacheHost)
+		if cfg.CacheHost == "" {
+			cfg.CacheHost = "127.0.0.1"
+		}
+		fmt.Print("  端口 (默认: 6379): ")
+		fmt.Scanln(&cfg.CachePort)
+		if cfg.CachePort == "" {
+			cfg.CachePort = "6379"
+		}
+		fmt.Print("  密码: ")
+		fmt.Scanln(&cfg.CachePassword)
+		fmt.Print("  数据库编号 (默认: 0): ")
+		var dbStr string
+		fmt.Scanln(&dbStr)
+		if dbStr == "" {
+			dbStr = "0"
+		}
+		cfg.CacheDB = dbStr
+	}
+
+	// 阶段 8: MQ 配置 (条件显示)
+	if contains(cfg.StorageTypes, "mq") {
+		fmt.Println()
+		fmt.Println("【阶段 8】MQ 配置")
+		fmt.Println("  可选: rabbitmq, rocketmq, kafka, pulsar, redis-stream")
+		fmt.Print("  请选择: ")
+		var mqInput string
+		fmt.Scanln(&mqInput)
+		if mqInput != "" {
+			cfg.MQTypes = strings.Split(strings.ToLower(mqInput), ",")
+		}
+	}
+
+	// 阶段 9: 进阶特性
+	fmt.Println()
+	fmt.Println("【阶段 9】进阶特性")
+	cfg.DTMType = selectOption("  DTM 分布式事务模式", []string{"XA", "TCC", "saga", "msg", "none"}, "none")
+	cfg.EnableTracing = selectYesNo("  启用调用链")
+	cfg.EnableTest = selectYesNo("  生成测试代码")
+
+	// 确认
+	fmt.Println()
+	fmt.Println("═══════════════════════════════════════════════════════════════════")
+	fmt.Print("  确认生成？[Y/n]: ")
+	var confirm string
+	fmt.Scanln(&confirm)
+	if strings.ToLower(confirm) == "n" {
+		fmt.Println("  重新配置...")
+		return handleOptionB()
+	}
+
+	return cfg, nil
+}
+
+// selectOption 选择选项
+func selectOption(prompt string, options []string, defaultVal string) string {
+	fmt.Printf("  %s:\n", prompt)
+	for i, opt := range options {
+		fmt.Printf("    %d. %s\n", i+1, opt)
+	}
+	fmt.Printf("  请选择 [默认: %s]: ", defaultVal)
+	var idxStr string
+	fmt.Scanln(&idxStr)
+	idxStr = strings.TrimSpace(idxStr)
+	if idxStr == "" {
+		return defaultVal
+	}
+	idx := 0
+	fmt.Sscanf(idxStr, "%d", &idx)
+	if idx > 0 && idx <= len(options) {
+		return options[idx-1]
+	}
+	return defaultVal
+}
+
+// selectYesNo 是/否选择
+func selectYesNo(prompt string) bool {
+	fmt.Printf("  %s [y/N]: ", prompt)
+	var choice string
+	fmt.Scanln(&choice)
+	return strings.ToLower(choice) == "y"
+}
+
+// inputModules 输入模块列表
+func inputModules() []string {
+	fmt.Print("  模块列表 (多个用逗号分隔): ")
+	var input string
+	fmt.Scanln(&input)
+	if input == "" {
+		return []string{"product"}
+	}
+	modules := strings.Split(input, ",")
+	for i := range modules {
+		modules[i] = strings.TrimSpace(modules[i])
+	}
+	return modules
+}
+
+// contains 检查切片是否包含元素
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+
+// applyInteractiveConfig 将交互式配置转换为命令行变量
+func applyInteractiveConfig(cfg *InteractiveConfig) error {
+	// 设置命令行变量
+	if cfg.ProjectName != "" {
+		microAppName = cfg.ProjectName
+	}
+	if cfg.BFFName != "" {
+		microAppBFFName = cfg.BFFName
+	}
+	if len(cfg.Modules) > 0 {
+		microAppModules = cfg.Modules
+	}
+	microAppOutputDir = "output"
+	if cfg.IDLType != "" {
+		microAppIDL = cfg.IDLType
+	}
+	if cfg.Style != "" {
+		microAppStyle = cfg.Style
+	}
+	microAppTest = cfg.EnableTest
+
+	// SQL 配置
+	microAppDBHost = cfg.SQLHost
+	if cfg.SQLHost == "" {
+		microAppDBHost = "127.0.0.1"
+	}
+	microAppDBPort = cfg.SQLPort
+	if cfg.SQLPort == "" {
+		microAppDBPort = "3306"
+	}
+	microAppDBUser = cfg.SQLUser
+	if cfg.SQLUser == "" {
+		microAppDBUser = "root"
+	}
+	microAppDBPassword = cfg.SQLPassword
+	microAppDBName = cfg.SQLDatabase
+	if len(cfg.SQLTables) > 0 {
+		microAppDBTable = strings.Join(cfg.SQLTables, ",")
+	}
+
+	// 注册中心配置
+	if cfg.RegistryEnabled && cfg.RegistryType != "" {
+		microAppRegister = cfg.RegistryType
+	}
+
+	// 处理 modules 中英文逗号
+	if len(microAppModules) > 0 {
+		var normalizedModules []string
+		for _, m := range microAppModules {
+			m = strings.ReplaceAll(m, "，", ",")
+			for _, part := range strings.Split(m, ",") {
+				part = strings.TrimSpace(part)
+				if part != "" {
+					normalizedModules = append(normalizedModules, part)
+				}
+			}
+		}
+		microAppModules = normalizedModules
+	}
+
+	return nil
+}
+
+// runNewMicroAppWithFlags 在设置好变量后执行原有逻辑
+func runNewMicroAppWithFlags() error {
+	// 验证必填参数
+	if microAppName == "" || microAppOutputDir == "" || microAppBFFName == "" || len(microAppModules) == 0 {
+		return fmt.Errorf("all flags are required: --name, --output, --bff, --modules")
+	}
+
 	// 如果指定了 --config-file，从配置文件加载参数
 	if microAppConfigFile != "" {
 		cfg, err := parseConfigFile(microAppConfigFile)
