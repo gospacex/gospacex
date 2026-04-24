@@ -286,13 +286,16 @@ func handleOptionA() (*InteractiveConfig, error) {
 	fmt.Println()
 	fmt.Println("正在使用默认配置生成...")
 	return &InteractiveConfig{
-		Mode:           "default",
+		Mode:            "default",
+		ProjectName:    "myapp",
+		BFFName:        "bff",
+		Modules:        []string{"srv"},
 		Style:          "standard",
 		IDLType:        "proto",
 		StorageTypes:   []string{"sql", "cache"},
 		RegistryEnabled: false,
 		ConfigEnabled:  false,
-		CacheType:      "redis",
+		CacheType:       "redis",
 		EnableTest:     false,
 	}, nil
 }
@@ -325,11 +328,11 @@ func handleOptionB() (*InteractiveConfig, error) {
 	if cfg.ProjectName == "" {
 		cfg.ProjectName = "myapp"
 	}
-	fmt.Print("  BFF 名称 (默认: bffH5): ")
+	fmt.Print("  BFF 名称 (默认: bff): ")
 	var bffName string
 	fmt.Scanln(&bffName)
 	if bffName == "" {
-		bffName = "bffH5"
+		bffName = "bff"
 	}
 	cfg.BFFName = bffName
 	cfg.Modules = inputModules()
@@ -588,9 +591,18 @@ func applyInteractiveConfig(cfg *InteractiveConfig) error {
 
 // runNewMicroAppWithFlags 在设置好变量后执行原有逻辑
 func runNewMicroAppWithFlags() error {
-	// 验证必填参数
-	if microAppName == "" || microAppOutputDir == "" || microAppBFFName == "" || len(microAppModules) == 0 {
-		return fmt.Errorf("all flags are required: --name, --output, --bff, --modules")
+	// 设置默认值
+	if microAppName == "" {
+		microAppName = "myapp"
+	}
+	if microAppOutputDir == "" {
+		microAppOutputDir = "output"
+	}
+	if microAppBFFName == "" {
+		microAppBFFName = "bff"
+	}
+	if len(microAppModules) == 0 {
+		microAppModules = []string{"srv"}
 	}
 
 	// 如果指定了 --config-file，从配置文件加载参数
@@ -653,10 +665,6 @@ func runNewMicroAppWithFlags() error {
 			}
 		}
 		microAppModules = normalizedModules
-	}
-
-	if microAppName == "" || microAppOutputDir == "" || microAppBFFName == "" || len(microAppModules) == 0 {
-		return fmt.Errorf("all flags are required: --name, --output, --bff, --modules")
 	}
 
 	// 验证协议和 HTTP 框架
@@ -3397,17 +3405,19 @@ func executeTemplate(templateStr string, data interface{}) (string, error) {
 
 // toSrvDirName 生成 srv 目录名（小驼峰）：srvProduct, srvOrder
 func toSrvDirName(module string) string {
-	if module == "" {
+	if module == "" || module == "srv" {
 		return "srv"
 	}
+	// 仅当模块名长度 > 1 且不是 srv 时添加前缀
 	return "srv" + strings.ToUpper(module[:1]) + module[1:]
 }
 
-// toBffDirName 生成 BFF 目录名（小驼峰）：bffApi, bffH5
+// toBffDirName 生成 BFF 目录名（小驼峰）：bffApi, bffH5, bff
 func toBffDirName(bffName string) string {
-	if bffName == "" {
+	if bffName == "" || bffName == "bff" {
 		return "bff"
 	}
+	// 仅当 bff 名称长度 > 1 且不是 bff 时添加前缀
 	return "bff" + strings.ToUpper(bffName[:1]) + bffName[1:]
 }
 
