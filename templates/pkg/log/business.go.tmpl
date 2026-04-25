@@ -1,0 +1,39 @@
+package log
+
+import (
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+)
+
+type BusinessLogger struct {
+	*zap.SugaredLogger
+}
+
+func NewBusinessLogger(logger *zap.Logger) *BusinessLogger {
+	return &BusinessLogger{
+		logger.Named("business").Sugar(),
+	}
+}
+
+func (l *BusinessLogger) With(fields ...zap.Field) *BusinessLogger {
+	return &BusinessLogger{l.SugaredLogger.With(fields...)}
+}
+
+func (l *BusinessLogger) WithLevel(level zapcore.Level, msg string, args ...interface{}) {
+	switch level {
+	case zapcore.DebugLevel:
+		l.Debugw(msg, args...)
+	case zapcore.InfoLevel:
+		l.Infow(msg, args...)
+	case zapcore.WarnLevel:
+		l.Warnw(msg, args...)
+	case zapcore.ErrorLevel:
+		l.Errorw(msg, args...)
+	case zapcore.DPanicLevel:
+		l.DPanicw(msg, args...)
+	case zapcore.PanicLevel:
+		l.Panicw(msg, args...)
+	case zapcore.FatalLevel:
+		l.Fatalw(msg, args...)
+	}
+}
