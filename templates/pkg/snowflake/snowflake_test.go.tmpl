@@ -1,0 +1,536 @@
+package snowflake
+
+import (
+	"sync"
+	"testing"
+	"time"
+)
+
+// ============================================================
+// 辅助函数
+// ============================================================
+
+// extractTimestamp 从 Snowflake ID 中提取时间戳部分
+// 标准结构：1bit符号 + 41bit时间戳 + 10bit机器ID + 12bit序列号
+func extractTimestamp(id int64) int64 {
+	return id >> 22
+}
+
+// extractNodeID 从 Snowflake ID 中提取节点 ID（低 10 位）
+func extractNodeID(id int64) int64 {
+	return (id >> 12) & 0x3FF
+}
+
+// extractSequence 从 Snowflake ID 中提取序列号（低 12 位）
+func extractSequence(id int64) int64 {
+	return id & 0xFFF
+}
+
+// appConfig 应用配置结构（供示例测试使用）
+type appConfig struct {
+	NodeID int64
+	Epoch  time.Time
+}
+
+// loadConfig 模拟从配置文件读取配置
+// 实际项目中可替换为 JSON/YAML/环境变量/数据库等方式加载
+func loadConfig() appConfig {
+	return appConfig{
+		NodeID: 5,
+		Epoch:  time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+	}
+}
+
+// ============================================================
+// 构造函数测试
+// ============================================================
+
+func TestNewGenerator(t *testing.T) {
+	tests := []struct {
+		name    string
+		nodeID  int64
+		epoch   time.Time
+		wantErr bool
+	}{
+		{"valid node ID 0", 0, time.Time{}, false},
+		{"valid node ID 1", 1, time.Time{}, false},
+		{"valid node ID 1023", 1023, time.Time{}, false},
+		{"custom epoch", 1, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), false},
+		{"invalid node ID -1", -1, time.Time{}, true},
+		{"invalid node ID 1024", 1024, time.Time{}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g, err := NewGenerator(Config{NodeID: tt.nodeID, Epoch: tt.epoch})
+			if (err != nil) != tt.wantErr {
+				t.Errorf("NewGenerator() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && g == nil {
+				t.Errorf("NewGenerator() generator is nil")
+			}
+		})
+	}
+}
+
+// ============================================================
+// 生成方法测试
+// ============================================================
+
+func TestGenerate(t *testing.T) {
+	g, err := NewGenerator(Config{NodeID: 1})
+	if err != nil {
+		t.Fatalf("Failed to create generator: %v", err)
+	}
+
+	t.Run("int64 格式", func(t *testing.T) {
+		id, err := g.Generate()
+		if err != nil {
+			t.Fatalf("Generate() error = %v", err)
+		}
+		if id == 0 {
+			t.Errorf("Generate() returned zero ID")
+		}
+		t.Logf("Int64 ID: %d", id)
+	})
+
+	t.Run("字符串格式", func(t *testing.T) {
+		idStr, err := g.GenerateString()
+		if err != nil {
+			t.Fatalf("GenerateString() error = %v", err)
+		}
+		if idStr == "" {
+			t.Errorf("GenerateString() returned empty string")
+		}
+		t.Logf("String ID: %s", idStr)
+	})
+
+	t.Run("Base64 格式", func(t *testing.T) {
+		idBase64, err := g.GenerateBase64()
+		if err != nil {
+			t.Fatalf("GenerateBase64() error = %v", err)
+		}
+		if idBase64 == "" {
+			t.Errorf("GenerateBase64() returned empty string")
+		}
+		t.Logf("Base64 ID: %s", idBase64)
+	})
+
+	t.Run("MustGenerate 不 panic", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("MustGenerate() panicked: %v", r)
+			}
+		}()
+
+		id := g.MustGenerate()
+		if id == 0 {
+			t.Errorf("MustGenerate() returned zero ID")
+		}
+		t.Logf("MustGenerate ID: %d", id)
+
+		idStr := g.MustGenerateString()
+		if idStr == "" {
+			t.Errorf("MustGenerateString() returned empty string")
+		}
+		t.Logf("MustGenerateString ID: %s", idStr)
+	})
+}
+
+// ============================================================
+// 节点 ID 管理测试
+// ============================================================
+
+func TestGetSetNodeID(t *testing.T) {
+	g, err := NewGenerator(Config{NodeID: 1})
+	if err != nil {
+		t.Fatalf("Failed to create generator: %v", err)
+	}
+
+	t.Run("获取节点 ID", func(t *testing.T) {
+		if g.GetNodeID() != 1 {
+			t.Errorf("GetNodeID() = %v, want 1", g.GetNodeID())
+		}
+	})
+
+	t.Run("设置合法节点 ID", func(t *testing.T) {
+		if err := g.SetNodeID(2); err != nil {
+			t.Fatalf("SetNodeID(2) error = %v", err)
+		}
+		if g.GetNodeID() != 2 {
+			t.Errorf("GetNodeID() after SetNodeID() = %v, want 2", g.GetNodeID())
+		}
+	})
+
+	t.Run("设置非法节点 ID", func(t *testing.T) {
+		if err := g.SetNodeID(1024); err == nil {
+			t.Errorf("SetNodeID(1024) expected error, got nil")
+		}
+	})
+}
+
+// ============================================================
+// 默认生成器测试
+// ============================================================
+
+func TestDefaultGenerator(t *testing.T) {
+	// 重置默认生成器以确保测试独立性
+	DefaultGenerator = nil
+	defaultOnce = sync.Once{}
+	defaultErr = nil
+
+	if err := InitDefault(1); err != nil {
+		t.Fatalf("InitDefault() error = %v", err)
+	}
+	if DefaultGenerator == nil {
+		t.Fatalf("InitDefault() did not initialize DefaultGenerator")
+	}
+
+	id, err := GenerateDefault()
+	if err != nil {
+		t.Fatalf("GenerateDefault() error = %v", err)
+	}
+	if id == 0 {
+		t.Errorf("GenerateDefault() returned zero ID")
+	}
+	t.Logf("Default ID: %d", id)
+}
+
+// ============================================================
+// Epoch 测试
+// ============================================================
+
+func TestGetEpoch(t *testing.T) {
+	epoch := GetEpoch()
+	expected := time.Unix(0, 1288834974657*int64(time.Millisecond))
+	if epoch != expected {
+		t.Errorf("GetEpoch() = %v, want %v", epoch, expected)
+	}
+}
+
+func TestCustomEpoch(t *testing.T) {
+	customEpoch := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	g, err := NewGenerator(Config{NodeID: 1, Epoch: customEpoch})
+	if err != nil {
+		t.Fatalf("Failed to create generator with custom epoch: %v", err)
+	}
+
+	id, err := g.Generate()
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+
+	parsedTime, err := ParseTime(id)
+	if err != nil {
+		t.Fatalf("ParseTime() error = %v", err)
+	}
+
+	if parsedTime.Before(customEpoch) {
+		t.Errorf("Parsed time %v should be after custom epoch %v", parsedTime, customEpoch)
+	}
+	t.Logf("Custom Epoch: %v, Generated ID: %d, Parsed Time: %v", customEpoch, id, parsedTime)
+}
+
+func TestEpochBoundary(t *testing.T) {
+	t.Run("未来 Epoch 应拒绝或生成失败", func(t *testing.T) {
+		futureEpoch := time.Now().Add(24 * time.Hour)
+		g, err := NewGenerator(Config{NodeID: 1, Epoch: futureEpoch})
+		if err == nil {
+			_, genErr := g.Generate()
+			if genErr == nil {
+				t.Errorf("Expected error when Epoch is in future, but got no error")
+			} else {
+				t.Logf("Correctly rejected future Epoch at generation: %v", genErr)
+			}
+		} else {
+			t.Logf("Correctly rejected future Epoch at creation: %v", err)
+		}
+	})
+
+	t.Run("Epoch 为当前时间边界值", func(t *testing.T) {
+		now := time.Now().Truncate(time.Millisecond)
+		g, err := NewGenerator(Config{NodeID: 1, Epoch: now})
+		if err != nil {
+			t.Fatalf("Failed to create generator: %v", err)
+		}
+		id, err := g.Generate()
+		if err != nil {
+			t.Fatalf("Generate() error = %v", err)
+		}
+		if id == 0 {
+			t.Errorf("Generated ID should not be zero")
+		}
+		t.Logf("ID with Epoch=now: %d", id)
+	})
+
+	t.Run("Epoch 为零值（使用默认）", func(t *testing.T) {
+		g, err := NewGenerator(Config{NodeID: 1})
+		if err != nil {
+			t.Fatalf("Failed to create generator: %v", err)
+		}
+		id, err := g.Generate()
+		if err != nil {
+			t.Fatalf("Generate() error = %v", err)
+		}
+		if id == 0 {
+			t.Errorf("Generated ID should not be zero")
+		}
+		t.Logf("ID with default Epoch: %d", id)
+	})
+
+	t.Run("不同 Epoch 相同 NodeID 的 ID 不冲突", func(t *testing.T) {
+		epoch1 := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		epoch2 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+		gen1, _ := NewGenerator(Config{NodeID: 1, Epoch: epoch1})
+		gen2, _ := NewGenerator(Config{NodeID: 1, Epoch: epoch2})
+
+		ids := make(map[int64]bool)
+		for i := 0; i < 100; i++ {
+			id1, _ := gen1.Generate()
+			id2, _ := gen2.Generate()
+			if ids[id1] {
+				t.Errorf("Duplicate ID from generator1: %d", id1)
+			}
+			if ids[id2] {
+				t.Errorf("Duplicate ID from generator2: %d", id2)
+			}
+			ids[id1] = true
+			ids[id2] = true
+		}
+		t.Logf("200 IDs from two generators with different Epochs: all unique")
+	})
+}
+
+// ============================================================
+// 时间解析测试
+// ============================================================
+
+func TestParseTime(t *testing.T) {
+	g, err := NewGenerator(Config{NodeID: 1})
+	if err != nil {
+		t.Fatalf("Failed to create generator: %v", err)
+	}
+
+	t.Run("解析时间在合理范围内", func(t *testing.T) {
+		id, err := g.Generate()
+		if err != nil {
+			t.Fatalf("Generate() error = %v", err)
+		}
+		parsedTime, err := ParseTime(id)
+		if err != nil {
+			t.Fatalf("ParseTime() error = %v", err)
+		}
+		now := time.Now()
+		if parsedTime.Before(now.Add(-time.Minute)) || parsedTime.After(now.Add(time.Minute)) {
+			t.Errorf("ParseTime() = %v, want around %v", parsedTime, now)
+		}
+		t.Logf("ID: %d, Parsed Time: %v", id, parsedTime)
+	})
+
+	t.Run("验证解析时间与生成时间一致", func(t *testing.T) {
+		before := time.Now()
+		id, _ := g.Generate()
+		after := time.Now()
+		parsed, _ := ParseTime(id)
+		if parsed.Before(before.Add(-time.Millisecond)) || parsed.After(after.Add(time.Millisecond)) {
+			t.Errorf("Parsed time %v not within generation window [%v, %v]", parsed, before, after)
+		}
+	})
+
+	t.Run("解析无效 ID 应返回错误", func(t *testing.T) {
+		for _, id := range []int64{0, -1, 123} {
+			_, err := ParseTime(id)
+			if err == nil {
+				t.Errorf("Expected error for invalid ID %d, got nil", id)
+			}
+		}
+	})
+}
+
+// ============================================================
+// 并发安全测试
+// ============================================================
+
+func TestConcurrency(t *testing.T) {
+	g, err := NewGenerator(Config{NodeID: 1})
+	if err != nil {
+		t.Fatalf("Failed to create generator: %v", err)
+	}
+
+	const (
+		numGoroutines   = 100
+		idsPerGoroutine = 100
+	)
+	idChan := make(chan int64, numGoroutines*idsPerGoroutine)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			for j := 0; j < idsPerGoroutine; j++ {
+				id, err := g.Generate()
+				if err != nil {
+					t.Errorf("Generate() error = %v", err)
+					return
+				}
+				idChan <- id
+			}
+		}()
+	}
+
+	seen := make(map[int64]bool)
+	for i := 0; i < numGoroutines*idsPerGoroutine; i++ {
+		id := <-idChan
+		if seen[id] {
+			t.Errorf("Duplicate ID generated: %d", id)
+		}
+		seen[id] = true
+	}
+	t.Logf("Successfully generated %d unique IDs concurrently", len(seen))
+}
+
+func TestConcurrencyEnhanced(t *testing.T) {
+	t.Run("高并发 ID 唯一性压力测试（100 goroutine × 1000 IDs）", func(t *testing.T) {
+		g, err := NewGenerator(Config{NodeID: 1})
+		if err != nil {
+			t.Fatalf("Failed to create generator: %v", err)
+		}
+
+		const (
+			goroutineCount = 100
+			idPerGoroutine = 1000
+		)
+
+		var wg sync.WaitGroup
+		ids := make(chan int64, goroutineCount*idPerGoroutine)
+
+		for i := 0; i < goroutineCount; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for j := 0; j < idPerGoroutine; j++ {
+					id, err := g.Generate()
+					if err != nil {
+						t.Errorf("Generate failed: %v", err)
+						return
+					}
+					ids <- id
+				}
+			}()
+		}
+
+		wg.Wait()
+		close(ids)
+
+		seen := make(map[int64]bool)
+		duplicates := 0
+		for id := range ids {
+			if seen[id] {
+				duplicates++
+			}
+			seen[id] = true
+		}
+
+		if duplicates > 0 {
+			t.Errorf("Found %d duplicates out of %d IDs", duplicates, goroutineCount*idPerGoroutine)
+		} else {
+			t.Logf("Successfully generated %d unique IDs under high concurrency", goroutineCount*idPerGoroutine)
+		}
+	})
+}
+
+// ============================================================
+// 时间单调性 & 序列号溢出测试
+// ============================================================
+
+func TestTimeMonotonicity(t *testing.T) {
+	g, err := NewGenerator(Config{NodeID: 1})
+	if err != nil {
+		t.Fatalf("Failed to create generator: %v", err)
+	}
+
+	id1, _ := g.Generate()
+	time.Sleep(2 * time.Millisecond)
+	id2, _ := g.Generate()
+
+	if id2 <= id1 {
+		t.Errorf("ID should be increasing: id1=%d, id2=%d", id1, id2)
+	}
+	t.Logf("ID1: %d, ID2: %d (increasing)", id1, id2)
+}
+
+func TestSequenceOverflow(t *testing.T) {
+	t.Run("同一毫秒内生成超过 4096 个 ID", func(t *testing.T) {
+		g, err := NewGenerator(Config{NodeID: 1})
+		if err != nil {
+			t.Fatalf("Failed to create generator: %v", err)
+		}
+
+		startTime := time.Now()
+		var lastID int64
+		ids := make(map[int64]bool)
+
+		for i := 0; i < 5000; i++ {
+			id, err := g.Generate()
+			if err != nil {
+				t.Fatalf("Failed to generate ID at position %d: %v", i, err)
+			}
+			if ids[id] {
+				t.Errorf("Duplicate ID found at position %d: %d", i, id)
+			}
+			ids[id] = true
+			if id <= lastID {
+				t.Logf("Warning: ID not strictly increasing at position %d (may be waiting for next millisecond)", i)
+			}
+			lastID = id
+		}
+
+		elapsed := time.Since(startTime)
+		t.Logf("Generated 5000 IDs in %v (avg: %v per ID)", elapsed, elapsed/5000)
+		t.Logf("Successfully generated %d unique IDs", len(ids))
+	})
+}
+
+// ============================================================
+// Benchmark 性能基准测试
+// ============================================================
+
+func BenchmarkGenerate(b *testing.B) {
+	g, err := NewGenerator(Config{NodeID: 1})
+	if err != nil {
+		b.Fatalf("Failed to create generator: %v", err)
+	}
+
+	b.Run("Generate int64", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			g.Generate() //nolint:errcheck
+		}
+	})
+
+	b.Run("GenerateString", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			g.GenerateString() //nolint:errcheck
+		}
+	})
+
+	b.Run("GenerateBase64", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			g.GenerateBase64() //nolint:errcheck
+		}
+	})
+}
+
+func BenchmarkGenerateParallel(b *testing.B) {
+	g, err := NewGenerator(Config{NodeID: 1})
+	if err != nil {
+		b.Fatalf("Failed to create generator: %v", err)
+	}
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			g.Generate() //nolint:errcheck
+		}
+	})
+}

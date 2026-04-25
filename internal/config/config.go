@@ -82,6 +82,9 @@ type ProjectConfig struct {
 	MQURL     string
 	MQNamesrv string
 	MQGroupID string
+
+	// pkg 组件开关
+	PkgSnowflake bool // 是否生成 pkg/snowflake 组件
 }
 
 // NewProjectConfig 创建默认配置

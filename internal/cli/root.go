@@ -38,6 +38,7 @@ func Execute() error {
 		GetGenProtoCmd(),
 		GetGenGRPCCmd(),
 		GetScriptCenterCmd(),
+		GetPkgCmd(),
 	)
 
 	return rootCmd.Execute()
