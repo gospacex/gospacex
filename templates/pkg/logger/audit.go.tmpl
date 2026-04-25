@@ -1,0 +1,29 @@
+package logger
+
+import (
+	"fmt"
+	"go.uber.org/zap"
+	"go.uber.org/zap/sugar"
+)
+
+type AuditLogger struct {
+	*zap.SugaredLogger
+}
+
+func NewAuditLogger(logger *zap.Logger) *AuditLogger {
+	return &AuditLogger{
+		logger.Named("audit").Sugar(),
+	}
+}
+
+func (l *AuditLogger) Log(action, userID, resource string, details map[string]interface{}) {
+	l.Infow(action,
+		"user_id", userID,
+		"resource", resource,
+		"details", details,
+	)
+}
+
+func (l *AuditLogger) With(fields ...zap.Field) *AuditLogger {
+	return &AuditLogger{l.SugaredLogger.With(fields...)}
+}

@@ -66,8 +66,8 @@ func (m *metricsCore) Write(entry zapcore.Entry, fields []zapcore.Field) error {
 	m.metrics.Inc(level, "total")
 
 	for _, field := range fields {
-		if field.Key == "log_type" {
-			m.metrics.Inc(level, field.StringValue())
+		if field.Key == "log_type" && field.Type == zapcore.StringType {
+			m.metrics.Inc(level, field.String)
 		}
 	}
 

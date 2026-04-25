@@ -1,0 +1,87 @@
+package logger
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"sync/atomic"
+
+	"github.com/Shopify/sarama"
+)
+
+type KafkaPusher struct {
+	producer sarama.SyncProducer
+	topic    string
+	closed   atomic.Bool
+}
+
+func NewKafkaPusher(brokers []string, topic string) (*KafkaPusher, error) {
+	config := sarama.NewConfig()
+	config.Producer.RequiredAcks = sarama.WaitForAll
+	config.Producer.Retry.Max = 3
+	config.Producer.Return.Successes = true
+
+	producer, err := sarama.NewSyncProducer(brokers, config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kafka producer: %w", err)
+	}
+
+	return &KafkaPusher{
+		producer: producer,
+		topic:    topic,
+	}, nil
+}
+
+func (p *KafkaPusher) Push(topic string, data []byte) error {
+	if p.closed.Load() {
+		return nil
+	}
+	if topic == "" {
+		topic = p.topic
+	}
+	msg := &sarama.ProducerMessage{
+		Topic: topic,
+		Key:   sarama.StringEncoder(""),
+		Value: sarama.ByteEncoder(data),
+	}
+	_, _, err := p.producer.SendMessage(msg)
+	return err
+}
+
+func (p *KafkaPusher) Close() error {
+	p.closed.Store(true)
+	return p.producer.Close()
+}
+
+func NewMQPusherFromConfig(cfg *MQConfig) (MQPusher, error) {
+	if !cfg.Enabled {
+		return nil, nil
+	}
+
+	switch cfg.Type {
+	case "kafka":
+		pusher, err := NewKafkaPusher(cfg.Brokers, cfg.Topic)
+		if err != nil {
+			return nil, err
+		}
+		if cfg.Async {
+			return NewAsyncMQPusher(pusher, cfg.Topic, cfg.BatchSize, cfg.FlushInterval), nil
+		}
+		return pusher, nil
+	default:
+		return nil, fmt.Errorf("unsupported mq type: %s", cfg.Type)
+	}
+}
+
+type ContextKey string
+
+const MQPusherKey ContextKey = "mq_pusher"
+
+func WithMQPusher(ctx context.Context, pusher MQPusher) context.Context {
+	return context.WithValue(ctx, MQPusherKey, pusher)
+}
+
+func FromMQPusher(ctx context.Context) (MQPusher, bool) {
+	pusher, ok := ctx.Value(MQPusherKey).(MQPusher)
+	return pusher, ok
+}

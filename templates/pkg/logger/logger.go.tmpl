@@ -1,93 +1,106 @@
-package logger
+package log
 
 import (
-	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
-var (
-	zapLogger *zap.Logger
-	sugar     *zap.SugaredLogger
-	initialized bool
-)
-
-// Init initializes logger
-func Init() {
-	if initialized {
-		return
-	}
-	initLogger()
-	initialized = true
+type Logger struct {
+	Business *BusinessLogger
+	Access   *AccessLogger
+	Error    *zap.SugaredLogger
+	cleaner  *Cleaner
 }
 
-func initLogger() {
-	encoderConfig := zapcore.EncoderConfig{
-		TimeKey:        "time",
-		LevelKey:       "level",
-		MessageKey:     "msg",
-		CallerKey:      "caller",
-		EncodeLevel:    zapcore.LowercaseLevelEncoder,
-		EncodeTime:     zapcore.ISO8601TimeEncoder,
-		EncodeDuration: zapcore.SecondsDurationEncoder,
-		EncodeCaller:   zapcore.ShortCallerEncoder,
+func NewLogger(cfg *Config) (*Logger, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 
-	encoder := zapcore.NewConsoleEncoder(encoderConfig)
-	core := zapcore.NewCore(encoder, zapcore.AddSync(os.Stdout), zapcore.InfoLevel)
-	
-	zapLogger = zap.New(core, zap.AddCaller())
-	sugar = zapLogger.Sugar()
-	
-	fmt.Println("Logger initialized")
+	level, _ := zapcore.ParseLevel(cfg.Level)
+
+	encoderConfig := zap.NewProductionEncoderConfig()
+	encoderConfig.TimeKey = "time"
+	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	encoderConfig.EncodeLevel = zapcore.CapitalLevelEncoder
+
+	var encoder zapcore.Encoder
+	if cfg.Env == "dev" {
+		encoder = zapcore.NewConsoleEncoder(encoderConfig)
+	} else {
+		encoder = zapcore.NewJSONEncoder(encoderConfig)
+	}
+
+	var ws []zapcore.WriteSyncer
+
+	dir := "./logs"
+	baseName := "app"
+	if cfg.Output.File != "" {
+		dir = filepath.Dir(cfg.Output.File)
+		baseName = strings.TrimSuffix(filepath.Base(cfg.Output.File), ".log")
+	}
+
+	if cfg.Rotation.Enabled {
+		rotation, err := NewRotationWriter(dir, baseName)
+		if err != nil {
+			return nil, err
+		}
+		ws = append(ws, zapcore.AddSync(rotation))
+	} else {
+		file, err := os.OpenFile(cfg.Output.File, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			return nil, err
+		}
+		ws = append(ws, zapcore.AddSync(file))
+	}
+
+	if cfg.Output.Stdout {
+		ws = append(ws, zapcore.AddSync(os.Stdout))
+	}
+
+	wsCore := zapcore.NewCore(encoder, zapcore.NewMultiWriteSyncer(ws...), level)
+
+	samplerCfg := SamplerConfig{
+		Initial:    cfg.Sampling.Initial,
+		Thereafter: cfg.Sampling.Thereafter,
+		Tick:       cfg.Sampling.Tick,
+	}
+	sampledCore := NewSamplerCore(wsCore, samplerCfg)
+
+	var finalCore zapcore.Core = sampledCore
+
+	if cfg.Prometheus.Enabled {
+		metrics := NewMetrics(cfg.Prometheus.Namespace, cfg.Prometheus.Subsystem)
+		finalCore = WrapWithMetrics(sampledCore, metrics)
+	}
+
+	logger := zap.New(finalCore, zap.AddCaller(), zap.AddCallerSkip(1))
+
+	var cleaner *Cleaner
+	if cfg.Rotation.Enabled && cfg.Rotation.MaxAgeDays > 0 {
+		cleaner = NewCleaner(dir, baseName, cfg.Rotation.MaxAgeDays, 6*time.Hour)
+		go cleaner.Run()
+	}
+
+	return &Logger{
+		Business: NewBusinessLogger(logger),
+		Access:   NewAccessLogger(logger),
+		Error:    logger.Named("error").Sugar(),
+		cleaner:  cleaner,
+	}, nil
 }
 
-// Info logs info message
-func Info(args ...interface{}) {
-	if !initialized {
-		Init()
-	}
-	sugar.Info(args...)
+func (l *Logger) Sync() error {
+	return nil
 }
 
-// Error logs error message
-func Error(args ...interface{}) {
-	if !initialized {
-		Init()
+func (l *Logger) Stop() {
+	if l.cleaner != nil {
+		l.cleaner.Stop()
 	}
-	sugar.Error(args...)
-}
-
-// Debug logs debug message
-func Debug(args ...interface{}) {
-	if !initialized {
-		Init()
-	}
-	sugar.Debug(args...)
-}
-
-// Warn logs warning message
-func Warn(args ...interface{}) {
-	if !initialized {
-		Init()
-	}
-	sugar.Warn(args...)
-}
-
-// Infof logs formatted info message
-func Infof(format string, args ...interface{}) {
-	if !initialized {
-		Init()
-	}
-	sugar.Infof(format, args...)
-}
-
-// Errorf logs formatted error message
-func Errorf(format string, args ...interface{}) {
-	if !initialized {
-		Init()
-	}
-	sugar.Errorf(format, args...)
 }

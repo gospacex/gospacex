@@ -15,8 +15,8 @@ func NewBusinessLogger(logger *zap.Logger) *BusinessLogger {
 	}
 }
 
-func (l *BusinessLogger) With(fields ...zap.Field) *BusinessLogger {
-	return &BusinessLogger{l.SugaredLogger.With(fields...)}
+func (l *BusinessLogger) With(keysAndValues ...interface{}) *BusinessLogger {
+	return &BusinessLogger{l.SugaredLogger.With(keysAndValues...)}
 }
 
 func (l *BusinessLogger) WithLevel(level zapcore.Level, msg string, args ...interface{}) {

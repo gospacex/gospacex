@@ -36,6 +36,6 @@ func (l *AccessLogger) Log(method, path, clientIP, userAgent, requestID string, 
 	)
 }
 
-func (l *AccessLogger) With(fields ...zap.Field) *AccessLogger {
-	return &AccessLogger{l.SugaredLogger.With(fields...)}
+func (l *AccessLogger) With(keysAndValues ...interface{}) *AccessLogger {
+	return &AccessLogger{l.SugaredLogger.With(keysAndValues...)}
 }

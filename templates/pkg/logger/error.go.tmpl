@@ -1,0 +1,30 @@
+package logger
+
+import (
+	"go.uber.org/zap"
+	"go.uber.org/zap/sugar"
+)
+
+type ErrorLogger struct {
+	*zap.SugaredLogger
+}
+
+func NewErrorLogger(logger *zap.Logger) *ErrorLogger {
+	return &ErrorLogger{
+		logger.Named("error").Sugar(),
+	}
+}
+
+func (l *ErrorLogger) Log(err error, msg string, keysAndValues ...interface{}) {
+	fields := []interface{}{"error", err.Error()}
+	fields = append(fields, keysAndValues...)
+	l.Errorw(msg, fields...)
+}
+
+func (l *ErrorLogger) WithStack(err error) *zap.SugaredLogger {
+	return l.Desugar().With(zap.Stack("stack")).Sugar()
+}
+
+func (l *ErrorLogger) With(fields ...zap.Field) *ErrorLogger {
+	return &ErrorLogger{l.SugaredLogger.With(fields...)}
+}

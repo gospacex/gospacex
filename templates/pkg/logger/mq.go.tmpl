@@ -1,0 +1,126 @@
+package logger
+
+import (
+	"encoding/json"
+	"sync"
+	"time"
+)
+
+type MQPusher interface {
+	Push(topic string, data []byte) error
+	Close() error
+}
+
+type MQConfig struct {
+	Enabled       bool          `yaml:"enabled"`
+	Type          string        `yaml:"type"`
+	Brokers       []string      `yaml:"brokers"`
+	Topic         string        `yaml:"topic"`
+	Async         bool          `yaml:"async"`
+	BatchSize     int           `yaml:"batch_size"`
+	FlushInterval time.Duration `yaml:"flush_interval"`
+}
+
+type AsyncMQPusher struct {
+	mu        sync.Mutex
+	client    MQPusher
+	topic     string
+	buffer    []struct{topic string; data []byte}
+	batchSize int
+	interval  time.Duration
+	flushCh   chan struct{}
+	doneCh    chan struct{}
+	closed    bool
+	wg        sync.WaitGroup
+}
+
+func NewAsyncMQPusher(client MQPusher, topic string, batchSize int, interval time.Duration) *AsyncMQPusher {
+	p := &AsyncMQPusher{
+		client:    client,
+		topic:     topic,
+		batchSize: batchSize,
+		interval:  interval,
+		flushCh:   make(chan struct{}, 1),
+		doneCh:   make(chan struct{}, 1),
+	}
+	p.wg.Add(1)
+	go p.flushLoop()
+	return p
+}
+
+func (p *AsyncMQPusher) Push(topic string, data []byte) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return nil
+	}
+	p.buffer = append(p.buffer, struct{topic string; data []byte}{topic, data})
+	if len(p.buffer) >= p.batchSize {
+		p.doFlush()
+	}
+	return nil
+}
+
+func (p *AsyncMQPusher) flushLoop() {
+	defer p.wg.Done()
+	ticker := time.NewTicker(p.interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			p.mu.Lock()
+			if len(p.buffer) > 0 {
+				p.doFlush()
+			}
+			p.mu.Unlock()
+		case <-p.flushCh:
+			p.mu.Lock()
+			p.doFlush()
+			p.mu.Unlock()
+		case <-p.doneCh:
+			p.mu.Lock()
+			p.doFlush()
+			p.mu.Unlock()
+			return
+		}
+	}
+}
+
+func (p *AsyncMQPusher) doFlush() {
+	if len(p.buffer) == 0 {
+		return
+	}
+	for _, item := range p.buffer {
+		_ = p.client.Push(item.topic, item.data)
+	}
+	p.buffer = p.buffer[:0]
+}
+
+func (p *AsyncMQPusher) Close() error {
+	p.mu.Lock()
+	p.closed = true
+	p.mu.Unlock()
+	p.flushCh <- struct{}{}
+	p.doneCh <- struct{}{}
+	p.wg.Wait()
+	return p.client.Close()
+}
+
+type LogEntry struct {
+	Time    string                 `json:"time"`
+	Level   string                 `json:"level"`
+	Message string                 `json:"message"`
+	Scene   string                 `json:"scene"`
+	Fields  map[string]interface{} `json:"fields"`
+}
+
+func MarshalLogEntry(scene, level, message string, fields map[string]interface{}) ([]byte, error) {
+	entry := LogEntry{
+		Time:    time.Now().Format(time.RFC3339),
+		Level:   level,
+		Message: message,
+		Scene:   scene,
+		Fields:  fields,
+	}
+	return json.Marshal(entry)
+}
