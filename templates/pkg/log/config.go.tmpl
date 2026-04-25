@@ -1,0 +1,62 @@
+package log
+
+import (
+	"os"
+	"time"
+
+	"gopkg.in/yaml.v3"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+)
+
+type Config struct {
+	Env        string       `yaml:"env" default:"dev"`
+	Level      string       `yaml:"level" default:"info"`
+	Sampling   SamplingCfg  `yaml:"sampling"`
+	Rotation   RotationCfg  `yaml:"rotation"`
+	Output     OutputCfg    `yaml:"output"`
+	Prometheus PrometheusCfg `yaml:"prometheus"`
+}
+
+type SamplingCfg struct {
+	Initial    int           `yaml:"initial" default:"100"`
+	Thereafter int           `yaml:"thereafter" default:"200"`
+	Tick       time.Duration `yaml:"tick" default:"1s"`
+}
+
+type RotationCfg struct {
+	Enabled     bool  `yaml:"enabled" default:"true"`
+	MaxAgeDays  int   `yaml:"max_age_days" default:"7"`
+}
+
+type OutputCfg struct {
+	File   string `yaml:"file" default:"./logs/app.log"`
+	Stdout bool   `yaml:"stdout" default:"true"`
+}
+
+type PrometheusCfg struct {
+	Enabled   bool   `yaml:"enabled" default:"true"`
+	Namespace string `yaml:"namespace" default:"app"`
+	Subsystem string `yaml:"subsystem" default:"log"`
+}
+
+func LoadConfig(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+
+	return &cfg, nil
+}
+
+func (c *Config) Validate() error {
+	if _, err := zapcore.ParseLevel(c.Level); err != nil {
+		c.Level = "info"
+	}
+	return nil
+}
