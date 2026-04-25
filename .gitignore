@@ -28,6 +28,8 @@ go.work.sum
 
 # AI coding assistants and spec files
 .opencode/
+opencode.json
+superpowers
 .claudecode/
 .gsd/
 openspec/
@@ -45,3 +47,4 @@ examples
 data
 
 
+.worktrees
