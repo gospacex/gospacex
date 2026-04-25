@@ -2,6 +2,8 @@ package handler
 
 import (
 	"net/http"
+
+	"{{.AppName}}/pkg/logger"
 	"github.com/gin-gonic/gin"
 )
 
@@ -9,8 +11,37 @@ type {{.UpperName}}Handler struct{}
 
 func New{{.UpperName}}Handler() *{{.UpperName}}Handler { return &{{.UpperName}}Handler{} }
 
-func (h *{{.UpperName}}Handler) Create(c *gin.Context) { c.JSON(http.StatusOK, gin.H{}) }
-func (h *{{.UpperName}}Handler) List(c *gin.Context) { c.JSON(http.StatusOK, gin.H{}) }
-func (h *{{.UpperName}}Handler) Get(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"id": c.Param("id")}) }
-func (h *{{.UpperName}}Handler) Update(c *gin.Context) { c.JSON(http.StatusOK, gin.H{}) }
-func (h *{{.UpperName}}Handler) Delete(c *gin.Context) { c.JSON(http.StatusOK, gin.H{}) }
+func (h *{{.UpperName}}Handler) Create(c *gin.Context) {
+	requestID, _ := c.Get("requestID")
+	logger.Access.Infow("create request", "method", c.Request.Method, "path", c.Request.URL.Path, "requestID", requestID)
+	logger.Business.Infow("create business", "resource", "{{.LowerName}}", "requestID", requestID)
+	c.JSON(http.StatusOK, gin.H{})
+}
+
+func (h *{{.UpperName}}Handler) List(c *gin.Context) {
+	requestID, _ := c.Get("requestID")
+	logger.Access.Infow("list request", "method", c.Request.Method, "path", c.Request.URL.Path, "requestID", requestID)
+	logger.Business.Infow("list business", "resource", "{{.LowerName}}", "requestID", requestID)
+	c.JSON(http.StatusOK, gin.H{})
+}
+
+func (h *{{.UpperName}}Handler) Get(c *gin.Context) {
+	requestID, _ := c.Get("requestID")
+	logger.Access.Infow("get request", "method", c.Request.Method, "path", c.Request.URL.Path, "requestID", requestID)
+	logger.Business.Infow("get business", "resource", "{{.LowerName}}", "id", c.Param("id"), "requestID", requestID)
+	c.JSON(http.StatusOK, gin.H{"id": c.Param("id")})
+}
+
+func (h *{{.UpperName}}Handler) Update(c *gin.Context) {
+	requestID, _ := c.Get("requestID")
+	logger.Access.Infow("update request", "method", c.Request.Method, "path", c.Request.URL.Path, "requestID", requestID)
+	logger.Business.Infow("update business", "resource", "{{.LowerName}}", "id", c.Param("id"), "requestID", requestID)
+	c.JSON(http.StatusOK, gin.H{})
+}
+
+func (h *{{.UpperName}}Handler) Delete(c *gin.Context) {
+	requestID, _ := c.Get("requestID")
+	logger.Access.Infow("delete request", "method", c.Request.Method, "path", c.Request.URL.Path, "requestID", requestID)
+	logger.Business.Infow("delete business", "resource", "{{.LowerName}}", "id", c.Param("id"), "requestID", requestID)
+	c.JSON(http.StatusOK, gin.H{})
+}

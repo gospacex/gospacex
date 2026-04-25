@@ -22,7 +22,7 @@ func (l *ErrorLogger) Log(err error, msg string, keysAndValues ...interface{}) {
 }
 
 func (l *ErrorLogger) WithStack(err error) *zap.SugaredLogger {
-	return l.Desugar().With(zap.Stack("stack")).Sugar()
+	return l.SugaredLogger.Desugar().With(zap.Stack("stack")).Sugar()
 }
 
 func (l *ErrorLogger) With(fields ...zap.Field) *ErrorLogger {

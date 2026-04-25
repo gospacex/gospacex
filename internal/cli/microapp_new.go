@@ -1302,17 +1302,95 @@ func NewDB(cfg *config.DatabaseConfig) (*gorm.DB, error) {
 }
 
 func genLogger(projectDir string) {
-	content := `package logger
+	// 确定模板目录（兼容 go run 和编译后的二进制）
+	srcDir := "templates/pkg/logger"
+	if _, err := os.Stat(srcDir); os.IsNotExist(err) {
+		execPath, _ := os.Executable()
+		srcDir = filepath.Join(filepath.Dir(execPath), "templates", "pkg", "logger")
+	}
+	if _, err := os.Stat(srcDir); os.IsNotExist(err) {
+		fmt.Printf("Warning: log templates not found in %s\n", srcDir)
+		return
+	}
+	dstDir := filepath.Join(projectDir, "pkg", "logger")
+	os.MkdirAll(dstDir, 0755)
 
-import (
-	"log"
-	"os"
-)
+	tmplFiles := []string{
+		"config.go.tmpl",
+		"logger.go.tmpl",
+		"rotation.go.tmpl",
+		"cleaner.go.tmpl",
+		"sampler.go.tmpl",
+		"metrics.go.tmpl",
+		"context.go.tmpl",
+		"business.go.tmpl",
+		"access.go.tmpl",
+		"audit.go.tmpl",
+		"error.go.tmpl",
+		"mq.go.tmpl",
+		"mq_kafka.go.tmpl",
+		"formatter.go.tmpl",
+	}
 
-var Info = log.New(os.Stdout, "[INFO] ", log.LstdFlags)
-var Error = log.New(os.Stderr, "[ERROR] ", log.LstdFlags)
+	goFiles := []string{
+		"config.go",
+		"logger.go",
+		"rotation.go",
+		"cleaner.go",
+		"sampler.go",
+		"metrics.go",
+		"context.go",
+		"business.go",
+		"access.go",
+		"audit.go",
+		"error.go",
+		"mq.go",
+		"mq_kafka.go",
+		"formatter.go",
+	}
+
+	for i, tmpl := range tmplFiles {
+		src := filepath.Join(srcDir, tmpl)
+		data, err := os.ReadFile(src)
+		if err != nil {
+			fmt.Printf("Warning: skip log template %s: %v\n", tmpl, err)
+			continue
+		}
+		os.WriteFile(filepath.Join(dstDir, goFiles[i]), data, 0644)
+	}
+
+	// 生成 log.yaml 配置文件
+	configDir := filepath.Join(projectDir, "configs")
+	os.MkdirAll(configDir, 0755)
+	logYaml := `env: dev
+level: info
+sampling:
+  initial: 100
+  thereafter: 200
+  tick: 1s
+rotation:
+  enabled: true
+  max_age_days: 7
+output:
+  file: ./logs/app.log
+  stdout: true
+prometheus:
+  enabled: false
+  namespace: app
+  subsystem: log
+mq:
+  enabled: false
+  type: kafka
+  brokers:
+    - localhost:9092
+  topic: app-logs
+  async: true
+  batch_size: 100
+  flush_interval: 3s
 `
-	os.WriteFile(filepath.Join(projectDir, "pkg", "logger", "logger.go"), []byte(content), 0644)
+	os.WriteFile(filepath.Join(configDir, "log.yaml"), []byte(logYaml), 0644)
+
+
 }
 
 func genUtils(projectDir string) {

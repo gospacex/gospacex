@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 
 	"{{.AppName}}/pkg/config"
 	"{{.AppName}}/{{.BffDirName}}/internal/router"
@@ -17,7 +18,6 @@ func init() {
 
 func main() {
 	flag.Parse()
-{{- if .NacosEnabled}}
 	cfg, err := config.Load(confPath)
 	if err != nil {
 		log.Fatal(err)
@@ -25,19 +25,19 @@ func main() {
 	if cfg == nil {
 		log.Fatal("Config is nil - check if config file exists: " + confPath)
 	}
-	if nacosCfg, err := config.LoadWithFallback(confPath, &cfg.Nacos); err == nil {
-		cfg = nacosCfg
-	}
-{{- else}}
-	cfg, err := config.Load(confPath)
-	if err != nil {
-		log.Fatal(err)
-	}
-	if cfg == nil {
-		log.Fatal("Config is nil - check if config file exists: " + confPath)
-	}
-{{- end}}
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	log.Printf("BFF starting on %s", addr)
-	router.NewRouter().Run(addr)
+
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: router.NewRouter(),
+	}
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("listen: %s\n", err)
+		}
+	}()
+
+	select {}
 }

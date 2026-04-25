@@ -50,12 +50,14 @@ func NewAsyncMQPusher(client MQPusher, topic string, batchSize int, interval tim
 
 func (p *AsyncMQPusher) Push(topic string, data []byte) error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	if p.closed {
+		p.mu.Unlock()
 		return nil
 	}
 	p.buffer = append(p.buffer, struct{topic string; data []byte}{topic, data})
-	if len(p.buffer) >= p.batchSize {
+	shouldFlush := len(p.buffer) >= p.batchSize
+	p.mu.Unlock()
+	if shouldFlush {
 		p.doFlush()
 	}
 	return nil
@@ -100,8 +102,14 @@ func (p *AsyncMQPusher) Close() error {
 	p.mu.Lock()
 	p.closed = true
 	p.mu.Unlock()
-	p.flushCh <- struct{}{}
-	p.doneCh <- struct{}{}
+	select {
+	case p.flushCh <- struct{}{}:
+	default:
+	}
+	select {
+	case p.doneCh <- struct{}{}:
+	default:
+	}
 	p.wg.Wait()
 	return p.client.Close()
 }

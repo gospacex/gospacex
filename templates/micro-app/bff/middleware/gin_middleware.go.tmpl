@@ -3,6 +3,7 @@ package middleware
 import (
 	"time"
 
+	"{{.AppName}}/pkg/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -24,12 +25,27 @@ func Logger() gin.HandlerFunc {
 		statusCode := c.Writer.Status()
 		method := c.Request.Method
 		path := c.Request.URL.Path
+		clientIP := c.ClientIP()
+		userAgent := c.Request.UserAgent()
+
+		logger.Access.Infow("access log",
+			"method", method,
+			"path", path,
+			"status", statusCode,
+			"latency", latency.String(),
+			"clientIP", clientIP,
+			"userAgent", userAgent,
+			"requestID", requestID,
+		)
 
 		if statusCode >= 500 {
-			_ = latency
-			_ = method
-			_ = path
-			// log.Printf("[GIN] %s %s %d %v requestID=%s", method, path, statusCode, latency, requestID)
+			logger.Error.Infow("error request",
+				"method", method,
+				"path", path,
+				"status", statusCode,
+				"latency", latency.String(),
+				"requestID", requestID,
+			)
 		}
 	}
 }

@@ -20,7 +20,7 @@
 ## 目录结构
 
 ```
-templates/pkg/log/
+templates/pkg/logger/
 ├── config.go.tmpl      # 配置定义 + 加载
 ├── logger.go.tmpl      # 主 Logger 封装
 ├── rotation.go.tmpl    # 日志轮转

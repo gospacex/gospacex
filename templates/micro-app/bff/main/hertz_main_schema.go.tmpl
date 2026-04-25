@@ -5,6 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"{{.AppName}}/{{.BffDirName}}/internal/router"
 	"{{.AppName}}/pkg/config"
@@ -20,7 +24,6 @@ func init() {
 
 func main() {
 	flag.Parse()
-{{- if .NacosEnabled}}
 	cfg, err := config.Load(confPath)
 	if err != nil {
 		log.Fatal(err)
@@ -28,22 +31,29 @@ func main() {
 	if cfg == nil {
 		log.Fatal("Config is nil - check if config file exists: " + confPath)
 	}
-	if nacosCfg, err := config.LoadWithFallback(confPath, &cfg.Nacos); err == nil {
-		cfg = nacosCfg
-	}
-{{- else}}
-	cfg, err := config.Load(confPath)
-	if err != nil {
-		log.Fatal(err)
-	}
-	if cfg == nil {
-		log.Fatal("Config is nil - check if config file exists: " + confPath)
-	}
-{{- end}}
 
-	h := server.Default(server.WithHostPorts(cfg.Server.Host + ":" + fmt.Sprintf("%d", cfg.Server.Port)))
-	router.Register(h)
+	addr := cfg.Server.Host + ":" + fmt.Sprintf("%d", cfg.Server.Port)
+	log.Printf("BFF starting on %s", addr)
 
-	log.Printf("BFF starting on %s", cfg.Server.Host + ":" + fmt.Sprintf("%d", cfg.Server.Port))
-	h.Run()
+	h := server.Default(server.WithHostPorts(addr))
+
+	// Start server in a goroutine
+	go func() {
+		if err := h.Run(); err != nil && err != server.ErrDisabled {
+			log.Fatalf("listen: %s\n", err)
+		}
+	}()
+
+	// Wait for interrupt signal to gracefully shutdown the server
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("Shutdown Server ...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := h.Shutdown(ctx); err != nil {
+		log.Println("Server Shutdown:", err)
+	}
+	log.Println("Server exiting")
 }

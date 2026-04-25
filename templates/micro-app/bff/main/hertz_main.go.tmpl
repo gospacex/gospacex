@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -20,7 +19,6 @@ func init() {
 
 func main() {
 	flag.Parse()
-{{- if .NacosEnabled}}
 	cfg, err := config.Load(confPath)
 	if err != nil {
 		log.Fatal(err)
@@ -28,22 +26,17 @@ func main() {
 	if cfg == nil {
 		log.Fatal("Config is nil - check if config file exists: " + confPath)
 	}
-	if nacosCfg, err := config.LoadWithFallback(confPath, &cfg.Nacos); err == nil {
-		cfg = nacosCfg
-	}
-{{- else}}
-	cfg, err := config.Load(confPath)
-	if err != nil {
-		log.Fatal(err)
-	}
-	if cfg == nil {
-		log.Fatal("Config is nil - check if config file exists: " + confPath)
-	}
-{{- end}}
 
-	h := server.Default(server.WithHostPorts(cfg.Server.Host + ":" + fmt.Sprintf("%d", cfg.Server.Port)))
-	router.Register(h)
+	addr := cfg.Server.Host + ":" + fmt.Sprintf("%d", cfg.Server.Port)
+	log.Printf("BFF starting on %s", addr)
 
-	log.Printf("BFF starting on %s", cfg.Server.Host + ":" + fmt.Sprintf("%d", cfg.Server.Port))
-	h.Run()
+	h := server.Default(server.WithHostPorts(addr))
+
+	go func() {
+		if err := h.Run(); err != nil && err != server.ErrDisabled {
+			log.Fatalf("listen: %s\n", err)
+		}
+	}()
+
+	select {}
 }

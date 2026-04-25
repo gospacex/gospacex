@@ -39,6 +39,7 @@ claudecode.lock
 .gsd.lock
 .openspec.lock
 spec-kit.lock
+.worktrees
 
 
 output

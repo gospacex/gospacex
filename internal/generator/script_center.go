@@ -55,7 +55,7 @@ func (g *ScriptCenterGenerator) Generate(outputDir string) error {
 		"cmd/commands/start.go": func() (string, error) { return g.generateStartCmdNew() },
 		"pkg/config/config.go":  g.generatePkgConfig,
 		"pkg/config/types.go":   g.generateConfigTypes,
-		"pkg/logger/logger.go":  g.generatePkgLogger,
+
 		"configs/config.yaml":   g.generateConfig,
 
 		"deploy/supervisor/app.conf":     g.generateSupervisorConfig,
@@ -1842,63 +1842,7 @@ type RocketMQConfig struct {
 `, nil
 }
 
-// generatePkgLogger 生成 pkg/logger/logger.go
-func (g *ScriptCenterGenerator) generatePkgLogger() (string, error) {
-	return `package logger
 
-import (
-	"fmt"
-	"os"
-
-	"github.com/gospacex/gpx-scripts/pkg/config"
-	"gopkg.in/natefinch/lumberjack.v2"
-)
-
-var logFile *lumberjack.Logger
-
-func Init() {
-	cfg := config.Get()
-	
-	logFile = &lumberjack.Logger{
-		Filename:   cfg.Log.Path,
-		MaxSize:    cfg.Log.MaxSize,
-		MaxBackups: cfg.Log.MaxBackups,
-		MaxAge:     cfg.Log.MaxAge,
-		Compress:   cfg.Log.Compress,
-	}
-	
-	fmt.Printf("Logger initialized, output: %s\n", cfg.Log.Path)
-}
-
-func Info(format string, args ...interface{}) {
-	msg := fmt.Sprintf(format, args...)
-	fmt.Println(msg)
-	if logFile != nil {
-		_, _ = logFile.Write([]byte(msg + "\n"))
-	}
-}
-
-func Log(format string, args ...interface{}) {
-	Info(format, args...)
-}
-
-func Error(format string, args ...interface{}) {
-	msg := fmt.Sprintf("[ERROR] "+format, args...)
-	fmt.Fprintln(os.Stderr, msg)
-	if logFile != nil {
-		_, _ = logFile.Write([]byte(msg + "\n"))
-	}
-}
-
-func Debug(format string, args ...interface{}) {
-	msg := fmt.Sprintf("[DEBUG] "+format, args...)
-	fmt.Println(msg)
-	if logFile != nil {
-		_, _ = logFile.Write([]byte(msg + "\n"))
-	}
-}
-`, nil
-}
 
 // generateMySQLInitPkg 生成 pkg/database/mysql_init.go（GORM）
 func (g *ScriptCenterGenerator) generateMySQLInitPkg() (string, error) {

@@ -10,7 +10,7 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("gpx-scripts v0.0.6")
+		fmt.Println("gpx-scripts v0.0.7")
 	},
 }
 
