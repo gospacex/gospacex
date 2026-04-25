@@ -2842,7 +2842,7 @@ func genBFFTestFile(projectDir, bffName string, modules []string, hasDBTable boo
 		testModules = append(testModules, testModule{Name: m, UpperName: upper})
 	}
 
-	tmplPath := filepath.Join(getTemplatesDir(), "micro-app", "bff", "test", "bff_handler_test.go.tmpl")
+	tmplPath := filepath.Join(getTemplatesDir(), "micro-app", "bff", "test", "handler_test.go.tmpl")
 	tmplStr, err := os.ReadFile(tmplPath)
 	if err != nil {
 		fmt.Printf("ERROR reading BFF test template: %v\n", err)
@@ -2862,8 +2862,8 @@ func genBFFTestFile(projectDir, bffName string, modules []string, hasDBTable boo
 		finalContent = strings.Replace(finalContent, `"testing"`, "\"strings\"\n\t\"testing\"", 1)
 	}
 
-	os.WriteFile(filepath.Join(testDir, "bffHandlerTest.go"), []byte(finalContent), 0644)
-	fmt.Printf("  Generated: %s/test/bffHandlerTest.go\n", toBffDirName(bffName))
+	os.WriteFile(filepath.Join(testDir, "handler_test.go"), []byte(finalContent), 0644)
+	fmt.Printf("  Generated: %s/test/handler_test.go\n", toBffDirName(bffName))
 }
 
 // genSrvTestFile 生成微服层接口测试（默认模式，无表结构）
@@ -2871,24 +2871,24 @@ func genSrvTestFile(projectDir, module, upper, testDir string) {
 	tmplDir := filepath.Join(getTemplatesDir(), "micro-app", "srv", "test")
 	data := buildTemplateData(module, nil, "", "", 0)
 	if err := renderTemplate(
-		filepath.Join(tmplDir, "srv_handler_test.go.tmpl"),
+		filepath.Join(tmplDir, "handler_test.go.tmpl"),
 		data,
-		filepath.Join(testDir, toCamelFileName(module, "HandlerTest.go")),
+		filepath.Join(testDir, "handler_test.go"),
 	); err != nil {
 		fmt.Printf("ERROR rendering srv test %s: %v\n", module, err)
 	} else {
-		fmt.Printf("  Generated: %s/test/%sHandlerTest.go\n", toSrvDirName(module), module)
+		fmt.Printf("  Generated: %s/test/handler_test.go\n", toSrvDirName(module))
 	}
 }
 
 // genSrvTestFileFromSchema 生成微服层接口测试（基于表结构，更详细）
 func genSrvTestFileFromSchema(projectDir, module, upper string, columns []ColumnInfo, testDir string, tableName string) {
 	data := buildTemplateData(module, columns, "", tableName, 0)
-	tmplPath := filepath.Join(getTemplatesDir(), "micro-app", "srv", "test", "srv_handler_test_schema.go.tmpl")
-	if err := renderTemplate(tmplPath, data, filepath.Join(testDir, toCamelFileName(module, "HandlerTest.go"))); err != nil {
+	tmplPath := filepath.Join(getTemplatesDir(), "micro-app", "srv", "test", "handler_test_schema.go.tmpl")
+	if err := renderTemplate(tmplPath, data, filepath.Join(testDir, "handler_test.go")); err != nil {
 		fmt.Printf("ERROR rendering srv test from schema %s: %v\n", module, err)
 	} else {
-		fmt.Printf("  Generated: %s/test/%sHandlerTest.go (with schema)\n", toSrvDirName(module), module)
+		fmt.Printf("  Generated: %s/test/handler_test.go (with schema)\n", toSrvDirName(module))
 	}
 }
 
