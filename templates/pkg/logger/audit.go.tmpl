@@ -1,7 +1,6 @@
 package logger
 
 import (
-	"fmt"
 	"go.uber.org/zap"
 )
 
@@ -23,6 +22,6 @@ func (l *AuditLogger) Log(action, userID, resource string, details map[string]in
 	)
 }
 
-func (l *AuditLogger) With(fields ...zap.Field) *AuditLogger {
-	return &AuditLogger{l.SugaredLogger.With(fields...)}
+func (l *AuditLogger) With(keysAndValues ...interface{}) *AuditLogger {
+	return &AuditLogger{l.SugaredLogger.With(keysAndValues...)}
 }

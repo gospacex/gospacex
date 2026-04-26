@@ -13,9 +13,17 @@ import (
 type Logger struct {
 	Business *BusinessLogger
 	Access   *AccessLogger
-	Error    *zap.SugaredLogger
+	Error    *ErrorLogger
+	Audit    *AuditLogger
 	cleaner  *Cleaner
 }
+
+var (
+	Business *BusinessLogger
+	Access   *AccessLogger
+	Error    *ErrorLogger
+	Audit    *AuditLogger
+)
 
 func NewLogger(cfg *Config) (*Logger, error) {
 	if err := cfg.Validate(); err != nil {
@@ -52,7 +60,14 @@ func NewLogger(cfg *Config) (*Logger, error) {
 		}
 		ws = append(ws, zapcore.AddSync(rotation))
 	} else {
-		file, err := os.OpenFile(cfg.Output.File, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		filePath := cfg.Output.File
+		if filePath == "" {
+			filePath = "./logs/app.log"
+		}
+		if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+			return nil, err
+		}
+		file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
 			return nil, err
 		}
@@ -87,10 +102,16 @@ func NewLogger(cfg *Config) (*Logger, error) {
 		go cleaner.Run()
 	}
 
+	Business = NewBusinessLogger(logger)
+	Access = NewAccessLogger(logger)
+	Error = NewErrorLogger(logger)
+	Audit = NewAuditLogger(logger)
+
 	return &Logger{
-		Business: NewBusinessLogger(logger),
-		Access:   NewAccessLogger(logger),
-		Error:    logger.Named("error").Sugar(),
+		Business: Business,
+		Access:   Access,
+		Error:    Error,
+		Audit:    Audit,
 		cleaner:  cleaner,
 	}, nil
 }

@@ -3,7 +3,6 @@ package logger
 import (
 	"context"
 	"fmt"
-	"sync"
 	"sync/atomic"
 
 	"github.com/IBM/sarama"
@@ -73,9 +72,9 @@ func NewMQPusherFromConfig(cfg *MQConfig) (MQPusher, error) {
 	}
 }
 
-type ContextKey string
+type MQContextKey string
 
-const MQPusherKey ContextKey = "mq_pusher"
+const MQPusherKey MQContextKey = "mq_pusher"
 
 func WithMQPusher(ctx context.Context, pusher MQPusher) context.Context {
 	return context.WithValue(ctx, MQPusherKey, pusher)

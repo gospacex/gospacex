@@ -1,6 +1,8 @@
 package logger
 
 import (
+	"context"
+
 	"go.uber.org/zap"
 )
 
@@ -36,6 +38,29 @@ func (l *AccessLogger) Log(method, path, clientIP, userAgent, requestID string, 
 	)
 }
 
+func (l *AccessLogger) LogWithContext(ctx context.Context, method, path, clientIP, userAgent, requestID string, status int, latency int64) {
+	fields := []interface{}{
+		"method", method,
+		"path", path,
+		"status", status,
+		"latency_ms", latency,
+		"client_ip", clientIP,
+		"user_agent", userAgent,
+		"request_id", requestID,
+	}
+	if traceID := getTraceID(ctx); traceID != "" {
+		fields = append(fields, "trace_id", traceID)
+	}
+	l.Infow("access", fields...)
+}
+
 func (l *AccessLogger) With(keysAndValues ...interface{}) *AccessLogger {
 	return &AccessLogger{l.SugaredLogger.With(keysAndValues...)}
+}
+
+func (l *AccessLogger) WithContext(ctx context.Context) *AccessLogger {
+	if traceID := getTraceID(ctx); traceID != "" {
+		return &AccessLogger{l.SugaredLogger.With("trace_id", traceID)}
+	}
+	return &AccessLogger{l.SugaredLogger}
 }

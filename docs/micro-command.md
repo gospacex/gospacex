@@ -135,7 +135,7 @@ B. 自定义配置（DIY 配置看板）
 ### 命令行模式
 
 ```bash
-go run main micro-app \
+go run . micro \
 --name myshop \
 --output output \
 --bff h5 \
@@ -147,8 +147,16 @@ go run main micro-app \
 --db-name gospacex \
 --db-table eb_store_product,eb_store_product_description,eb_store_product_attr \
 --test
+--otel
+-----------------------
+添加入参--otel 开启微服调用链，否则生成的项目pkg里有调用链逻辑但生成的bff和srv的业务代码里不要有调用链嵌入
+生成项目确认日志功能是否正常
+-----------------------
+使用superpowers TDD驱动开发
+
 
 go run . micro --name myshop --output output --bff h5 --modules product --db-host 127.0.0.1 --db-port 3306 --db-user root --db-password 123456 --db-name gospacex --db-table eb_store_product --test
+
 gpx micro --name myshop --output output --bff h5 --modules product --db-host 127.0.0.1 --db-port 3306 --db-user root --db-password 123456 --db-name gospacex --db-table eb_store_product --test
 
 go run . micro-app --name myshop --output output --bff h5 --modules product --db-host 127.0.0.1 --db-port 3306 --db-user root --db-password 123456 --db-name gospacex --db-table eb_store_product --test

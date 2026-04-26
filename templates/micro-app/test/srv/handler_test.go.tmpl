@@ -21,7 +21,7 @@ func (m *mockRepo) Create(ctx context.Context, r *model.{{.UpperName}}) error {
 
 func (m *mockRepo) GetByID(ctx context.Context, id uint) (*model.{{.UpperName}}, error) {
 	for _, item := range m.items {
-		if item.ID == id {
+		if item.Id == id {
 			return item, nil
 		}
 	}
@@ -39,7 +39,7 @@ func (m *mockRepo) Update(ctx context.Context, r *model.{{.UpperName}}) error {
 func (m *mockRepo) Delete(ctx context.Context, id uint) error {
 	var result []*model.{{.UpperName}}
 	for _, item := range m.items {
-		if item.ID != id {
+		if item.Id != id {
 			result = append(result, item)
 		}
 	}

@@ -1,6 +1,8 @@
 package logger
 
 import (
+	"context"
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -19,6 +21,13 @@ func (l *BusinessLogger) With(keysAndValues ...interface{}) *BusinessLogger {
 	return &BusinessLogger{l.SugaredLogger.With(keysAndValues...)}
 }
 
+func (l *BusinessLogger) WithContext(ctx context.Context) *BusinessLogger {
+	if traceID := getTraceID(ctx); traceID != "" {
+		return &BusinessLogger{l.SugaredLogger.With("trace_id", traceID)}
+	}
+	return &BusinessLogger{l.SugaredLogger}
+}
+
 func (l *BusinessLogger) WithLevel(level zapcore.Level, msg string, args ...interface{}) {
 	switch level {
 	case zapcore.DebugLevel:
@@ -35,5 +44,21 @@ func (l *BusinessLogger) WithLevel(level zapcore.Level, msg string, args ...inte
 		l.Panicw(msg, args...)
 	case zapcore.FatalLevel:
 		l.Fatalw(msg, args...)
+	}
+}
+
+func (l *BusinessLogger) InfoContext(ctx context.Context, msg string, keysAndValues ...interface{}) {
+	if traceID := getTraceID(ctx); traceID != "" {
+		l.Infow(msg, append([]interface{}{"trace_id", traceID}, keysAndValues...)...)
+	} else {
+		l.Infow(msg, keysAndValues...)
+	}
+}
+
+func (l *BusinessLogger) ErrorContext(ctx context.Context, msg string, keysAndValues ...interface{}) {
+	if traceID := getTraceID(ctx); traceID != "" {
+		l.Errorw(msg, append([]interface{}{"trace_id", traceID}, keysAndValues...)...)
+	} else {
+		l.Errorw(msg, keysAndValues...)
 	}
 }

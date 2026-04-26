@@ -2,46 +2,162 @@ package handler
 
 import (
 	"net/http"
+	"time"
 
 	"{{.AppName}}/pkg/logger"
+	"{{.AppName}}/{{.BffDirName}}/internal/rpcClient"
+	pb "{{.AppName}}/common/kitexGen/{{.Module}}"
+
 	"github.com/gin-gonic/gin"
 )
 
-type {{.UpperName}}Handler struct{}
+type {{.UpperName}}Handler struct {
+	client rpcClient.{{.UpperName}}Client
+}
 
-func New{{.UpperName}}Handler() *{{.UpperName}}Handler { return &{{.UpperName}}Handler{} }
+func New{{.UpperName}}Handler() *{{.UpperName}}Handler {
+	cli, err := rpcclient.New{{.UpperName}}Client("127.0.0.1:{{.SrvPort}}")
+	if err != nil {
+		logger.Business.Errorw("failed to create {{.LowerName}} client", "error", err.Error())
+		panic("failed to create {{.LowerName}} client: " + err.Error())
+	}
+	logger.Business.Infow("{{.UpperName}}Handler initialized", "addr", "127.0.0.1:{{.SrvPort}}")
+	return &{{.UpperName}}Handler{client: cli}
+}
 
 func (h *{{.UpperName}}Handler) Create(c *gin.Context) {
 	requestID, _ := c.Get("requestID")
-	logger.Access.Infow("create request", "method", c.Request.Method, "path", c.Request.URL.Path, "requestID", requestID)
-	logger.Business.Infow("create business", "resource", "{{.LowerName}}", "requestID", requestID)
-	c.JSON(http.StatusOK, gin.H{})
+	start := time.Now()
+
+	logger.Access.Infow("create request start", "method", c.Request.Method, "path", c.Request.URL.Path, "requestID", requestID)
+	logger.Business.Infow("create business start", "resource", "{{.LowerName}}", "requestID", requestID)
+
+	req := &pb.Create{{.UpperName}}Request{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		logger.Access.Errorw("create request bind failed", "error", err.Error(), "requestID", requestID)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	resp, err := h.client.Create(c.Request.Context(), req)
+	if err != nil {
+		logger.Access.Errorw("create RPC failed", "error", err.Error(), "requestID", requestID)
+		logger.Business.Errorw("create {{.LowerName}} failed", "error", err.Error(), "requestID", requestID)
+		logger.Audit.Errorw("audit: create {{.LowerName}} failed", "error", err.Error(), "requestID", requestID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	logger.Access.Infow("create request success", "requestID", requestID, "duration", time.Since(start).String())
+	logger.Business.Infow("create {{.LowerName}} success", "id", resp.Id, "requestID", requestID, "duration", time.Since(start).String())
+	logger.Audit.Infow("audit: create {{.LowerName}} success", "id", resp.Id, "requestID", requestID)
+
+	c.JSON(http.StatusOK, resp)
 }
 
 func (h *{{.UpperName}}Handler) List(c *gin.Context) {
 	requestID, _ := c.Get("requestID")
-	logger.Access.Infow("list request", "method", c.Request.Method, "path", c.Request.URL.Path, "requestID", requestID)
-	logger.Business.Infow("list business", "resource", "{{.LowerName}}", "requestID", requestID)
-	c.JSON(http.StatusOK, gin.H{})
+	start := time.Now()
+
+	logger.Access.Infow("list request start", "method", c.Request.Method, "path", c.Request.URL.Path, "requestID", requestID)
+	logger.Business.Infow("list business start", "resource", "{{.LowerName}}", "requestID", requestID)
+
+	req := &pb.List{{.UpperName}}Request{}
+	if err := c.ShouldBindQuery(req); err != nil {
+		logger.Access.Errorw("list request bind failed", "error", err.Error(), "requestID", requestID)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	resp, err := h.client.List(c.Request.Context(), req)
+	if err != nil {
+		logger.Access.Errorw("list RPC failed", "error", err.Error(), "requestID", requestID)
+		logger.Business.Errorw("list {{.LowerName}} failed", "error", err.Error(), "requestID", requestID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	logger.Access.Infow("list request success", "requestID", requestID, "count", len(resp.Items), "duration", time.Since(start).String())
+	logger.Business.Infow("list {{.LowerName}} success", "count", len(resp.Items), "requestID", requestID, "duration", time.Since(start).String())
+
+	c.JSON(http.StatusOK, resp)
 }
 
 func (h *{{.UpperName}}Handler) Get(c *gin.Context) {
 	requestID, _ := c.Get("requestID")
-	logger.Access.Infow("get request", "method", c.Request.Method, "path", c.Request.URL.Path, "requestID", requestID)
-	logger.Business.Infow("get business", "resource", "{{.LowerName}}", "id", c.Param("id"), "requestID", requestID)
-	c.JSON(http.StatusOK, gin.H{"id": c.Param("id")})
+	start := time.Now()
+	id := c.Param("id")
+
+	logger.Access.Infow("get request start", "method", c.Request.Method, "path", c.Request.URL.Path, "requestID", requestID)
+	logger.Business.Infow("get business start", "resource", "{{.LowerName}}", "id", id, "requestID", requestID)
+
+	req := &pb.Get{{.UpperName}}Request{Id: id}
+	resp, err := h.client.Get(c.Request.Context(), req)
+	if err != nil {
+		logger.Access.Errorw("get RPC failed", "error", err.Error(), "requestID", requestID)
+		logger.Business.Errorw("get {{.LowerName}} failed", "id", id, "error", err.Error(), "requestID", requestID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	logger.Access.Infow("get request success", "id", id, "requestID", requestID, "duration", time.Since(start).String())
+	logger.Business.Infow("get {{.LowerName}} success", "id", id, "requestID", requestID, "duration", time.Since(start).String())
+
+	c.JSON(http.StatusOK, resp)
 }
 
 func (h *{{.UpperName}}Handler) Update(c *gin.Context) {
 	requestID, _ := c.Get("requestID")
-	logger.Access.Infow("update request", "method", c.Request.Method, "path", c.Request.URL.Path, "requestID", requestID)
-	logger.Business.Infow("update business", "resource", "{{.LowerName}}", "id", c.Param("id"), "requestID", requestID)
-	c.JSON(http.StatusOK, gin.H{})
+	start := time.Now()
+	id := c.Param("id")
+
+	logger.Access.Infow("update request start", "method", c.Request.Method, "path", c.Request.URL.Path, "requestID", requestID)
+	logger.Business.Infow("update business start", "resource", "{{.LowerName}}", "id", id, "requestID", requestID)
+
+	req := &pb.Update{{.UpperName}}Request{Id: id}
+	if err := c.ShouldBindJSON(req); err != nil {
+		logger.Access.Errorw("update request bind failed", "error", err.Error(), "requestID", requestID)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	resp, err := h.client.Update(c.Request.Context(), req)
+	if err != nil {
+		logger.Access.Errorw("update RPC failed", "error", err.Error(), "requestID", requestID)
+		logger.Business.Errorw("update {{.LowerName}} failed", "id", id, "error", err.Error(), "requestID", requestID)
+		logger.Audit.Errorw("audit: update {{.LowerName}} failed", "id", id, "error", err.Error(), "requestID", requestID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	logger.Access.Infow("update request success", "id", id, "requestID", requestID, "duration", time.Since(start).String())
+	logger.Business.Infow("update {{.LowerName}} success", "id", id, "requestID", requestID, "duration", time.Since(start).String())
+	logger.Audit.Infow("audit: update {{.LowerName}} success", "id", id, "requestID", requestID)
+
+	c.JSON(http.StatusOK, resp)
 }
 
 func (h *{{.UpperName}}Handler) Delete(c *gin.Context) {
 	requestID, _ := c.Get("requestID")
-	logger.Access.Infow("delete request", "method", c.Request.Method, "path", c.Request.URL.Path, "requestID", requestID)
-	logger.Business.Infow("delete business", "resource", "{{.LowerName}}", "id", c.Param("id"), "requestID", requestID)
-	c.JSON(http.StatusOK, gin.H{})
+	start := time.Now()
+	id := c.Param("id")
+
+	logger.Access.Infow("delete request start", "method", c.Request.Method, "path", c.Request.URL.Path, "requestID", requestID)
+	logger.Business.Infow("delete business start", "resource", "{{.LowerName}}", "id", id, "requestID", requestID)
+
+	req := &pb.Delete{{.UpperName}}Request{Id: id}
+	resp, err := h.client.Delete(c.Request.Context(), req)
+	if err != nil {
+		logger.Access.Errorw("delete RPC failed", "error", err.Error(), "requestID", requestID)
+		logger.Business.Errorw("delete {{.LowerName}} failed", "id", id, "error", err.Error(), "requestID", requestID)
+		logger.Audit.Errorw("audit: delete {{.LowerName}} failed", "id", id, "error", err.Error(), "requestID", requestID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	logger.Access.Infow("delete request success", "id", id, "requestID", requestID, "duration", time.Since(start).String())
+	logger.Business.Infow("delete {{.LowerName}} success", "id", id, "requestID", requestID, "duration", time.Since(start).String())
+	logger.Audit.Infow("audit: delete {{.LowerName}} success", "id", id, "requestID", requestID)
+
+	c.JSON(http.StatusOK, resp)
 }

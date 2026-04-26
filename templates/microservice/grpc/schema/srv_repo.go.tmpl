@@ -2,8 +2,10 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"{{.AppName}}/pkg/database"
+	"{{.AppName}}/pkg/logger"
 	"{{.AppName}}/{{.SrvDirName}}/internal/model"
 
 	"gorm.io/gorm"
@@ -15,42 +17,87 @@ func New{{.UpperModule}}Repo(db *gorm.DB) *{{.UpperModule}}Repo {
 	if db == nil {
 		db, _ = database.NewDB(nil)
 	}
+	logger.Business.Infow("{{.UpperModule}}Repo initialized")
 	return &{{.UpperModule}}Repo{db: db}
 }
 
 func (r *{{.UpperModule}}Repo) Create(ctx context.Context, m *model.{{.UpperModule}}) error {
-	return r.db.WithContext(ctx).Create(m).Error
+	start := time.Now()
+	logger.Business.Infow("create {{.Module}}", "model", m)
+
+	if err := r.db.WithContext(ctx).Create(m).Error; err != nil {
+		logger.Business.Errorw("create {{.Module}} failed", "error", err.Error())
+		return err
+	}
+
+	logger.Business.Infow("create {{.Module}} success", "id", m.Id, "duration", time.Since(start).String())
+	return nil
 }
 
 func (r *{{.UpperModule}}Repo) GetByID(ctx context.Context, id {{.PKGoType}}) (*model.{{.UpperModule}}, error) {
+	start := time.Now()
+	logger.Business.Infow("get {{.Module}} by id", "id", id)
+
 	var m model.{{.UpperModule}}
 {{- if .HasSoftDelete}}
 	if err := r.db.WithContext(ctx).Where("{{.PKProtoName}} = ? AND {{.SoftDeleteCol}} = 0", id).First(&m).Error; err != nil {
 {{- else}}
 	if err := r.db.WithContext(ctx).First(&m, id).Error; err != nil {
 {{- end}}
+		logger.Business.Errorw("get {{.Module}} failed", "error", err.Error())
 		return nil, err
 	}
+
+	logger.Business.Infow("get {{.Module}} success", "id", id, "duration", time.Since(start).String())
 	return &m, nil
 }
 
 func (r *{{.UpperModule}}Repo) List(ctx context.Context) ([]*model.{{.UpperModule}}, error) {
+	start := time.Now()
+	logger.Business.Infow("list {{.Module}}")
+
 	var list []*model.{{.UpperModule}}
 {{- if .HasSoftDelete}}
-	return list, r.db.WithContext(ctx).Where("{{.SoftDeleteCol}} = 0").Find(&list).Error
+	err := r.db.WithContext(ctx).Where("{{.SoftDeleteCol}} = 0").Find(&list).Error
 {{- else}}
-	return list, r.db.WithContext(ctx).Find(&list).Error
+	err := r.db.WithContext(ctx).Find(&list).Error
 {{- end}}
+	if err != nil {
+		logger.Business.Errorw("list {{.Module}} failed", "error", err.Error())
+		return nil, err
+	}
+
+	logger.Business.Infow("list {{.Module}} success", "count", len(list), "duration", time.Since(start).String())
+	return list, nil
 }
 
 func (r *{{.UpperModule}}Repo) Update(ctx context.Context, m *model.{{.UpperModule}}) error {
-	return r.db.WithContext(ctx).Save(m).Error
+	start := time.Now()
+	logger.Business.Infow("update {{.Module}}", "id", m.Id)
+
+	if err := r.db.WithContext(ctx).Save(m).Error; err != nil {
+		logger.Business.Errorw("update {{.Module}} failed", "error", err.Error())
+		return err
+	}
+
+	logger.Business.Infow("update {{.Module}} success", "id", m.Id, "duration", time.Since(start).String())
+	return nil
 }
 
 func (r *{{.UpperModule}}Repo) Delete(ctx context.Context, id {{.PKGoType}}) error {
+	start := time.Now()
+	logger.Business.Infow("delete {{.Module}}", "id", id)
+
 {{- if .HasSoftDelete}}
-	return r.db.WithContext(ctx).Model(&model.{{.UpperModule}}{}).Where("{{.PKProtoName}} = ?", id).Update("{{.SoftDeleteCol}}", 1).Error
+	err := r.db.WithContext(ctx).Model(&model.{{.UpperModule}}{}).Where("{{.PKProtoName}} = ?", id).Update("{{.SoftDeleteCol}}", 1).Error
 {{- else}}
-	return r.db.WithContext(ctx).Delete(&model.{{.UpperModule}}{}, id).Error
+	err := r.db.WithContext(ctx).Delete(&model.{{.UpperModule}}{}, id).Error
 {{- end}}
+	if err != nil {
+		logger.Business.Errorw("delete {{.Module}} failed", "error", err.Error())
+		return err
+	}
+
+	logger.Business.Infow("delete {{.Module}} success", "id", id, "duration", time.Since(start).String())
+	return nil
 }

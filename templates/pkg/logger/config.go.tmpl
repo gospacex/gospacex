@@ -51,7 +51,34 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	cfg.setDefaults()
+
 	return &cfg, nil
+}
+
+func (c *Config) setDefaults() {
+	if c.Env == "" {
+		c.Env = "dev"
+	}
+	if c.Level == "" {
+		c.Level = "info"
+	}
+	if c.Output.File == "" {
+		c.Output.File = "./logs/app.log"
+	}
+	c.Output.Stdout = true
+	if c.Sampling.Initial == 0 {
+		c.Sampling.Initial = 100
+	}
+	if c.Sampling.Thereafter == 0 {
+		c.Sampling.Thereafter = 200
+	}
+	if c.Sampling.Tick == 0 {
+		c.Sampling.Tick = time.Second
+	}
+	if c.Rotation.MaxAgeDays == 0 {
+		c.Rotation.MaxAgeDays = 7
+	}
 }
 
 func (c *Config) Validate() error {

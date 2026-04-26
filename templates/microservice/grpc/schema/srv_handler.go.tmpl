@@ -2,8 +2,10 @@ package handler
 
 import (
 	"context"
+	"time"
 
 	pb "{{.AppName}}/common/kitexGen/{{.Module}}"
+	"{{.AppName}}/pkg/logger"
 	"{{.AppName}}/{{.SrvDirName}}/internal/model"
 	"{{.AppName}}/{{.SrvDirName}}/internal/repository"
 	"{{.AppName}}/{{.SrvDirName}}/internal/service"
@@ -17,6 +19,7 @@ type {{.UpperModule}}Handler struct {
 }
 
 func New{{.UpperModule}}Handler(db *gorm.DB) *{{.UpperModule}}Handler {
+	logger.Business.Infow("{{.UpperModule}}Handler initializing")
 	return &{{.UpperModule}}Handler{
 		svc: service.New{{.UpperModule}}Service(
 			{{.RepoInitCode}},
@@ -25,22 +28,34 @@ func New{{.UpperModule}}Handler(db *gorm.DB) *{{.UpperModule}}Handler {
 }
 
 func (h *{{.UpperModule}}Handler) Create(ctx context.Context, req *pb.Create{{.UpperModule}}Req) (*pb.Create{{.UpperModule}}Resp, error) {
+	start := time.Now()
+	logger.Business.Infow("handle create {{.Module}}")
+
 	m := &model.{{.UpperModule}}{
 {{- range .CreateFields}}
 		{{.ProtoGoName}}: req.{{.ProtoGoName}},
 {{- end}}
 	}
 	if err := h.svc.Create(ctx, m); err != nil {
+		logger.Business.Errorw("create {{.Module}} failed", "error", err.Error())
 		return nil, err
 	}
+
+	logger.Business.Infow("create {{.Module}} success", "id", m.Id, "duration", time.Since(start).String())
 	return &pb.Create{{.UpperModule}}Resp{ {{.PKProtoGoName}}: {{.PKRespConvert}} }, nil
 }
 
 func (h *{{.UpperModule}}Handler) Get(ctx context.Context, req *pb.Get{{.UpperModule}}Req) (*pb.Get{{.UpperModule}}Resp, error) {
+	start := time.Now()
+	logger.Business.Infow("handle get {{.Module}}", "id", req.{{.PKProtoGoName}})
+
 	m, err := h.svc.Get(ctx, {{.PKReqConvert}})
 	if err != nil {
+		logger.Business.Errorw("get {{.Module}} failed", "error", err.Error())
 		return nil, err
 	}
+
+	logger.Business.Infow("get {{.Module}} success", "id", m.Id, "duration", time.Since(start).String())
 	return &pb.Get{{.UpperModule}}Resp{
 {{- range .Columns}}
 		{{.ProtoGoName}}: {{.ModelToRespCode}},
@@ -49,10 +64,15 @@ func (h *{{.UpperModule}}Handler) Get(ctx context.Context, req *pb.Get{{.UpperMo
 }
 
 func (h *{{.UpperModule}}Handler) List(ctx context.Context, req *pb.List{{.UpperModule}}Req) (*pb.List{{.UpperModule}}Resp, error) {
+	start := time.Now()
+	logger.Business.Infow("handle list {{.Module}}")
+
 	list, err := h.svc.List(ctx)
 	if err != nil {
+		logger.Business.Errorw("list {{.Module}} failed", "error", err.Error())
 		return nil, err
 	}
+
 	var items []*pb.{{.UpperModule}}Item
 	for _, m := range list {
 		items = append(items, &pb.{{.UpperModule}}Item{
@@ -61,12 +81,18 @@ func (h *{{.UpperModule}}Handler) List(ctx context.Context, req *pb.List{{.Upper
 {{- end}}
 		})
 	}
+
+	logger.Business.Infow("list {{.Module}} success", "count", len(list), "duration", time.Since(start).String())
 	return &pb.List{{.UpperModule}}Resp{Items: items}, nil
 }
 
 func (h *{{.UpperModule}}Handler) Update(ctx context.Context, req *pb.Update{{.UpperModule}}Req) (*pb.Update{{.UpperModule}}Resp, error) {
+	start := time.Now()
+	logger.Business.Infow("handle update {{.Module}}", "id", req.{{.PKProtoGoName}})
+
 	m, err := h.svc.Get(ctx, {{.PKUpdateReqConvert}})
 	if err != nil {
+		logger.Business.Errorw("get {{.Module}} for update failed", "error", err.Error())
 		return nil, err
 	}
 {{- range .UpdateFields}}
@@ -74,9 +100,24 @@ func (h *{{.UpperModule}}Handler) Update(ctx context.Context, req *pb.Update{{.U
 		m.{{.ProtoGoName}} = req.{{.ProtoGoName}}
 	}
 {{- end}}
-	return &pb.Update{{.UpperModule}}Resp{Success: true}, h.svc.Update(ctx, m)
+	if err := h.svc.Update(ctx, m); err != nil {
+		logger.Business.Errorw("update {{.Module}} failed", "error", err.Error())
+		return nil, err
+	}
+
+	logger.Business.Infow("update {{.Module}} success", "id", req.{{.PKProtoGoName}}, "duration", time.Since(start).String())
+	return &pb.Update{{.UpperModule}}Resp{Success: true}, nil
 }
 
 func (h *{{.UpperModule}}Handler) Delete(ctx context.Context, req *pb.Delete{{.UpperModule}}Req) (*pb.Delete{{.UpperModule}}Resp, error) {
-	return &pb.Delete{{.UpperModule}}Resp{Success: true}, h.svc.Delete(ctx, {{.PKDeleteReqConvert}})
+	start := time.Now()
+	logger.Business.Infow("handle delete {{.Module}}", "id", req.{{.PKProtoGoName}})
+
+	if err := h.svc.Delete(ctx, {{.PKDeleteReqConvert}}); err != nil {
+		logger.Business.Errorw("delete {{.Module}} failed", "error", err.Error())
+		return nil, err
+	}
+
+	logger.Business.Infow("delete {{.Module}} success", "id", req.{{.PKProtoGoName}}, "duration", time.Since(start).String())
+	return &pb.Delete{{.UpperModule}}Resp{Success: true}, nil
 }

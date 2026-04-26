@@ -2,7 +2,10 @@ package repository
 
 import (
 	"context"
+	"time"
+
 	"{{.AppName}}/pkg/database"
+	"{{.AppName}}/pkg/logger"
 	"{{.AppName}}/{{.SrvDirName}}/internal/model"
 	"gorm.io/gorm"
 )
@@ -13,38 +16,94 @@ func New{{.UpperModule}}Repo(db *gorm.DB) *{{.UpperModule}}Repo {
 	if db == nil {
 		db, _ = database.NewDB(nil)
 	}
+	logger.Business.Infow("{{.UpperModule}}Repo initialized")
 	return &{{.UpperModule}}Repo{db: db}
 }
 
 func (r *{{.UpperModule}}Repo) Create(ctx context.Context, m *model.{{.UpperModule}}) error {
-	return r.db.WithContext(ctx).Create(m).Error
+	start := time.Now()
+	logger.Business.Infow("create {{.LowerModule}}", "model", m)
+
+	err := r.db.WithContext(ctx).Create(m).Error
+	if err != nil {
+		logger.Business.Errorw("create {{.LowerModule}} failed", "error", err.Error())
+		logger.Error.Errorw("repository create error", "error", err.Error())
+		return err
+	}
+
+	logger.Business.Infow("create {{.LowerModule}} success", "id", m.Id, "duration", time.Since(start).String())
+	return nil
 }
+
 func (r *{{.UpperModule}}Repo) GetByID(ctx context.Context, id uint) (*model.{{.UpperModule}}, error) {
+	start := time.Now()
+	logger.Business.Infow("get {{.LowerModule}} by id", "id", id)
+
 	var m model.{{.UpperModule}}
 {{- if .HasSoftDelete}}
 	if err := r.db.WithContext(ctx).Where("id = ? AND {{.SoftDeleteCol}} = 0", id).First(&m).Error; err != nil {
 {{- else}}
 	if err := r.db.WithContext(ctx).First(&m, id).Error; err != nil {
 {{- end}}
+		logger.Business.Errorw("get {{.LowerModule}} failed", "id", id, "error", err.Error())
+		logger.Error.Errorw("repository get error", "id", id, "error", err.Error())
 		return nil, err
 	}
+
+	logger.Business.Infow("get {{.LowerModule}} success", "id", id, "duration", time.Since(start).String())
 	return &m, nil
 }
+
 func (r *{{.UpperModule}}Repo) List(ctx context.Context) ([]*model.{{.UpperModule}}, error) {
+	start := time.Now()
+	logger.Business.Infow("list {{.LowerModule}}")
+
 	var list []*model.{{.UpperModule}}
 {{- if .HasSoftDelete}}
-	return list, r.db.WithContext(ctx).Where("{{.SoftDeleteCol}} = 0").Find(&list).Error
+	err := r.db.WithContext(ctx).Where("{{.SoftDeleteCol}} = 0").Find(&list).Error
 {{- else}}
-	return list, r.db.WithContext(ctx).Find(&list).Error
+	err := r.db.WithContext(ctx).Find(&list).Error
 {{- end}}
+	if err != nil {
+		logger.Business.Errorw("list {{.LowerModule}} failed", "error", err.Error())
+		logger.Error.Errorw("repository list error", "error", err.Error())
+		return nil, err
+	}
+
+	logger.Business.Infow("list {{.LowerModule}} success", "count", len(list), "duration", time.Since(start).String())
+	return list, nil
 }
+
 func (r *{{.UpperModule}}Repo) Update(ctx context.Context, m *model.{{.UpperModule}}) error {
-	return r.db.WithContext(ctx).Save(m).Error
+	start := time.Now()
+	logger.Business.Infow("update {{.LowerModule}}", "id", m.Id)
+
+	err := r.db.WithContext(ctx).Save(m).Error
+	if err != nil {
+		logger.Business.Errorw("update {{.LowerModule}} failed", "id", m.Id, "error", err.Error())
+		logger.Error.Errorw("repository update error", "id", m.Id, "error", err.Error())
+		return err
+	}
+
+	logger.Business.Infow("update {{.LowerModule}} success", "id", m.Id, "duration", time.Since(start).String())
+	return nil
 }
+
 func (r *{{.UpperModule}}Repo) Delete(ctx context.Context, id uint) error {
+	start := time.Now()
+	logger.Business.Infow("delete {{.LowerModule}}", "id", id)
+
 {{- if .HasSoftDelete}}
-	return r.db.WithContext(ctx).Model(&model.{{.UpperModule}}{}).Where("id = ?", id).Update("{{.SoftDeleteCol}}", 1).Error
+	err := r.db.WithContext(ctx).Model(&model.{{.UpperModule}}{}).Where("id = ?", id).Update("{{.SoftDeleteCol}}", 1).Error
 {{- else}}
-	return r.db.WithContext(ctx).Delete(&model.{{.UpperModule}}{}, id).Error
+	err := r.db.WithContext(ctx).Delete(&model.{{.UpperModule}}{}, id).Error
 {{- end}}
+	if err != nil {
+		logger.Business.Errorw("delete {{.LowerModule}} failed", "id", id, "error", err.Error())
+		logger.Error.Errorw("repository delete error", "id", id, "error", err.Error())
+		return err
+	}
+
+	logger.Business.Infow("delete {{.LowerModule}} success", "id", id, "duration", time.Since(start).String())
+	return nil
 }

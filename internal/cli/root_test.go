@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -68,7 +69,7 @@ func TestRootCommand(t *testing.T) {
 				t.Errorf("Expected no error but got: %v", err)
 			}
 
-			if tt.expectOutput != "" && !contains(output, tt.expectOutput) {
+			if tt.expectOutput != "" && !strings.Contains(output, tt.expectOutput) {
 				t.Errorf("Expected output to contain %q, got %q", tt.expectOutput, output)
 			}
 		})
@@ -79,17 +80,4 @@ func TestVersionConstant(t *testing.T) {
 	if version != "0.1.0" {
 		t.Errorf("Expected version 0.1.0, got %q", version)
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && findSubstring(s, substr))
-}
-
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

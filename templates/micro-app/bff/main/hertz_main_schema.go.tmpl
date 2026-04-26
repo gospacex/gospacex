@@ -10,9 +10,19 @@ import (
 	"syscall"
 	"time"
 
-	"{{.AppName}}/{{.BffDirName}}/internal/router"
 	"{{.AppName}}/pkg/config"
+	"{{.AppName}}/pkg/logger"
+	"{{.AppName}}/{{.BffDirName}}/internal/router"
+{{if .Otel}}
+	"{{.AppName}}/{{.BffDirName}}/internal/middleware"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/jaeger"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
+{{end}}
 	"github.com/cloudwego/hertz/pkg/app/server"
 )
 
@@ -32,19 +42,59 @@ func main() {
 		log.Fatal("Config is nil - check if config file exists: " + confPath)
 	}
 
+	logCfg, err := logger.LoadConfig(confPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	l, err := logger.NewLogger(logCfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer l.Sync()
+{{if .Otel}}
+	var tp *sdktrace.TracerProvider
+	if cfg.Tracing.Enabled {
+		exp, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(cfg.Tracing.Endpoint)))
+		if err != nil {
+			log.Fatal(err)
+		}
+		tp = sdktrace.NewTracerProvider(
+			sdktrace.WithBatcher(exp),
+			sdktrace.WithResource(resource.NewWithAttributes(
+				semconv.SchemaURL,
+				semconv.ServiceNameKey.String(cfg.Tracing.ServiceName),
+			)),
+		)
+		otel.SetTracerProvider(tp)
+		otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+			propagation.TraceContext{},
+			propagation.Baggage{},
+		))
+		defer func() {
+			if err := tp.Shutdown(nil); err != nil {
+				log.Printf("Error shutting down tracer provider: %v", err)
+			}
+		}()
+		logger.Business.Info("Tracing initialized")
+	}
+{{end}}
+	logger.Business.Infow("BFF service starting", "host", cfg.Server.Host, "port", cfg.Server.Port)
+
 	addr := cfg.Server.Host + ":" + fmt.Sprintf("%d", cfg.Server.Port)
-	log.Printf("BFF starting on %s", addr)
+	logger.Business.Infow("BFF listening", "addr", addr)
 
 	h := server.Default(server.WithHostPorts(addr))
-
-	// Start server in a goroutine
+{{if .Otel}}
+	if cfg.Tracing.Enabled {
+		h.Use(middleware.Tracing(cfg.Tracing.ServiceName))
+	}
+{{end}}
 	go func() {
 		if err := h.Run(); err != nil && err != server.ErrDisabled {
-			log.Fatalf("listen: %s\n", err)
+			logger.Error.Infow("listen error", "error", err.Error())
 		}
 	}()
 
-	// Wait for interrupt signal to gracefully shutdown the server
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit

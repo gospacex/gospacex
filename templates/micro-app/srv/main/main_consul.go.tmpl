@@ -8,10 +8,20 @@ import (
 
 	"{{.AppName}}/pkg/config"
 	"{{.AppName}}/pkg/database"
+	"{{.AppName}}/pkg/logger"
 	"{{.AppName}}/{{.SrvDirName}}/internal/handler"
+	"{{.AppName}}/{{.SrvDirName}}/internal/interceptor"
 	"{{.AppName}}/common/kitexGen/{{.Module}}"
 
 	"github.com/hashicorp/consul/api"
+{{if .Otel}}
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/jaeger"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
+{{end}}
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
@@ -31,7 +41,46 @@ func main() {
 	if cfg == nil {
 		log.Fatal("Config is nil - check if config file exists: " + confPath)
 	}
-	db, err := database.NewDB(&cfg.Database)
+
+	logCfg, err := logger.LoadConfig(confPath)
+	if err != nil {
+		log.Fatalf("Failed to load log config: %v", err)
+	}
+	l, err := logger.NewLogger(logCfg)
+	if err != nil {
+		log.Fatalf("Failed to create logger: %v", err)
+	}
+	defer l.Sync()
+{{if .Otel}}
+	var tp *sdktrace.TracerProvider
+	if cfg.Tracing.Enabled {
+		exp, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(cfg.Tracing.Endpoint)))
+		if err != nil {
+			log.Fatal(err)
+		}
+		tp = sdktrace.NewTracerProvider(
+			sdktrace.WithBatcher(exp),
+			sdktrace.WithResource(resource.NewWithAttributes(
+				semconv.SchemaURL,
+				semconv.ServiceNameKey.String(cfg.Tracing.ServiceName),
+			)),
+		)
+		otel.SetTracerProvider(tp)
+		otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+			propagation.TraceContext{},
+			propagation.Baggage{},
+		))
+		defer func() {
+			if err := tp.Shutdown(nil); err != nil {
+				log.Printf("Error shutting down tracer provider: %v", err)
+			}
+		}()
+		logger.Business.Info("Tracing initialized")
+	}
+{{end}}
+	logger.Business.Infow("SRV service starting", "host", cfg.Server.Host, "port", cfg.Server.Port)
+
+	db, err := database.NewDB(&cfg.MySQL)
 	if err != nil {
 		log.Fatalf("Failed to connect database: %v", err)
 	}
@@ -43,16 +92,18 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to listen: %v", err)
 	}
-	s := grpc.NewServer()
+	opts := []grpc.ServerOption{
+		grpc.UnaryInterceptor(interceptor.UnaryInterceptor),
+	}
+	s := grpc.NewServer(opts...)
 	{{.Module}}.Register{{.UpperModule}}ServiceServer(s, handler.New{{.UpperModule}}Handler(db))
 	reflection.Register(s)
 
-	// Consul 服务注册
 	consulConfig := api.DefaultConfig()
 	consulConfig.Address = cfg.Registry.Address
 	consulClient, err := api.NewClient(consulConfig)
 	if err != nil {
-		log.Printf("Warning: Failed to connect to Consul: %v", err)
+		logger.Error.Errorw("consul connection failed", "error", err.Error())
 	} else {
 		registration := &api.AgentServiceRegistration{
 			ID:   "{{.Module}}",
@@ -66,12 +117,13 @@ func main() {
 			},
 		}
 		if err := consulClient.Agent().ServiceRegister(registration); err != nil {
-			log.Printf("Warning: Failed to register with Consul: %v", err)
+			logger.Error.Errorw("consul registration failed", "error", err.Error())
 		} else {
-			log.Printf("Registered with Consul: %s", "{{.Module}}")
+			logger.Business.Infow("registered with Consul", "service", "{{.Module}}")
 		}
 	}
 
-	log.Printf("Starting on %s", addr)
+	logger.Business.Infow("SRV listening", "addr", addr)
+
 	s.Serve(lis)
 }

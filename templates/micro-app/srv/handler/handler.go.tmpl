@@ -2,30 +2,101 @@ package handler
 
 import (
 	"context"
+	"time"
 
+	"{{.AppName}}/pkg/logger"
 	"{{.AppName}}/common/kitexGen/{{.Module}}"
 	"{{.AppName}}/{{.SrvDirName}}/internal/repository"
 	"{{.AppName}}/{{.SrvDirName}}/internal/service"
 )
 
-type {{.UpperModule}}Handler struct { svc *service.{{.UpperModule}}Service }
+type {{.UpperModule}}Handler struct {
+	svc  *service.{{.UpperModule}}Service
+	repo *repository.{{.UpperModule}}Repo
+}
 
 func New{{.UpperModule}}Handler(repo *repository.{{.UpperModule}}Repo) *{{.UpperModule}}Handler {
-	return &{{.UpperModule}}Handler{svc: service.New{{.UpperModule}}Service(repo)}
+	logger.Business.Infow("{{.UpperModule}}Handler initializing")
+	return &{{.UpperModule}}Handler{
+		svc:  service.New{{.UpperModule}}Service(repo),
+		repo: repo,
+	}
 }
 
 func (h *{{.UpperModule}}Handler) Create(ctx context.Context, req *{{.Module}}.Create{{.UpperModule}}Req) (*{{.Module}}.Create{{.UpperModule}}Resp, error) {
-	return h.svc.Create(ctx, req)
+	start := time.Now()
+	logger.Business.Infow("handle create {{.LowerModule}}", "request", req)
+
+	resp, err := h.svc.Create(ctx, req)
+	if err != nil {
+		logger.Business.Errorw("create {{.LowerModule}} failed", "error", err.Error())
+		logger.Error.Errorw("handle create {{.LowerModule}} error", "error", err.Error())
+		return nil, err
+	}
+
+	logger.Business.Infow("create {{.LowerModule}} success", "id", resp.Id, "duration", time.Since(start).String())
+	return resp, nil
 }
+
 func (h *{{.UpperModule}}Handler) Get(ctx context.Context, req *{{.Module}}.Get{{.UpperModule}}Req) (*{{.Module}}.Get{{.UpperModule}}Resp, error) {
-	return h.svc.Get(ctx, req)
+	start := time.Now()
+	id := req.Id
+	logger.Business.Infow("handle get {{.LowerModule}}", "id", id)
+
+	resp, err := h.svc.Get(ctx, req)
+	if err != nil {
+		logger.Business.Errorw("get {{.LowerModule}} failed", "id", id, "error", err.Error())
+		logger.Error.Errorw("handle get {{.LowerModule}} error", "id", id, "error", err.Error())
+		return nil, err
+	}
+
+	logger.Business.Infow("get {{.LowerModule}} success", "id", id, "duration", time.Since(start).String())
+	return resp, nil
 }
+
 func (h *{{.UpperModule}}Handler) List(ctx context.Context, req *{{.Module}}.List{{.UpperModule}}Req) (*{{.Module}}.List{{.UpperModule}}Resp, error) {
-	return h.svc.List(ctx, req)
+	start := time.Now()
+	logger.Business.Infow("handle list {{.LowerModule}}")
+
+	resp, err := h.svc.List(ctx, req)
+	if err != nil {
+		logger.Business.Errorw("list {{.LowerModule}} failed", "error", err.Error())
+		logger.Error.Errorw("handle list {{.LowerModule}} error", "error", err.Error())
+		return nil, err
+	}
+
+	logger.Business.Infow("list {{.LowerModule}} success", "count", len(resp.Items), "duration", time.Since(start).String())
+	return resp, nil
 }
+
 func (h *{{.UpperModule}}Handler) Update(ctx context.Context, req *{{.Module}}.Update{{.UpperModule}}Req) (*{{.Module}}.Update{{.UpperModule}}Resp, error) {
-	return h.svc.Update(ctx, req)
+	start := time.Now()
+	id := req.Id
+	logger.Business.Infow("handle update {{.LowerModule}}", "id", id)
+
+	resp, err := h.svc.Update(ctx, req)
+	if err != nil {
+		logger.Business.Errorw("update {{.LowerModule}} failed", "id", id, "error", err.Error())
+		logger.Error.Errorw("handle update {{.LowerModule}} error", "id", id, "error", err.Error())
+		return nil, err
+	}
+
+	logger.Business.Infow("update {{.LowerModule}} success", "id", id, "duration", time.Since(start).String())
+	return resp, nil
 }
+
 func (h *{{.UpperModule}}Handler) Delete(ctx context.Context, req *{{.Module}}.Delete{{.UpperModule}}Req) (*{{.Module}}.Delete{{.UpperModule}}Resp, error) {
-	return h.svc.Delete(ctx, req)
+	start := time.Now()
+	id := req.Id
+	logger.Business.Infow("handle delete {{.LowerModule}}", "id", id)
+
+	resp, err := h.svc.Delete(ctx, req)
+	if err != nil {
+		logger.Business.Errorw("delete {{.LowerModule}} failed", "id", id, "error", err.Error())
+		logger.Error.Errorw("handle delete {{.LowerModule}} error", "id", id, "error", err.Error())
+		return nil, err
+	}
+
+	logger.Business.Infow("delete {{.LowerModule}} success", "id", id, "duration", time.Since(start).String())
+	return resp, nil
 }

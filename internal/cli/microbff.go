@@ -139,6 +139,9 @@ func runNewMicroBff(cmd *cobra.Command, args []string) error {
 		// 生成 pkg 层（在项目根目录）
 		genBffPkgMiddleware(projectRoot)
 
+		// 生成中间件包（在 BFF 的 internal/middleware 下）
+		genBffMiddlewarePackages(bffDir)
+
 		// 生成 cmd/main.go
 		mainContent := fmt.Sprintf(`package main
 
@@ -682,21 +685,20 @@ func genBffMiddleware(bffDir, bffName, projectName string) error {
 	return nil
 }
 
-// genBffPkgMiddleware 生成 BFF 依赖的 pkg 层中间件
-func genBffPkgMiddleware(projectRoot string) {
-	// 生成 logger 包（main.go 依赖）
-	genBffPkgLogger(projectRoot)
+// genBffMiddlewarePackages 生成 BFF 依赖的中间件包（放在 internal/middleware 下）
+func genBffMiddlewarePackages(bffDir string) {
+	middlewareDir := filepath.Join(bffDir, "internal", "middleware")
 
 	for _, m := range strings.Split(microBffMiddleware, ",") {
 		m = strings.TrimSpace(m)
 		var pkgDir string
 		switch m {
 		case "jwt":
-			pkgDir = filepath.Join(projectRoot, "pkg", "jwt")
+			pkgDir = filepath.Join(middlewareDir, "jwt")
 		case "ratelimit":
-			pkgDir = filepath.Join(projectRoot, "pkg", "ratelimit")
+			pkgDir = filepath.Join(middlewareDir, "ratelimit")
 		case "blacklist":
-			pkgDir = filepath.Join(projectRoot, "pkg", "blacklist")
+			pkgDir = filepath.Join(middlewareDir, "blacklist")
 		default:
 			continue
 		}
@@ -720,8 +722,14 @@ func genBffPkgMiddleware(projectRoot string) {
 			}
 			os.WriteFile(dst, data, 0644)
 		}
-		fmt.Printf("  Generated pkg/%s\n", m)
+		fmt.Printf("  Generated internal/middleware/%s\n", m)
 	}
+}
+
+// genBffPkgMiddleware 生成 BFF 依赖的 pkg 层（logger 在根目录）
+func genBffPkgMiddleware(projectRoot string) {
+	// 生成 logger 包（main.go 依赖）
+	genBffPkgLogger(projectRoot)
 }
 
 // genBffPkgLogger 生成 pkg/logger 包

@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"log"
 
-	"{{.AppName}}/{{.BffDirName}}/internal/router"
 	"{{.AppName}}/pkg/config"
+	"{{.AppName}}/pkg/logger"
+	"{{.AppName}}/{{.BffDirName}}/internal/router"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
 )
@@ -27,14 +28,26 @@ func main() {
 		log.Fatal("Config is nil - check if config file exists: " + confPath)
 	}
 
+	logCfg, err := logger.LoadConfig(confPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	l, err := logger.NewLogger(logCfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer l.Sync()
+
+	logger.Business.Infow("BFF service starting", "host", cfg.Server.Host, "port", cfg.Server.Port)
+
 	addr := cfg.Server.Host + ":" + fmt.Sprintf("%d", cfg.Server.Port)
-	log.Printf("BFF starting on %s", addr)
+	logger.Business.Infow("BFF listening", "addr", addr)
 
 	h := server.Default(server.WithHostPorts(addr))
 
 	go func() {
 		if err := h.Run(); err != nil && err != server.ErrDisabled {
-			log.Fatalf("listen: %s\n", err)
+			logger.Error.Infow("listen error", "error", err.Error())
 		}
 	}()
 

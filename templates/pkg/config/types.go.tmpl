@@ -140,6 +140,15 @@ type BFFConfig struct {
 	ShutdownTimeout  time.Duration `yaml:"shutdown_timeout" mapstructure:"shutdown_timeout"`
 }
 
+// TracingConfig 分布式追踪配置
+type TracingConfig struct {
+	Enabled   bool   `yaml:"enabled" mapstructure:"enabled"`
+	Endpoint  string `yaml:"endpoint" mapstructure:"endpoint"`
+	ServiceName string `yaml:"service_name" mapstructure:"service_name"`
+	Sampler   string `yaml:"sampler" mapstructure:"sampler"` // const, rate, jaeger
+	SamplerParam float64 `yaml:"sampler_param" mapstructure:"sampler_param"`
+}
+
 // Config 完整配置结构
 type Config struct {
 	App           AppConfig           `yaml:"app" mapstructure:"app"`
@@ -155,4 +164,5 @@ type Config struct {
 	Etcd          EtcdConfig          `yaml:"etcd" mapstructure:"etcd"`
 	Nacos         NacosConfig         `yaml:"nacos" mapstructure:"nacos"`
 	Consul        ConsulConfig        `yaml:"consul" mapstructure:"consul"`
+	Tracing       TracingConfig       `yaml:"tracing" mapstructure:"tracing"`
 }

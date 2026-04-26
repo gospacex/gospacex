@@ -8,6 +8,7 @@ import (
 
 	"{{.AppName}}/pkg/config"
 	"{{.AppName}}/pkg/database"
+	"{{.AppName}}/pkg/logger"
 	"{{.AppName}}/{{.SrvDirName}}/internal/handler"
 	pb "{{.AppName}}/common/kitexGen/{{.Module}}"
 
@@ -24,12 +25,27 @@ func init() {
 func main() {
 	flag.Parse()
 	cfg, _ := config.Load(confPath)
+
+	logCfg, err := logger.LoadConfig(confPath)
+	if err != nil {
+		log.Fatalf("Failed to load log config: %v", err)
+	}
+	l, err := logger.NewLogger(logCfg)
+	if err != nil {
+		log.Fatalf("Failed to create logger: %v", err)
+	}
+	defer l.Sync()
+
+	logger.Business.Infow("SRV service starting", "host", cfg.Server.Host, "port", cfg.Server.Port)
+
 	db, _ := database.NewDB(&cfg.Database)
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	lis, _ := net.Listen("tcp", addr)
 	s := grpc.NewServer()
 	pb.Register{{.UpperModule}}ServiceServer(s, handler.New{{.UpperModule}}Handler(db))
 	reflection.Register(s)
-	log.Printf("Starting on %s", addr)
+
+	logger.Business.Infow("SRV listening", "addr", addr)
+
 	s.Serve(lis)
 }
