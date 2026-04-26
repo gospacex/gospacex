@@ -1,0 +1,48 @@
+package blacklist
+
+import (
+	"net"
+	"strings"
+)
+
+type Blacklist interface {
+	IsBlocked(ip string) bool
+}
+
+type IPBlacklist struct {
+	cidrs []*net.IPNet
+}
+
+func New(ipList []string) (*IPBlacklist, error) {
+	bl := &IPBlacklist{
+		cidrs: make([]*net.IPNet, 0),
+	}
+
+	for _, ip := range ipList {
+		ip = strings.TrimSpace(ip)
+		if ip == "" {
+			continue
+		}
+		if _, ipNet, err := net.ParseCIDR(ip); err == nil {
+			bl.cidrs = append(bl.cidrs, ipNet)
+		} else if singleIP := net.ParseIP(ip); singleIP != nil {
+			bl.cidrs = append(bl.cidrs, &net.IPNet{IP: singleIP, Mask: net.CIDRMask(32, 32)})
+		}
+	}
+
+	return bl, nil
+}
+
+func (b *IPBlacklist) IsBlocked(ip string) bool {
+	parsedIP := net.ParseIP(ip)
+	if parsedIP == nil {
+		return false
+	}
+
+	for _, cidr := range b.cidrs {
+		if cidr.Contains(parsedIP) {
+			return true
+		}
+	}
+	return false
+}
