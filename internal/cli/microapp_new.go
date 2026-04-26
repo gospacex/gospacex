@@ -35,11 +35,12 @@ var (
 	microAppDBName     string
 	microAppDBTable    string
 	microAppTest       bool
+	microAppOtel       bool
 	microAppRegister   string
 	microAppSrvs       []string
 	microAppJoinKey       []string // 联表条件: table1.field1=table2.field2
 	microAppJoinStyle     []string // 联表关系: table1:table2=1t1|1tn|nt1
-	microAppMiddleware    bool     // 是否生成中间件/拦截器
+	microAppMiddleware    string   // 中间件列表: jwt,ratelimit,blacklist
 	microAppConfig        string   // 配置中心: nacos|viper(默认)
 	microAppConfigFile    string   // 配置文件路径: yaml/json/toml
 )
@@ -748,8 +749,8 @@ func runNewMicroAppWithFlags() error {
 	if microAppRegister != "" {
 		fmt.Printf(", register: %s", microAppRegister)
 	}
-	if microAppMiddleware {
-		fmt.Printf(", middleware: true")
+	if microAppMiddleware != "" {
+		fmt.Printf(", middleware: %s", microAppMiddleware)
 	}
 	if microAppConfig != "" {
 		fmt.Printf(", config: %s", microAppConfig)
@@ -964,7 +965,7 @@ func runNewMicroAppWithFlags() error {
 		}
 	}
 	// 生成中间件/拦截器（如果 --middleware 启用）
-	if microAppMiddleware {
+	if microAppMiddleware != "" {
 		genMiddleware(projectDir, microAppBFFName, microAppModules)
 	}
 
@@ -1329,7 +1330,6 @@ func genLogger(projectDir string) {
 		"error.go.tmpl",
 		"mq.go.tmpl",
 		"mq_kafka.go.tmpl",
-		"formatter.go.tmpl",
 	}
 
 	goFiles := []string{
@@ -1346,7 +1346,6 @@ func genLogger(projectDir string) {
 		"error.go",
 		"mq.go",
 		"mq_kafka.go",
-		"formatter.go",
 	}
 
 	for i, tmpl := range tmplFiles {
@@ -1435,6 +1434,7 @@ func genBFF(projectDir, bffName string, modules []string, protocol string) {
 		"BFFName":      bffName,
 		"BffDirName":   toBffDirName(bffName),
 		"NacosEnabled": microAppConfig == "nacos",
+		"Otel":        microAppOtel,
 	})
 	if err != nil {
 		fmt.Printf("ERROR executing BFF main template: %v\n", err)
@@ -1510,6 +1510,8 @@ func Logger() gin.HandlerFunc {
 		}
 		handler, err := executeTemplate(string(tmplStr), map[string]interface{}{
 			"UpperName": upper,
+			"AppName":   microAppName,
+			"LowerName": m,
 		})
 		if err != nil {
 			fmt.Printf("ERROR executing handler template: %v\n", err)
@@ -1710,6 +1712,8 @@ func genMicroservice(projectDir, module string, port int, protocol string) {
 		"AppName":     microAppName,
 		"Module":      module,
 		"UpperModule": upper,
+		"SrvDirName":  toSrvDirName(module),
+		"Otel":        microAppOtel,
 	})
 	if err != nil {
 		fmt.Printf("ERROR executing SRV main template: %v\n", err)
@@ -1935,8 +1939,8 @@ func genReadme(projectDir, bffName string, modules []string) {
 	if microAppRegister != "" {
 		content.WriteString(fmt.Sprintf("- **Registry**: %s\n", microAppRegister))
 	}
-	if microAppMiddleware {
-		content.WriteString("- **Middleware**: enabled\n")
+	if microAppMiddleware != "" {
+		content.WriteString(fmt.Sprintf("- **Middleware**: %s\n", microAppMiddleware))
 	}
 	if microAppConfig == "nacos" {
 		content.WriteString("- **Config Center**: nacos\n")
@@ -2272,6 +2276,7 @@ func genBFFFromSchema(projectDir, bffName string, tableColumns map[string][]Colu
 		"BFFName":      bffName,
 		"BffDirName":   toBffDirName(bffName),
 		"NacosEnabled": microAppConfig == "nacos",
+		"Otel":         microAppOtel,
 	})
 	if err != nil {
 		fmt.Printf("ERROR executing BFFFromSchema main template: %v\n", err)
@@ -2468,6 +2473,7 @@ func genBFFHertzFromSchema(projectDir, bffName string, tableColumns map[string][
 		"BFFName":      bffName,
 		"BffDirName":   toBffDirName(bffName),
 		"NacosEnabled": microAppConfig == "nacos",
+		"Otel":        microAppOtel,
 	})
 	if err != nil {
 		fmt.Printf("ERROR executing BFFHertzFromSchema main template: %v\n", err)
@@ -2803,6 +2809,7 @@ func init() {
 	newMicroAppCmd.Flags().StringVar(&microAppDBName, "db-name", "myshop", "数据库名称")
 	newMicroAppCmd.Flags().StringVar(&microAppDBTable, "db-table", "", "数据库表名，用于根据表结构生成 CRUD")
 	newMicroAppCmd.Flags().BoolVar(&microAppTest, "test", false, "自动生成 BFF 层和微服层的接口测试代码")
+	newMicroAppCmd.Flags().BoolVar(&microAppOtel, "otel", false, "启用 OpenTelemetry 分布式追踪（生成调用链代码）")
 	newMicroAppCmd.Flags().StringArrayVar(&microAppSrvs, "srvs", nil, "微服务列表（--modules 的别名），支持中英文逗号分隔")
 	newMicroAppCmd.Flags().StringVar(&microAppRegister, "register", "", "服务注册中心: consul|etcd（不指定则 BFF 直连 SRV）")
 	newMicroAppCmd.Flags().StringArrayVar(&microAppJoinKey, "db-join-key", nil, "联表条件（兼容旧格式），格式: table1.field1=table2.field2（可多次指定）")
@@ -2810,7 +2817,7 @@ func init() {
 	newMicroAppCmd.Flags().StringArrayVar(&microAppJoinKey, "djc", nil, "联表条件（简写），格式: table1.field1=table2.field2（可多次指定）")
 	newMicroAppCmd.Flags().StringArrayVar(&microAppJoinStyle, "db-join-style", nil, "联表关系（兼容旧格式），格式: table1:table2=1t1|1tn|nt1|ntn（可多次指定）")
 	newMicroAppCmd.Flags().StringArrayVar(&microAppJoinStyle, "djs", nil, "联表关系（简写），格式: table1:table2=1t1|1tn|nt1|ntn（可多次指定）")
-	newMicroAppCmd.Flags().BoolVar(&microAppMiddleware, "middleware", false, "生成中间件（BFF: middleware, SRV: interceptor）")
+	newMicroAppCmd.Flags().StringVar(&microAppMiddleware, "middleware", "", "生成中间件（BFF: jwt,ratelimit,blacklist; SRV: ratelimit,retry,timeout,tracing）")
 	newMicroAppCmd.Flags().StringVar(&microAppConfig, "config", "", "配置中心: nacos|viper（默认从本地 config.yaml 读取）")
 	newMicroAppCmd.Flags().StringVar(&microAppConfigFile, "config-file", "", "从配置文件读取参数，支持 yaml/json/toml 格式")
 }
@@ -3512,69 +3519,189 @@ func toCamelFileName(module, suffix string) string {
 // =============================================================================
 
 // genMiddleware 生成 BFF 中间件和 SRV 拦截器
-// --protocol=kitex 时：BFF 和 SRV 都生成中间件
-// --protocol=grpc 时：BFF 生成 middleware，SRV 生成 interceptor
+// --middleware jwt,ratelimit,blacklist
 func genMiddleware(projectDir, bffName string, modules []string) {
 	fmt.Println("Generating middleware/interceptor code...")
+
+	middlewareList := strings.Split(microAppMiddleware, ",")
+	for i := range middlewareList {
+		middlewareList[i] = strings.TrimSpace(middlewareList[i])
+	}
 
 	// === BFF 中间件 ===
 	bffMiddlewareDir := filepath.Join(projectDir, toBffDirName(bffName), "internal", "middleware")
 	os.MkdirAll(bffMiddlewareDir, 0755)
 
-	var tmplFile string
-	if microAppHTTP == "hertz" {
-		tmplFile = "hertz_middleware.go.tmpl"
-	} else {
-		tmplFile = "gin_middleware.go.tmpl"
-	}
-
-	tmplPath := filepath.Join(getTemplatesDir(), "micro-app", "bff", "middleware", tmplFile)
-	tmplStr, err := os.ReadFile(tmplPath)
-	if err != nil {
-		fmt.Printf("ERROR reading BFF middleware template: %v\n", err)
-		return
-	}
-
-	middlewareGo, err := executeTemplate(string(tmplStr), map[string]interface{}{
-		"AppName": microAppName,
-		"BFFName": bffName,
-	})
-	if err != nil {
-		fmt.Printf("ERROR executing BFF middleware template: %v\n", err)
-		return
-	}
-	os.WriteFile(filepath.Join(bffMiddlewareDir, "middleware.go"), []byte(middlewareGo), 0644)
-	fmt.Printf("  Generated BFF middleware: %s/internal/middleware/middleware.go\n", toBffDirName(bffName))
-
-	// === SRV 拦截器 ===
-	for _, m := range modules {
-		srvInterceptorDir := filepath.Join(projectDir, toSrvDirName(m), "internal", "interceptor")
-		os.MkdirAll(srvInterceptorDir, 0755)
-
-		var srvTmplFile string
-		if microAppProtocol == "kitex" {
-			srvTmplFile = "kitex_interceptor.go.tmpl"
-		} else {
-			srvTmplFile = "grpc_interceptor.go.tmpl"
-		}
-
-		srvTmplPath := filepath.Join(getTemplatesDir(), "micro-app", "srv", "interceptor", srvTmplFile)
-		srvTmplStr, err := os.ReadFile(srvTmplPath)
+	// 生成 middleware.go (Builder 入口)
+	middlewareBuilderPath := filepath.Join(getTemplatesDir(), "micro-app", "bff", "middleware", "middleware.go.tmpl")
+	if _, err := os.Stat(middlewareBuilderPath); err == nil {
+		middlewareBuilderStr, err := os.ReadFile(middlewareBuilderPath)
 		if err != nil {
-			fmt.Printf("ERROR reading SRV interceptor template: %v\n", err)
+			fmt.Printf("ERROR reading middleware builder template: %v\n", err)
+		} else {
+			middlewareGo, err := executeTemplate(string(middlewareBuilderStr), map[string]interface{}{
+				"AppName": microAppName,
+				"BFFName": bffName,
+			})
+			if err != nil {
+				fmt.Printf("ERROR executing middleware builder template: %v\n", err)
+			} else {
+				os.WriteFile(filepath.Join(bffMiddlewareDir, "middleware.go"), []byte(middlewareGo), 0644)
+				fmt.Printf("  Generated BFF middleware builder: %s/internal/middleware/middleware.go\n", toBffDirName(bffName))
+			}
+		}
+	}
+
+	// 根据 --middleware 生成对应的适配器
+	for _, m := range middlewareList {
+		var tmplPath string
+		var outputFile string
+
+		switch m {
+		case "jwt":
+			if microAppHTTP == "hertz" {
+				tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "middleware", "hertz_jwt.go.tmpl")
+				outputFile = filepath.Join(bffMiddlewareDir, "hertz_jwt.go")
+			} else {
+				tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "middleware", "gin_jwt.go.tmpl")
+				outputFile = filepath.Join(bffMiddlewareDir, "gin_jwt.go")
+			}
+		case "ratelimit":
+			if microAppHTTP == "hertz" {
+				tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "middleware", "hertz_ratelimit.go.tmpl")
+				outputFile = filepath.Join(bffMiddlewareDir, "hertz_ratelimit.go")
+			} else {
+				tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "middleware", "gin_ratelimit.go.tmpl")
+				outputFile = filepath.Join(bffMiddlewareDir, "gin_ratelimit.go")
+			}
+		case "blacklist":
+			if microAppHTTP == "hertz" {
+				tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "middleware", "hertz_blacklist.go.tmpl")
+				outputFile = filepath.Join(bffMiddlewareDir, "hertz_blacklist.go")
+			} else {
+				tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "middleware", "gin_blacklist.go.tmpl")
+				outputFile = filepath.Join(bffMiddlewareDir, "gin_blacklist.go")
+			}
+		default:
+			fmt.Printf("  Unknown middleware: %s\n", m)
 			continue
 		}
 
-		interceptorGo, err := executeTemplate(string(srvTmplStr), map[string]interface{}{
+		tmplStr, err := os.ReadFile(tmplPath)
+		if err != nil {
+			fmt.Printf("ERROR reading BFF middleware template %s: %v\n", tmplPath, err)
+			continue
+		}
+
+		middlewareGo, err := executeTemplate(string(tmplStr), map[string]interface{}{
 			"AppName": microAppName,
-			"Module":  m,
+			"BFFName": bffName,
 		})
 		if err != nil {
-			fmt.Printf("ERROR executing SRV interceptor template: %v\n", err)
+			fmt.Printf("ERROR executing BFF middleware template: %v\n", err)
 			continue
 		}
-		os.WriteFile(filepath.Join(srvInterceptorDir, "interceptor.go"), []byte(interceptorGo), 0644)
-		fmt.Printf("  Generated SRV interceptor: %s/internal/interceptor/interceptor.go\n", toSrvDirName(m))
+		os.WriteFile(outputFile, []byte(middlewareGo), 0644)
+		fmt.Printf("  Generated BFF %s middleware: %s\n", m, outputFile)
+	}
+
+	// 生成 middleware.yaml 配置文件
+	configTmplPath := filepath.Join(getTemplatesDir(), "configs", "middleware.yaml.tmpl")
+	if _, err := os.Stat(configTmplPath); err == nil {
+		configStr, err := os.ReadFile(configTmplPath)
+		if err == nil {
+			configContent, err := executeTemplate(string(configStr), map[string]interface{}{
+				"AppName": microAppName,
+			})
+			if err == nil {
+				configDir := filepath.Join(projectDir, toBffDirName(bffName), "configs")
+				os.MkdirAll(configDir, 0755)
+				os.WriteFile(filepath.Join(configDir, "middleware.yaml"), []byte(configContent), 0644)
+				fmt.Printf("  Generated BFF middleware config: %s/configs/middleware.yaml\n", toBffDirName(bffName))
+			}
+		}
+	}
+
+	// === SRV 拦截器 ===
+	for _, module := range modules {
+		srvInterceptorDir := filepath.Join(projectDir, toSrvDirName(module), "internal", "interceptor")
+		os.MkdirAll(srvInterceptorDir, 0755)
+
+		// 生成 interceptor.go (Builder 入口)
+		interceptorBuilderPath := filepath.Join(getTemplatesDir(), "micro-app", "srv", "interceptor", "interceptor.go.tmpl")
+		if _, err := os.Stat(interceptorBuilderPath); err == nil {
+			interceptorBuilderStr, err := os.ReadFile(interceptorBuilderPath)
+			if err == nil {
+				interceptorGo, err := executeTemplate(string(interceptorBuilderStr), map[string]interface{}{
+					"AppName": microAppName,
+					"Module":  module,
+				})
+				if err == nil {
+					os.WriteFile(filepath.Join(srvInterceptorDir, "interceptor.go"), []byte(interceptorGo), 0644)
+					fmt.Printf("  Generated SRV interceptor builder: %s/internal/interceptor/interceptor.go\n", toSrvDirName(module))
+				}
+			}
+		}
+
+		// 根据 --middleware 生成对应的拦截器
+		for _, m := range middlewareList {
+			var tmplPath string
+			var outputFile string
+
+			switch m {
+			case "ratelimit":
+				if microAppProtocol == "kitex" {
+					tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "srv", "interceptor", "kitex_ratelimit.go.tmpl")
+					outputFile = filepath.Join(srvInterceptorDir, "kitex_ratelimit.go")
+				} else {
+					tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "srv", "interceptor", "grpc_ratelimit.go.tmpl")
+					outputFile = filepath.Join(srvInterceptorDir, "grpc_ratelimit.go")
+				}
+			case "retry":
+				if microAppProtocol == "kitex" {
+					tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "srv", "interceptor", "kitex_retry.go.tmpl")
+					outputFile = filepath.Join(srvInterceptorDir, "kitex_retry.go")
+				} else {
+					tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "srv", "interceptor", "grpc_retry.go.tmpl")
+					outputFile = filepath.Join(srvInterceptorDir, "grpc_retry.go")
+				}
+			case "timeout":
+				if microAppProtocol == "kitex" {
+					tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "srv", "interceptor", "kitex_timeout.go.tmpl")
+					outputFile = filepath.Join(srvInterceptorDir, "kitex_timeout.go")
+				} else {
+					tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "srv", "interceptor", "grpc_timeout.go.tmpl")
+					outputFile = filepath.Join(srvInterceptorDir, "grpc_timeout.go")
+				}
+			case "tracing":
+				if microAppProtocol == "kitex" {
+					tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "srv", "interceptor", "kitex_tracing.go.tmpl")
+					outputFile = filepath.Join(srvInterceptorDir, "kitex_tracing.go")
+				} else {
+					tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "srv", "interceptor", "grpc_tracing.go.tmpl")
+					outputFile = filepath.Join(srvInterceptorDir, "grpc_tracing.go")
+				}
+			default:
+				continue
+			}
+
+			tmplStr, err := os.ReadFile(tmplPath)
+			if err != nil {
+				fmt.Printf("ERROR reading SRV interceptor template %s: %v\n", tmplPath, err)
+				continue
+			}
+
+			interceptorGo, err := executeTemplate(string(tmplStr), map[string]interface{}{
+				"AppName": microAppName,
+				"Module":  module,
+			})
+			if err != nil {
+				fmt.Printf("ERROR executing SRV interceptor template: %v\n", err)
+				continue
+			}
+			os.WriteFile(outputFile, []byte(interceptorGo), 0644)
+			fmt.Printf("  Generated SRV %s interceptor: %s\n", m, outputFile)
+		}
 	}
 }
 
