@@ -47,11 +47,16 @@ var newMicroBffCmd = &cobra.Command{
 
 func runNewMicroBff(cmd *cobra.Command, args []string) error {
 	// 参数验证
-	if microBffName == "" {
-		return fmt.Errorf("--name is required")
-	}
 	if microBffOutputDir == "" {
 		return fmt.Errorf("--output is required")
+	}
+	if microBffMiddleware == "" {
+		return fmt.Errorf("--middleware is required")
+	}
+
+	// 如果没有指定 --name，从输出目录推断
+	if microBffName == "" {
+		microBffName = filepath.Base(microBffOutputDir)
 	}
 
 	// --modules 在没有指定 --middleware 时是必需的
@@ -73,10 +78,10 @@ func runNewMicroBff(cmd *cobra.Command, args []string) error {
 
 	// 获取项目名（从输出目录推断）
 	projectName := filepath.Base(microBffOutputDir)
-	bffDir := filepath.Join(microBffOutputDir, "bff_"+microBffName)
 
 	// 生成中间件模式（只需要 middleware 目录）
 	if microBffMiddleware != "" && len(microBffModules) == 0 {
+		bffDir := microBffOutputDir // middleware only 模式直接输出到 output 目录
 		fmt.Printf("🎯 Generating BFF %s with middleware only...\n", microBffName)
 		fmt.Printf("   HTTP: %s\n", microBffHTTP)
 		fmt.Printf("   Middleware: %s\n", microBffMiddleware)
@@ -102,6 +107,7 @@ func runNewMicroBff(cmd *cobra.Command, args []string) error {
 	}
 
 	// 完整 BFF 模式
+	bffDir := filepath.Join(microBffOutputDir, "bff_"+microBffName)
 	fmt.Printf("🎯 Adding BFF %s to project...\n", microBffName)
 	fmt.Printf("   Modules: %v\n", microBffModules)
 
@@ -574,7 +580,6 @@ func init() {
 	newMicroBffCmd.Flags().StringVar(&microBffDBPassword, "db-password", "123456", "数据库密码")
 	newMicroBffCmd.Flags().StringVar(&microBffDBName, "db-name", "gospacex", "数据库名称")
 
-	_ = newMicroBffCmd.MarkFlagRequired("name")
 	_ = newMicroBffCmd.MarkFlagRequired("output")
 }
 
