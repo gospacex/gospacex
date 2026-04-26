@@ -120,9 +120,13 @@ func runNewMicroBff(cmd *cobra.Command, args []string) error {
 
 		// 创建目录
 		bffMiddlewareDir := filepath.Join(bffDir, "internal", "middleware")
+		bffHandlerDir := filepath.Join(bffDir, "internal", "handler")
 		cmdDir := filepath.Join(bffDir, "cmd")
 		projectRouterDir := filepath.Join(projectRoot, "internal", "router")
 		if err := os.MkdirAll(bffMiddlewareDir, 0755); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(bffHandlerDir, 0755); err != nil {
 			return err
 		}
 		if err := os.MkdirAll(cmdDir, 0755); err != nil {
@@ -144,7 +148,7 @@ func runNewMicroBff(cmd *cobra.Command, args []string) error {
 		genBffPkgMiddleware(projectRoot)
 
 		// 生成中间件包（在 BFF 的 internal/middleware 下）
-		genBffMiddlewarePackages(bffDir)
+		genBffMiddlewarePackages(bffDir, projectName)
 
 		// 生成 cmd/main.go
 		mainContent := fmt.Sprintf(`package main
@@ -212,7 +216,45 @@ func main() {
 		}
 
 		// 生成 router.go（在项目根目录的 internal/router 下）
-		routerContent := fmt.Sprintf(`package router
+		var routerContent string
+		bffImportPath := filepath.Base(bffDir)
+		if strings.Contains(microBffMiddleware, "jwt") {
+			// JWT 版本的 router
+			routerContent = `package router
+
+import (
+	"` + projectName + `/` + bffImportPath + `/internal/handler"
+	"` + projectName + `/` + bffImportPath + `/internal/middleware"
+	"` + projectName + `/` + bffImportPath + `/internal/middleware/jwt"
+
+	"github.com/gin-gonic/gin"
+)
+
+func NewRouter() *gin.Engine {
+	r := gin.Default()
+
+	// 初始化 JWT 服务（实际项目应从配置文件读取）
+	jwtSvc := jwt.New("your-secret-key", jwt.WithExpiry(24*60*60*1000))
+	handler.SetJWTService(jwtSvc)
+
+	// 公开接口
+	r.POST("/login", handler.Login)
+	r.POST("/refresh", handler.RefreshToken)
+
+	// 需要登录的接口
+	auth := r.Group("")
+	auth.Use(middleware.JWTMiddleware(jwtSvc))
+	{
+		auth.GET("/user", handler.GetCurrentUser)
+		auth.POST("/logout", handler.Logout)
+		auth.GET("/protected", handler.ExampleProtectedHandler)
+	}
+
+	return r
+}
+`
+		} else {
+			routerContent = `package router
 
 import (
 	"github.com/gin-gonic/gin"
@@ -222,7 +264,8 @@ func NewRouter() *gin.Engine {
 	r := gin.Default()
 	return r
 }
-`)
+`
+		}
 		if err := os.WriteFile(filepath.Join(projectRouterDir, "router.go"), []byte(routerContent), 0644); err != nil {
 			fmt.Printf("WARNING: generate router.go failed: %v\n", err)
 		} else {
@@ -708,7 +751,7 @@ func genBffMiddleware(bffDir, bffName, projectName string) error {
 }
 
 // genBffMiddlewarePackages 生成 BFF 依赖的中间件包（放在 internal/middleware 下）
-func genBffMiddlewarePackages(bffDir string) {
+func genBffMiddlewarePackages(bffDir, projectName string) {
 	middlewareDir := filepath.Join(bffDir, "internal", "middleware")
 
 	for _, m := range strings.Split(microBffMiddleware, ",") {
@@ -746,6 +789,41 @@ func genBffMiddlewarePackages(bffDir string) {
 		}
 		fmt.Printf("  Generated internal/middleware/%s\n", m)
 	}
+
+	// 生成 JWT 示例代码
+	if strings.Contains(microBffMiddleware, "jwt") {
+		genJwtExamples(bffDir, projectName)
+	}
+}
+
+// genJwtExamples 生成 JWT 使用示例
+func genJwtExamples(bffDir, projectName string) {
+	examplesDir := filepath.Join(getTemplatesDir(), "micro-app", "bff", "middleware", "examples")
+	if _, err := os.Stat(examplesDir); os.IsNotExist(err) {
+		return
+	}
+
+	entries, _ := os.ReadDir(examplesDir)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		src := filepath.Join(examplesDir, entry.Name())
+		dstName := strings.TrimSuffix(entry.Name(), ".tmpl")
+		dst := filepath.Join(bffDir, "internal", "handler", dstName)
+
+		data, err := os.ReadFile(src)
+		if err != nil {
+			continue
+		}
+
+		// 替换模板中的项目名
+		content := strings.ReplaceAll(string(data), "myshop", projectName)
+		content = strings.ReplaceAll(content, "bffH5", filepath.Base(bffDir))
+
+		os.WriteFile(dst, []byte(content), 0644)
+	}
+	fmt.Printf("  Generated JWT examples\n")
 }
 
 // genBffPkgMiddleware 生成 BFF 依赖的 pkg 层（logger 在根目录）
