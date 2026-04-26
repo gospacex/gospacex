@@ -59,7 +59,7 @@ func generateRouterFunc(hasJWT, hasRateLimit, hasBlacklist bool, bffImportPath s
 	}
 
 	if hasJWT {
-		code += "\t// 公开接口\n\tr.POST(\"/login\", handler.Login)\n\tr.POST(\"/refresh\", handler.RefreshToken)\n\n"
+		code += "\t// 公开接口\n\tr.POST(\"/login\", handler.login)\n\tr.POST(\"/refresh\", handler.refreshToken)\n\n"
 	}
 
 	if hasJWT || hasRateLimit || hasBlacklist {
@@ -77,7 +77,7 @@ func generateRouterFunc(hasJWT, hasRateLimit, hasBlacklist bool, bffImportPath s
 		code += strings.Join(middlewares, ", ")
 		code += ")\n\t{\n"
 		if hasJWT {
-			code += "\t\tauth.GET(\"/user\", handler.GetCurrentUser)\n\t\tauth.POST(\"/logout\", handler.Logout)\n\t\tauth.GET(\"/protected\", handler.ExampleProtectedHandler)\n"
+			code += "\t\tauth.GET(\"/user\", handler.getCurrentUser)\n\t\tauth.POST(\"/logout\", handler.logout)\n\t\tauth.GET(\"/protected\", handler.exampleProtected)\n"
 		}
 		code += "\t}\n"
 	}
