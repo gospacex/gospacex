@@ -1,0 +1,14 @@
+package jwt
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+)
+
+func GenerateTokenID() string {
+	bytes := make([]byte, 16)
+	if _, err := rand.Read(bytes); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(bytes)
+}

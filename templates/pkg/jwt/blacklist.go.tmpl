@@ -1,0 +1,69 @@
+package jwt
+
+import (
+	"sync"
+	"time"
+)
+
+type Blacklist struct {
+	mu       sync.RWMutex
+	tokens   map[string]time.Time
+	cleanup  *time.Ticker
+	stopChan chan struct{}
+}
+
+func NewBlacklist() *Blacklist {
+	b := &Blacklist{
+		tokens:   make(map[string]time.Time),
+		cleanup:  time.NewTicker(5 * time.Minute),
+		stopChan: make(chan struct{}),
+	}
+	go b.cleanupLoop()
+	return b
+}
+
+func (b *Blacklist) Add(token string, expireTime time.Time) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.tokens[token] = expireTime
+}
+
+func (b *Blacklist) IsInBlacklist(token string) bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	_, exists := b.tokens[token]
+	return exists
+}
+
+func (b *Blacklist) Size() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return len(b.tokens)
+}
+
+func (b *Blacklist) cleanupLoop() {
+	for {
+		select {
+		case <-b.cleanup.C:
+			b.cleanupExpired()
+		case <-b.stopChan:
+			b.cleanup.Stop()
+			return
+		}
+	}
+}
+
+func (b *Blacklist) cleanupExpired() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	now := time.Now()
+	for token, expireTime := range b.tokens {
+		if now.After(expireTime) {
+			delete(b.tokens, token)
+		}
+	}
+}
+
+func (b *Blacklist) Stop() {
+	close(b.stopChan)
+}
