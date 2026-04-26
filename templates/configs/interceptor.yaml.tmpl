@@ -1,0 +1,19 @@
+order:
+  - ratelimit
+  - retry
+  - timeout
+  - tracing
+
+ratelimit:
+  qps: 100
+  burst: 50
+
+retry:
+  maxAttempts: 3
+  backoff: "100ms"
+
+timeout:
+  default: "500ms"
+
+tracing:
+  serviceName: "{{.Module}}"
