@@ -29,6 +29,7 @@ type TemplateData struct {
 	AppName     string
 	Module      string
 	UpperModule string
+	LowerModule string
 	BFFName     string
 	TableName   string
 	SrvPort     int    // 微服务 gRPC 端口
@@ -59,6 +60,7 @@ func buildTemplateData(module string, columns []ColumnInfo, bffName string, tabl
 	pkGoType := protoTypeToGoType(pkField.ProtoType)
 	pkProtoGoName := toProtoGoFieldName(pkField.Name)
 	upperModule := strings.ToUpper(module[:1]) + module[1:]
+	lowerModule := strings.ToLower(module)
 
 	var cols []TemplateFieldData
 	var createFields []TemplateFieldData
@@ -119,6 +121,7 @@ func buildTemplateData(module string, columns []ColumnInfo, bffName string, tabl
 		AppName:            microAppName,
 		Module:             module,
 		UpperModule:        upperModule,
+		LowerModule:        lowerModule,
 		BFFName:            bffName,
 		TableName:          tableName,
 		SrvPort:           srvPort,
