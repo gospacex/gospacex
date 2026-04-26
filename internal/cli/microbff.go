@@ -45,6 +45,46 @@ var newMicroBffCmd = &cobra.Command{
 	RunE: runNewMicroBff,
 }
 
+func generateRouterFunc(hasJWT, hasRateLimit, hasBlacklist bool, bffImportPath string) string {
+	var code string
+
+	if hasJWT {
+		code += "\t// 初始化 JWT 服务\n\tjwtSvc := jwt.New(\"your-secret-key\", jwt.WithExpiry(24*60*60*1000))\n\thandler.SetJWTService(jwtSvc)\n\n"
+	}
+	if hasRateLimit {
+		code += "\t// 初始化限流器\n\trl := ratelimit.New(100, 50)\n\n"
+	}
+	if hasBlacklist {
+		code += "\t// 初始化黑名单\n\tbl, _ := blacklist.New([]string{})\n\n"
+	}
+
+	if hasJWT {
+		code += "\t// 公开接口\n\tr.POST(\"/login\", handler.Login)\n\tr.POST(\"/refresh\", handler.RefreshToken)\n\n"
+	}
+
+	if hasJWT || hasRateLimit || hasBlacklist {
+		code += "\t// 受保护的接口\n\tauth := r.Group(\"\")\n\tauth.Use("
+		var middlewares []string
+		if hasJWT {
+			middlewares = append(middlewares, "middleware.JWTMiddleware(jwtSvc)")
+		}
+		if hasRateLimit {
+			middlewares = append(middlewares, "middleware.RateLimitMiddleware(rl)")
+		}
+		if hasBlacklist {
+			middlewares = append(middlewares, "middleware.BlacklistMiddleware(bl)")
+		}
+		code += strings.Join(middlewares, ", ")
+		code += ")\n\t{\n"
+		if hasJWT {
+			code += "\t\tauth.GET(\"/user\", handler.GetCurrentUser)\n\t\tauth.POST(\"/logout\", handler.Logout)\n\t\tauth.GET(\"/protected\", handler.ExampleProtectedHandler)\n"
+		}
+		code += "\t}\n"
+	}
+
+	return "func NewRouter() *gin.Engine {\n\tr := gin.Default()\n" + code + "\treturn r\n}\n"
+}
+
 func runNewMicroBff(cmd *cobra.Command, args []string) error {
 	// 参数验证
 	if microBffOutputDir == "" {
@@ -218,54 +258,26 @@ func main() {
 		// 生成 router.go（在项目根目录的 internal/router 下）
 		var routerContent string
 		bffImportPath := filepath.Base(bffDir)
-		if strings.Contains(microBffMiddleware, "jwt") {
-			// JWT 版本的 router
-			routerContent = `package router
+		hasJWT := strings.Contains(microBffMiddleware, "jwt")
+		hasRateLimit := strings.Contains(microBffMiddleware, "ratelimit")
+		hasBlacklist := strings.Contains(microBffMiddleware, "blacklist")
 
-import (
-	"` + projectName + `/` + bffImportPath + `/internal/handler"
-	"` + projectName + `/` + bffImportPath + `/internal/middleware"
-	"` + projectName + `/` + bffImportPath + `/internal/middleware/jwt"
-
-	"github.com/gin-gonic/gin"
-)
-
-func NewRouter() *gin.Engine {
-	r := gin.Default()
-
-	// 初始化 JWT 服务（实际项目应从配置文件读取）
-	jwtSvc := jwt.New("your-secret-key", jwt.WithExpiry(24*60*60*1000))
-	handler.SetJWTService(jwtSvc)
-
-	// 公开接口
-	r.POST("/login", handler.Login)
-	r.POST("/refresh", handler.RefreshToken)
-
-	// 需要登录的接口
-	auth := r.Group("")
-	auth.Use(middleware.JWTMiddleware(jwtSvc))
-	{
-		auth.GET("/user", handler.GetCurrentUser)
-		auth.POST("/logout", handler.Logout)
-		auth.GET("/protected", handler.ExampleProtectedHandler)
-	}
-
-	return r
-}
-`
-		} else {
-			routerContent = `package router
-
-import (
-	"github.com/gin-gonic/gin"
-)
-
-func NewRouter() *gin.Engine {
-	r := gin.Default()
-	return r
-}
-`
+		// 构建 import 语句
+		var imports []string
+		imports = append(imports, `"github.com/gin-gonic/gin"`)
+		if hasJWT || hasRateLimit || hasBlacklist {
+			imports = append(imports, `"`+projectName+`/`+bffImportPath+`/internal/middleware"`)
+			imports = append(imports, `"`+projectName+`/`+bffImportPath+`/internal/middleware/jwt"`)
+			imports = append(imports, `"`+projectName+`/`+bffImportPath+`/internal/middleware/ratelimit"`)
+			imports = append(imports, `"`+projectName+`/`+bffImportPath+`/internal/middleware/blacklist"`)
+			imports = append(imports, `"`+projectName+`/`+bffImportPath+`/internal/handler"`)
 		}
+
+		routerContent = "package router\n\nimport (\n"
+		for _, imp := range imports {
+			routerContent += "\t" + imp + "\n"
+		}
+		routerContent += ")\n\n" + generateRouterFunc(hasJWT, hasRateLimit, hasBlacklist, bffImportPath)
 		if err := os.WriteFile(filepath.Join(projectRouterDir, "router.go"), []byte(routerContent), 0644); err != nil {
 			fmt.Printf("WARNING: generate router.go failed: %v\n", err)
 		} else {
