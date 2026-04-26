@@ -121,10 +121,14 @@ func runNewMicroBff(cmd *cobra.Command, args []string) error {
 		// 创建目录
 		bffMiddlewareDir := filepath.Join(bffDir, "internal", "middleware")
 		cmdDir := filepath.Join(bffDir, "cmd")
+		projectRouterDir := filepath.Join(projectRoot, "internal", "router")
 		if err := os.MkdirAll(bffMiddlewareDir, 0755); err != nil {
 			return err
 		}
 		if err := os.MkdirAll(cmdDir, 0755); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(projectRouterDir, 0755); err != nil {
 			return err
 		}
 
@@ -205,6 +209,24 @@ func main() {
 			fmt.Printf("WARNING: generate main.go failed: %v\n", err)
 		} else {
 			fmt.Printf("  Generated cmd/main.go\n")
+		}
+
+		// 生成 router.go（在项目根目录的 internal/router 下）
+		routerContent := fmt.Sprintf(`package router
+
+import (
+	"github.com/gin-gonic/gin"
+)
+
+func NewRouter() *gin.Engine {
+	r := gin.Default()
+	return r
+}
+`)
+		if err := os.WriteFile(filepath.Join(projectRouterDir, "router.go"), []byte(routerContent), 0644); err != nil {
+			fmt.Printf("WARNING: generate router.go failed: %v\n", err)
+		} else {
+			fmt.Printf("  Generated internal/router/router.go\n")
 		}
 
 		// 生成中间件
