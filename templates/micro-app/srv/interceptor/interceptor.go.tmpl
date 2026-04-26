@@ -1,0 +1,49 @@
+package interceptor
+
+import (
+	"{{.AppName}}/pkg/ratelimit"
+	"google.golang.org/grpc"
+)
+
+type Interceptor struct {
+	ratelimit *ratelimit.TokenBucketLimiter
+}
+
+type Config struct {
+	Order      []string
+	RateLimit  *ratelimit.Config
+}
+
+func New(cfg *Config) (*Interceptor, error) {
+	i := &Interceptor{}
+
+	for _, name := range cfg.Order {
+		switch name {
+		case "ratelimit":
+			if cfg.RateLimit != nil {
+				i.ratelimit = ratelimit.New(cfg.RateLimit.QPS, cfg.RateLimit.Burst)
+			}
+		}
+	}
+
+	return i, nil
+}
+
+func (i *Interceptor) UnaryServer() []grpc.UnaryServerInterceptor {
+	var interceptors []grpc.UnaryServerInterceptor
+
+	for _, name := range []string{"ratelimit", "retry", "timeout", "tracing"} {
+		switch name {
+		case "ratelimit":
+			interceptors = append(interceptors, i.ratelimitInterceptor())
+		case "retry":
+			interceptors = append(interceptors, i.retryInterceptor())
+		case "timeout":
+			interceptors = append(interceptors, i.timeoutInterceptor())
+		case "tracing":
+			interceptors = append(interceptors, i.tracingInterceptor())
+		}
+	}
+
+	return interceptors
+}

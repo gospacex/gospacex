@@ -1,0 +1,22 @@
+package interceptor
+
+import (
+	"context"
+	"time"
+
+	"github.com/cloudwego/kitex/pkg/endpoint"
+)
+
+type timeoutMiddleware struct {
+	defaultTimeout time.Duration
+}
+
+func (i *Interceptor) timeoutMiddleware() endpoint.Middleware {
+	cfg := &timeoutMiddleware{defaultTimeout: 500 * time.Millisecond}
+
+	return func(ctx context.Context, req interface{}, next endpoint.Endpoint) (interface{}, error) {
+		ctx, cancel := context.WithTimeout(ctx, cfg.defaultTimeout)
+		defer cancel()
+		return next(ctx, req)
+	}
+}

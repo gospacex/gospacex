@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/cloudwego/kitex/pkg/klog"
+	"{{.AppName}}/pkg/logger"
 	"github.com/cloudwego/kitex/server"
 )
 
@@ -12,16 +12,22 @@ import (
 func KitexInterceptor(ctx context.Context, req interface{}, info *server.ServiceInfo, handler func(ctx context.Context, req interface{}) (interface{}, error)) (interface{}, error) {
 	start := time.Now()
 
-	// 请求前处理（认证、限流、日志等）
-
 	resp, err := handler(ctx, req)
 
 	latency := time.Since(start)
 	if err != nil {
-		klog.CtxErrorf(ctx, "[KITEX] %s error: %v latency: %v", info.ServiceName, err, latency)
+		logger.Error.Errorw("kitex error",
+			"service", info.ServiceName,
+			"method", info.Method,
+			"error", err.Error(),
+			"latency", latency.String(),
+		)
 	} else {
-		_ = latency
-		// klog.CtxInfof(ctx, "[KITEX] %s OK latency: %v", info.ServiceName, latency)
+		logger.Access.Infow("kitex call",
+			"service", info.ServiceName,
+			"method", info.Method,
+			"latency", latency.String(),
+		)
 	}
 
 	return resp, err

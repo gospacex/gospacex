@@ -1,0 +1,32 @@
+package interceptor
+
+import (
+	"context"
+	"time"
+
+	"github.com/cloudwego/kitex/pkg/endpoint"
+)
+
+type retryMiddleware struct {
+	maxAttempts int
+	backoff    time.Duration
+}
+
+func (i *Interceptor) retryMiddleware() endpoint.Middleware {
+	cfg := &retryMiddleware{maxAttempts: 3, backoff: 100 * time.Millisecond}
+
+	return func(ctx context.Context, req interface{}, next endpoint.Endpoint) (interface{}, error) {
+		var lastErr error
+		for attempt := 0; attempt < cfg.maxAttempts; attempt++ {
+			if attempt > 0 {
+				time.Sleep(cfg.backoff * time.Duration(attempt))
+			}
+			resp, err := next(ctx, req)
+			if err == nil {
+				return resp, nil
+			}
+			lastErr = err
+		}
+		return nil, lastErr
+	}
+}

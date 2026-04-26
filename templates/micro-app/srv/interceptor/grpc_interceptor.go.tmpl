@@ -4,19 +4,123 @@ import (
 	"context"
 	"time"
 
+	"{{.AppName}}/pkg/logger"
+{{if .Otel}}
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+{{end}}
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+{{if .Otel}}
+	"google.golang.org/grpc/metadata"
+{{end}}
 	"google.golang.org/grpc/status"
 )
-
-// UnaryInterceptor gRPC 一元拦截器
+{{if .Otel}}
 func UnaryInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 	start := time.Now()
 
-	// 请求前处理（认证、限流、日志等）
-	// if err := validateRequest(ctx, info.FullMethod); err != nil {
-	// 	return nil, err
-	// }
+	md, ok := metadata.FromIncomingContext(ctx)
+	var traceID string
+	if ok {
+		propagator := otel.GetTextMapPropagator()
+		ctx = propagator.Extract(ctx, propagation.Metadata(md))
+		span := trace.SpanContextFromContext(ctx)
+		if span.IsValid() {
+			traceID = span.TraceID().String()
+		}
+	}
+
+	spanName := info.FullMethod
+	_, span := otel.Tracer("").Start(ctx, spanName)
+	defer span.End()
+
+	resp, err := handler(span.Context(), req)
+
+	latency := time.Since(start)
+	code := codes.OK
+	if err != nil {
+		if st, ok := status.FromError(err); ok {
+			code = st.Code()
+		}
+		fields := []interface{}{
+			"method", info.FullMethod,
+			"status", code.String(),
+			"latency", latency.String(),
+		}
+		if traceID != "" {
+			fields = append(fields, "trace_id", traceID)
+		}
+		logger.Access.Infow("gRPC call", fields...)
+		logger.Error.WithContext(span.Context()).Errorw("gRPC error",
+			"method", info.FullMethod,
+			"error", err.Error(),
+			"status", code.String(),
+		)
+	} else {
+		fields := []interface{}{
+			"method", info.FullMethod,
+			"status", code.String(),
+			"latency", latency.String(),
+		}
+		if traceID != "" {
+			fields = append(fields, "trace_id", traceID)
+		}
+		logger.Access.Infow("gRPC call", fields...)
+	}
+
+	return resp, err
+}
+
+func StreamInterceptor(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	start := time.Now()
+
+	ctx := ss.Context()
+	md, ok := metadata.FromIncomingContext(ctx)
+	var traceID string
+	if ok {
+		propagator := otel.GetTextMapPropagator()
+		ctx = propagator.Extract(ctx, propagation.Metadata(md))
+		span := trace.SpanContextFromContext(ctx)
+		if span.IsValid() {
+			traceID = span.TraceID().String()
+		}
+	}
+
+	spanName := info.FullMethod
+	_, span := otel.Tracer("").Start(ctx, spanName)
+	defer span.End()
+
+	err := handler(srv, &serverStreamWrapper{ServerStream: ss, span: span})
+
+	latency := time.Since(start)
+	if err != nil {
+		fields := []interface{}{
+			"method", info.FullMethod,
+			"latency", latency.String(),
+		}
+		if traceID != "" {
+			fields = append(fields, "trace_id", traceID)
+		}
+		logger.Access.Infow("gRPC stream", fields...)
+		logger.Error.WithContext(span.Context()).Errorw("gRPC stream error", "method", info.FullMethod, "error", err.Error())
+	}
+
+	return err
+}
+
+type serverStreamWrapper struct {
+	grpc.ServerStream
+	span trace.Span
+}
+
+func (w *serverStreamWrapper) Context() context.Context {
+	return w.span.Context()
+}
+{{else}}
+func UnaryInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	start := time.Now()
 
 	resp, err := handler(ctx, req)
 
@@ -26,21 +130,41 @@ func UnaryInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServ
 		if st, ok := status.FromError(err); ok {
 			code = st.Code()
 		}
+		logger.Access.Infow("gRPC call",
+			"method", info.FullMethod,
+			"status", code.String(),
+			"latency", latency.String(),
+		)
+		logger.Error.Errorw("gRPC error",
+			"method", info.FullMethod,
+			"error", err.Error(),
+			"status", code.String(),
+		)
+	} else {
+		logger.Access.Infow("gRPC call",
+			"method", info.FullMethod,
+			"status", code.String(),
+			"latency", latency.String(),
+		)
 	}
-
-	_ = latency
-	_ = code
-	// log.Printf("[GRPC] %s %s %v", info.FullMethod, code, latency)
 
 	return resp, err
 }
 
-// StreamInterceptor gRPC 流拦截器
 func StreamInterceptor(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	// 请求前处理
-	// if err := validateRequest(ss.Context(), info.FullMethod); err != nil {
-	// 	return err
-	// }
+	start := time.Now()
 
-	return handler(srv, ss)
+	err := handler(srv, ss)
+
+	latency := time.Since(start)
+	if err != nil {
+		logger.Access.Infow("gRPC stream",
+			"method", info.FullMethod,
+			"latency", latency.String(),
+		)
+		logger.Error.Errorw("gRPC stream error", "method", info.FullMethod, "error", err.Error())
+	}
+
+	return err
 }
+{{end}}
