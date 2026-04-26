@@ -53,20 +53,59 @@ func runNewMicroBff(cmd *cobra.Command, args []string) error {
 	if microBffOutputDir == "" {
 		return fmt.Errorf("--output is required")
 	}
-	if len(microBffModules) == 0 {
-		return fmt.Errorf("--modules is required")
+
+	// --modules 在没有指定 --middleware 时是必需的
+	if len(microBffModules) == 0 && microBffMiddleware == "" {
+		return fmt.Errorf("--modules is required (or use --middleware to generate only middleware)")
 	}
 
-	// 检查项目目录是否存在
+	// 如果目录不存在且没有指定 middleware，则报错
+	// 如果只生成 middleware，目录不存在时可以创建
 	if _, err := os.Stat(microBffOutputDir); os.IsNotExist(err) {
-		return fmt.Errorf("project directory not found: %s", microBffOutputDir)
+		if microBffMiddleware == "" {
+			return fmt.Errorf("project directory not found: %s", microBffOutputDir)
+		}
+		// 只生成 middleware 时创建目录
+		if err := os.MkdirAll(microBffOutputDir, 0755); err != nil {
+			return err
+		}
 	}
 
+	// 获取项目名（从输出目录推断）
+	projectName := filepath.Base(microBffOutputDir)
+	bffDir := filepath.Join(microBffOutputDir, "bff_"+microBffName)
+
+	// 生成中间件模式（只需要 middleware 目录）
+	if microBffMiddleware != "" && len(microBffModules) == 0 {
+		fmt.Printf("🎯 Generating BFF %s with middleware only...\n", microBffName)
+		fmt.Printf("   HTTP: %s\n", microBffHTTP)
+		fmt.Printf("   Middleware: %s\n", microBffMiddleware)
+
+		// 只创建 middleware 目录
+		bffMiddlewareDir := filepath.Join(bffDir, "internal", "middleware")
+		if err := os.MkdirAll(bffMiddlewareDir, 0755); err != nil {
+			return err
+		}
+
+		// 生成中间件
+		if err := genBffMiddleware(bffDir, microBffName, projectName); err != nil {
+			fmt.Printf("WARNING: generate middleware failed: %v\n", err)
+		}
+
+		fmt.Printf("\n✅ BFF %s middleware generated!\n\n", microBffName)
+		fmt.Printf("📁 BFF directory: %s\n", bffDir)
+		fmt.Println("\n📝 Next steps:")
+		fmt.Printf("   1. cd %s\n", microBffOutputDir)
+		fmt.Println("   2. Add BFF code (handlers, routes, etc.)")
+		fmt.Println("   3. go mod tidy")
+		return nil
+	}
+
+	// 完整 BFF 模式
 	fmt.Printf("🎯 Adding BFF %s to project...\n", microBffName)
 	fmt.Printf("   Modules: %v\n", microBffModules)
 
 	// 创建 BFF 目录
-	bffDir := filepath.Join(microBffOutputDir, "bff_"+microBffName)
 	dirs := []string{
 		filepath.Join(bffDir, "cmd"),
 		filepath.Join(bffDir, "configs"),
@@ -82,9 +121,6 @@ func runNewMicroBff(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	}
-
-	// 获取项目名（从输出目录推断）
-	projectName := filepath.Base(microBffOutputDir)
 
 	// 创建 BFF 文件
 	if err := createBFFInExistingProject(bffDir, microBffName, projectName, microBffModules); err != nil {
@@ -540,7 +576,6 @@ func init() {
 
 	_ = newMicroBffCmd.MarkFlagRequired("name")
 	_ = newMicroBffCmd.MarkFlagRequired("output")
-	_ = newMicroBffCmd.MarkFlagRequired("modules")
 }
 
 // GetMicroBffCmd 返回 micro-bff 命令
