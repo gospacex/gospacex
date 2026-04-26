@@ -1,9 +1,9 @@
 package middleware
 
 import (
-	"{{.AppName}}/pkg/jwt"
-	"{{.AppName}}/pkg/ratelimit"
-	"{{.AppName}}/pkg/blacklist"
+	"{{.AppName}}/{{.BFFName}}/internal/middleware/jwt"
+	"{{.AppName}}/{{.BFFName}}/internal/middleware/ratelimit"
+	"{{.AppName}}/{{.BFFName}}/internal/middleware/blacklist"
 )
 
 type Middleware struct {
