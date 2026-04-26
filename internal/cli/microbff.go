@@ -86,11 +86,14 @@ func runNewMicroBff(cmd *cobra.Command, args []string) error {
 		fmt.Printf("   HTTP: %s\n", microBffHTTP)
 		fmt.Printf("   Middleware: %s\n", microBffMiddleware)
 
-		// 只创建 middleware 目录
+		// 创建目录
 		bffMiddlewareDir := filepath.Join(bffDir, "internal", "middleware")
 		if err := os.MkdirAll(bffMiddlewareDir, 0755); err != nil {
 			return err
 		}
+
+		// 生成 pkg 层
+		genBffPkgMiddleware(bffDir)
 
 		// 生成中间件
 		if err := genBffMiddleware(bffDir, microBffName, projectName); err != nil {
@@ -566,6 +569,45 @@ func genBffMiddleware(bffDir, bffName, projectName string) error {
 	}
 
 	return nil
+}
+
+// genBffPkgMiddleware 生成 BFF 依赖的 pkg 层中间件
+func genBffPkgMiddleware(outputDir string) {
+	for _, m := range strings.Split(microBffMiddleware, ",") {
+		m = strings.TrimSpace(m)
+		var pkgDir string
+		switch m {
+		case "jwt":
+			pkgDir = filepath.Join(outputDir, "pkg", "jwt")
+		case "ratelimit":
+			pkgDir = filepath.Join(outputDir, "pkg", "ratelimit")
+		case "blacklist":
+			pkgDir = filepath.Join(outputDir, "pkg", "blacklist")
+		default:
+			continue
+		}
+		os.MkdirAll(pkgDir, 0755)
+
+		srcDir := filepath.Join(getTemplatesDir(), "pkg", m)
+		if _, err := os.Stat(srcDir); os.IsNotExist(err) {
+			continue
+		}
+
+		entries, _ := os.ReadDir(srcDir)
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			src := filepath.Join(srcDir, entry.Name())
+			dst := filepath.Join(pkgDir, strings.TrimSuffix(entry.Name(), ".tmpl"))
+			data, err := os.ReadFile(src)
+			if err != nil {
+				continue
+			}
+			os.WriteFile(dst, data, 0644)
+		}
+		fmt.Printf("  Generated pkg/%s\n", m)
+	}
 }
 
 func init() {
