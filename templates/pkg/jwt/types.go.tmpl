@@ -1,0 +1,15 @@
+package jwt
+
+import "time"
+
+type Config struct {
+	Secret string
+	Expiry time.Duration
+	Issuer string
+}
+
+type CustomClaims struct {
+	UserID   int64
+	Username string
+	Role     string
+}

@@ -1,0 +1,15 @@
+package jwt
+
+type Option func(*JWTService)
+
+func WithExpiry(expiry time.Duration) Option {
+	return func(s *JWTService) {
+		s.expiry = expiry
+	}
+}
+
+func WithIssuer(issuer string) Option {
+	return func(s *JWTService) {
+		s.issuer = issuer
+	}
+}

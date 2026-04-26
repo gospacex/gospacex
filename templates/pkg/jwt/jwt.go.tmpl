@@ -1,0 +1,60 @@
+package jwt
+
+import (
+	"errors"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+var (
+	ErrInvalidToken = errors.New("invalid token")
+	ErrExpiredToken = errors.New("token expired")
+)
+
+type JWTService struct {
+	secret []byte
+	expiry time.Duration
+	issuer string
+}
+
+func New(secret string, opts ...Option) *JWTService {
+	s := &JWTService{
+		secret: []byte(secret),
+		expiry: 24 * time.Hour,
+		issuer: "app",
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+func (s *JWTService) GenerateToken(claims *CustomClaims) (string, error) {
+	claims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(s.expiry))
+	claims.Issuer = s.issuer
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(s.secret)
+}
+
+func (s *JWTService) ParseToken(tokenString string) (*CustomClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &CustomClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return s.secret, nil
+	})
+	if err != nil {
+		return nil, ErrInvalidToken
+	}
+	claims, ok := token.Claims.(*CustomClaims)
+	if !ok || !token.Valid {
+		return nil, ErrInvalidToken
+	}
+	return claims, nil
+}
+
+func (s *JWTService) RefreshToken(oldToken string) (string, error) {
+	claims, err := s.ParseToken(oldToken)
+	if err != nil {
+		return "", err
+	}
+	return s.GenerateToken(claims)
+}
