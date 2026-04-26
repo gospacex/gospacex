@@ -79,21 +79,130 @@ func runNewMicroBff(cmd *cobra.Command, args []string) error {
 	// 获取项目名（从输出目录推断）
 	projectName := filepath.Base(microBffOutputDir)
 
-	// 生成中间件模式（只需要 middleware 目录）
+	// 生成中间件模式（只需要 middleware 和基础结构）
 	if microBffMiddleware != "" && len(microBffModules) == 0 {
-		bffDir := microBffOutputDir // middleware only 模式直接输出到 output 目录
+		// 如果没有指定 --name，从 output 路径推断
+		if microBffName == "" {
+			baseName := filepath.Base(microBffOutputDir)
+			// 如果目录名已经是 bff_xxx 格式，提取 xxx 作为 bffName
+			if strings.HasPrefix(baseName, "bff_") {
+				microBffName = baseName[4:] // 去掉 "bff_" 前缀
+			} else {
+				microBffName = baseName
+			}
+		}
+
+		// 如果 output 路径包含 bff_ 前缀，说明用户指定的是 BFF 目录
+		// 否则 output 是项目根目录，BFF 在 bff_{name} 子目录
+		var bffDir, projectRoot string
+		baseName := filepath.Base(microBffOutputDir)
+		if strings.HasPrefix(baseName, "bff_") {
+			// output 是 BFF 目录
+			bffDir = microBffOutputDir
+			projectRoot = filepath.Dir(microBffOutputDir)
+		} else if baseName == microBffName {
+			// output 目录名等于 bffName，说明用户想直接输出到 BFF 目录
+			bffDir = microBffOutputDir
+			projectRoot = filepath.Dir(microBffOutputDir)
+		} else {
+			// output 是项目根目录
+			projectRoot = microBffOutputDir
+			bffDir = filepath.Join(microBffOutputDir, "bff_"+microBffName)
+		}
+
+		projectName := filepath.Base(projectRoot)
+
 		fmt.Printf("🎯 Generating BFF %s with middleware only...\n", microBffName)
 		fmt.Printf("   HTTP: %s\n", microBffHTTP)
 		fmt.Printf("   Middleware: %s\n", microBffMiddleware)
+		fmt.Printf("   Project: %s\n", projectName)
+		fmt.Printf("   BFF: %s\n", bffDir)
 
 		// 创建目录
 		bffMiddlewareDir := filepath.Join(bffDir, "internal", "middleware")
+		cmdDir := filepath.Join(bffDir, "cmd")
 		if err := os.MkdirAll(bffMiddlewareDir, 0755); err != nil {
 			return err
 		}
+		if err := os.MkdirAll(cmdDir, 0755); err != nil {
+			return err
+		}
 
-		// 生成 pkg 层
-		genBffPkgMiddleware(bffDir)
+		// 生成 go.mod（在项目根目录）
+		goModContent := fmt.Sprintf("module %s\n\ngo 1.26\n\nrequire (\n\tgithub.com/gin-gonic/gin v1.9.1\n\tgo.uber.org/zap v1.26.0\n)\n", projectName)
+		if err := os.WriteFile(filepath.Join(projectRoot, "go.mod"), []byte(goModContent), 0644); err != nil {
+			fmt.Printf("WARNING: generate go.mod failed: %v\n", err)
+		} else {
+			fmt.Printf("  Generated go.mod\n")
+		}
+
+		// 生成 pkg 层（在项目根目录）
+		genBffPkgMiddleware(projectRoot)
+
+		// 生成 cmd/main.go
+		mainContent := fmt.Sprintf(`package main
+
+import (
+	"flag"
+	"fmt"
+	"log"
+	"net/http"
+
+	"%s/pkg/config"
+	"%s/pkg/logger"
+	"%s/internal/router"
+)
+
+var confPath string
+
+func init() {
+	flag.StringVar(&confPath, "config", "configs/config.yaml", "config file")
+}
+
+func main() {
+	flag.Parse()
+	cfg, err := config.Load(confPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if cfg == nil {
+		log.Fatal("Config is nil - check if config file exists: " + confPath)
+	}
+
+	logCfg, err := logger.LoadConfig(confPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	l, err := logger.NewLogger(logCfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer l.Sync()
+
+	logger.Business.Infow("BFF 服务启动", "host", cfg.Server.Host, "port", cfg.Server.Port)
+
+	addr := fmt.Sprintf("%%s:%%d", cfg.Server.Host, cfg.Server.Port)
+	logger.Business.Infow("BFF listening", "addr", addr)
+
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: router.NewRouter(),
+	}
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error.Errorw("listen error", "error", err.Error())
+		}
+	}()
+
+	select {}
+}
+`, projectName, projectName, "bff_"+microBffName)
+		if err := os.WriteFile(filepath.Join(cmdDir, "main.go"), []byte(mainContent), 0644); err != nil {
+			fmt.Printf("WARNING: generate main.go failed: %v\n", err)
+		} else {
+			fmt.Printf("  Generated cmd/main.go\n")
+		}
 
 		// 生成中间件
 		if err := genBffMiddleware(bffDir, microBffName, projectName); err != nil {
@@ -101,11 +210,13 @@ func runNewMicroBff(cmd *cobra.Command, args []string) error {
 		}
 
 		fmt.Printf("\n✅ BFF %s middleware generated!\n\n", microBffName)
-		fmt.Printf("📁 BFF directory: %s\n", bffDir)
+		fmt.Printf("📁 Project: %s\n", projectRoot)
+		fmt.Printf("📁 BFF: %s\n", bffDir)
 		fmt.Println("\n📝 Next steps:")
-		fmt.Printf("   1. cd %s\n", microBffOutputDir)
-		fmt.Println("   2. Add BFF code (handlers, routes, etc.)")
-		fmt.Println("   3. go mod tidy")
+		fmt.Printf("   1. cd %s\n", projectRoot)
+		fmt.Println("   2. go mod tidy")
+		fmt.Printf("   3. Add route handlers in %s/internal/router/\n", filepath.Base(bffDir))
+		fmt.Printf("   4. go run %s/cmd/main.go\n", filepath.Base(bffDir))
 		return nil
 	}
 
@@ -572,20 +683,20 @@ func genBffMiddleware(bffDir, bffName, projectName string) error {
 }
 
 // genBffPkgMiddleware 生成 BFF 依赖的 pkg 层中间件
-func genBffPkgMiddleware(outputDir string) {
+func genBffPkgMiddleware(projectRoot string) {
 	// 生成 logger 包（main.go 依赖）
-	genBffPkgLogger(outputDir)
+	genBffPkgLogger(projectRoot)
 
 	for _, m := range strings.Split(microBffMiddleware, ",") {
 		m = strings.TrimSpace(m)
 		var pkgDir string
 		switch m {
 		case "jwt":
-			pkgDir = filepath.Join(outputDir, "pkg", "jwt")
+			pkgDir = filepath.Join(projectRoot, "pkg", "jwt")
 		case "ratelimit":
-			pkgDir = filepath.Join(outputDir, "pkg", "ratelimit")
+			pkgDir = filepath.Join(projectRoot, "pkg", "ratelimit")
 		case "blacklist":
-			pkgDir = filepath.Join(outputDir, "pkg", "blacklist")
+			pkgDir = filepath.Join(projectRoot, "pkg", "blacklist")
 		default:
 			continue
 		}
@@ -614,8 +725,8 @@ func genBffPkgMiddleware(outputDir string) {
 }
 
 // genBffPkgLogger 生成 pkg/logger 包
-func genBffPkgLogger(outputDir string) {
-	pkgLoggerDir := filepath.Join(outputDir, "pkg", "logger")
+func genBffPkgLogger(projectRoot string) {
+	pkgLoggerDir := filepath.Join(projectRoot, "pkg", "logger")
 	os.MkdirAll(pkgLoggerDir, 0755)
 
 	srcDir := filepath.Join(getTemplatesDir(), "pkg", "logger")
