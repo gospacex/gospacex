@@ -200,7 +200,7 @@ func main() {
 
 	select {}
 }
-`, projectName, projectName, "bff_"+microBffName)
+`, projectName, projectName, projectName)
 		if err := os.WriteFile(filepath.Join(cmdDir, "main.go"), []byte(mainContent), 0644); err != nil {
 			fmt.Printf("WARNING: generate main.go failed: %v\n", err)
 		} else {

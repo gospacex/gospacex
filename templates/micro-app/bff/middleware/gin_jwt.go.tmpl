@@ -22,7 +22,7 @@ func JWTMiddleware(jwtSvc *jwt.JWTService) gin.HandlerFunc {
 		}
 
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		claims, err := jwtSvc.ParseToken(tokenString)
+		claims, err := jwtSvc.Parse(tokenString)
 		if err != nil {
 			c.JSON(401, gin.H{"code": 401, "message": "invalid token"})
 			c.Abort()
