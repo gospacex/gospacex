@@ -11,14 +11,15 @@ import (
 
 // micro-bff 命令参数
 var (
-	microBffName      string
-	microBffOutputDir string
-	microBffModules   []string
-	microBffDBHost    string
-	microBffDBPort    string
-	microBffDBUser    string
+	microBffName       string
+	microBffOutputDir  string
+	microBffModules    []string
+	microBffMiddleware string
+	microBffDBHost     string
+	microBffDBPort     string
+	microBffDBUser     string
 	microBffDBPassword string
-	microBffDBName    string
+	microBffDBName     string
 )
 
 var newMicroBffCmd = &cobra.Command{
@@ -87,6 +88,13 @@ func runNewMicroBff(cmd *cobra.Command, args []string) error {
 	// 创建 BFF 文件
 	if err := createBFFInExistingProject(bffDir, microBffName, projectName, microBffModules); err != nil {
 		return fmt.Errorf("create BFF files failed: %w", err)
+	}
+
+	// 生成中间件（如果指定了 --middleware）
+	if microBffMiddleware != "" {
+		if err := genBffMiddleware(bffDir, microBffName, projectName); err != nil {
+			fmt.Printf("WARNING: generate middleware failed: %v\n", err)
+		}
 	}
 
 	fmt.Printf("\n✅ BFF %s added successfully!\n\n", microBffName)
@@ -412,10 +420,101 @@ type %sResp struct {
 	return nil
 }
 
+// genBffMiddleware 为已有项目的 BFF 生成中间件
+func genBffMiddleware(bffDir, bffName, projectName string) error {
+	fmt.Println("Generating BFF middleware...")
+
+	middlewareList := strings.Split(microBffMiddleware, ",")
+	for i := range middlewareList {
+		middlewareList[i] = strings.TrimSpace(middlewareList[i])
+	}
+
+	bffMiddlewareDir := filepath.Join(bffDir, "internal", "middleware")
+	os.MkdirAll(bffMiddlewareDir, 0755)
+
+	// 生成 middleware.go (Builder 入口)
+	middlewareBuilderPath := filepath.Join(getTemplatesDir(), "micro-app", "bff", "middleware", "middleware.go.tmpl")
+	if _, err := os.Stat(middlewareBuilderPath); err == nil {
+		middlewareBuilderStr, err := os.ReadFile(middlewareBuilderPath)
+		if err != nil {
+			fmt.Printf("ERROR reading middleware builder template: %v\n", err)
+		} else {
+			middlewareGo, err := executeTemplate(string(middlewareBuilderStr), map[string]interface{}{
+				"AppName": projectName,
+				"BFFName": bffName,
+			})
+			if err != nil {
+				fmt.Printf("ERROR executing middleware builder template: %v\n", err)
+			} else {
+				os.WriteFile(filepath.Join(bffMiddlewareDir, "middleware.go"), []byte(middlewareGo), 0644)
+				fmt.Printf("  Generated BFF middleware builder: %s/internal/middleware/middleware.go\n", filepath.Base(bffDir))
+			}
+		}
+	}
+
+	// 根据 --middleware 生成对应的适配器（默认使用 Gin）
+	for _, m := range middlewareList {
+		var tmplPath string
+		var outputFile string
+
+		switch m {
+		case "jwt":
+			tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "middleware", "gin_jwt.go.tmpl")
+			outputFile = filepath.Join(bffMiddlewareDir, "gin_jwt.go")
+		case "ratelimit":
+			tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "middleware", "gin_ratelimit.go.tmpl")
+			outputFile = filepath.Join(bffMiddlewareDir, "gin_ratelimit.go")
+		case "blacklist":
+			tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "middleware", "gin_blacklist.go.tmpl")
+			outputFile = filepath.Join(bffMiddlewareDir, "gin_blacklist.go")
+		default:
+			fmt.Printf("  Unknown middleware: %s\n", m)
+			continue
+		}
+
+		tmplStr, err := os.ReadFile(tmplPath)
+		if err != nil {
+			fmt.Printf("ERROR reading BFF middleware template %s: %v\n", tmplPath, err)
+			continue
+		}
+
+		middlewareGo, err := executeTemplate(string(tmplStr), map[string]interface{}{
+			"AppName": projectName,
+			"BFFName": bffName,
+		})
+		if err != nil {
+			fmt.Printf("ERROR executing BFF middleware template: %v\n", err)
+			continue
+		}
+		os.WriteFile(outputFile, []byte(middlewareGo), 0644)
+		fmt.Printf("  Generated BFF %s middleware: %s\n", m, outputFile)
+	}
+
+	// 生成 middleware.yaml 配置文件
+	configTmplPath := filepath.Join(getTemplatesDir(), "configs", "middleware.yaml.tmpl")
+	if _, err := os.Stat(configTmplPath); err == nil {
+		configStr, err := os.ReadFile(configTmplPath)
+		if err == nil {
+			configContent, err := executeTemplate(string(configStr), map[string]interface{}{
+				"AppName": projectName,
+			})
+			if err == nil {
+				configDir := filepath.Join(bffDir, "configs")
+				os.MkdirAll(configDir, 0755)
+				os.WriteFile(filepath.Join(configDir, "middleware.yaml"), []byte(configContent), 0644)
+				fmt.Printf("  Generated BFF middleware config: %s/configs/middleware.yaml\n", filepath.Base(bffDir))
+			}
+		}
+	}
+
+	return nil
+}
+
 func init() {
 	newMicroBffCmd.Flags().StringVar(&microBffName, "name", "", "BFF 名称（必填）")
 	newMicroBffCmd.Flags().StringVarP(&microBffOutputDir, "output", "o", "", "项目目录（必填）")
 	newMicroBffCmd.Flags().StringArrayVar(&microBffModules, "modules", nil, "微服务列表（必填）")
+	newMicroBffCmd.Flags().StringVar(&microBffMiddleware, "middleware", "", "中间件列表（jwt,ratelimit,blacklist）")
 	newMicroBffCmd.Flags().StringVar(&microBffDBHost, "db-host", "127.0.0.1", "数据库主机")
 	newMicroBffCmd.Flags().StringVar(&microBffDBPort, "db-port", "3306", "数据库端口")
 	newMicroBffCmd.Flags().StringVar(&microBffDBUser, "db-user", "root", "数据库用户")
