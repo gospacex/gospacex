@@ -1,0 +1,38 @@
+package middleware
+
+import (
+	"context"
+	"strings"
+
+	"{{.AppName}}/pkg/jwt"
+	"github.com/cloudwego/hertz/pkg/app"
+)
+
+func JWTMiddleware(jwtSvc *jwt.JWTService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		if jwtSvc == nil {
+			c.Next(ctx)
+			return
+		}
+
+		authHeader := string(c.GetHeader("Authorization"))
+		if authHeader == "" {
+			c.JSON(401, map[string]interface{}{"code": 401, "message": "missing token"})
+			c.Abort()
+			return
+		}
+
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		claims, err := jwtSvc.ParseToken(tokenString)
+		if err != nil {
+			c.JSON(401, map[string]interface{}{"code": 401, "message": "invalid token"})
+			c.Abort()
+			return
+		}
+
+		c.Set("user_id", claims.UserID)
+		c.Set("username", claims.Username)
+		c.Set("role", claims.Role)
+		c.Next(ctx)
+	}
+}

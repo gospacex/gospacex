@@ -1,0 +1,25 @@
+package middleware
+
+import (
+	"context"
+
+	"{{.AppName}}/pkg/blacklist"
+	"github.com/cloudwego/hertz/pkg/app"
+)
+
+func BlacklistMiddleware(bl *blacklist.IPBlacklist) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		if bl == nil {
+			c.Next(ctx)
+			return
+		}
+
+		clientIP := string(c.ClientIP())
+		if bl.IsBlocked(clientIP) {
+			c.JSON(403, map[string]interface{}{"code": 403, "message": "ip blocked"})
+			c.Abort()
+			return
+		}
+		c.Next(ctx)
+	}
+}

@@ -1,0 +1,24 @@
+package middleware
+
+import (
+	"context"
+
+	"{{.AppName}}/pkg/ratelimit"
+	"github.com/cloudwego/hertz/pkg/app"
+)
+
+func RateLimitMiddleware(rl *ratelimit.TokenBucketLimiter) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		if rl == nil {
+			c.Next(ctx)
+			return
+		}
+
+		if !rl.Allow() {
+			c.JSON(429, map[string]interface{}{"code": 429, "message": "rate limit exceeded"})
+			c.Abort()
+			return
+		}
+		c.Next(ctx)
+	}
+}
