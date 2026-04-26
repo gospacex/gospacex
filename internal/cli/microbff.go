@@ -15,6 +15,7 @@ var (
 	microBffOutputDir  string
 	microBffModules    []string
 	microBffMiddleware string
+	microBffHTTP       string
 	microBffDBHost     string
 	microBffDBPort     string
 	microBffDBUser     string
@@ -452,21 +453,36 @@ func genBffMiddleware(bffDir, bffName, projectName string) error {
 		}
 	}
 
-	// 根据 --middleware 生成对应的适配器（默认使用 Gin）
+	// 根据 --middleware 生成对应的适配器
 	for _, m := range middlewareList {
 		var tmplPath string
 		var outputFile string
 
 		switch m {
 		case "jwt":
-			tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "middleware", "gin_jwt.go.tmpl")
-			outputFile = filepath.Join(bffMiddlewareDir, "gin_jwt.go")
+			if microBffHTTP == "hertz" {
+				tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "middleware", "hertz_jwt.go.tmpl")
+				outputFile = filepath.Join(bffMiddlewareDir, "hertz_jwt.go")
+			} else {
+				tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "middleware", "gin_jwt.go.tmpl")
+				outputFile = filepath.Join(bffMiddlewareDir, "gin_jwt.go")
+			}
 		case "ratelimit":
-			tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "middleware", "gin_ratelimit.go.tmpl")
-			outputFile = filepath.Join(bffMiddlewareDir, "gin_ratelimit.go")
+			if microBffHTTP == "hertz" {
+				tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "middleware", "hertz_ratelimit.go.tmpl")
+				outputFile = filepath.Join(bffMiddlewareDir, "hertz_ratelimit.go")
+			} else {
+				tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "middleware", "gin_ratelimit.go.tmpl")
+				outputFile = filepath.Join(bffMiddlewareDir, "gin_ratelimit.go")
+			}
 		case "blacklist":
-			tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "middleware", "gin_blacklist.go.tmpl")
-			outputFile = filepath.Join(bffMiddlewareDir, "gin_blacklist.go")
+			if microBffHTTP == "hertz" {
+				tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "middleware", "hertz_blacklist.go.tmpl")
+				outputFile = filepath.Join(bffMiddlewareDir, "hertz_blacklist.go")
+			} else {
+				tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "middleware", "gin_blacklist.go.tmpl")
+				outputFile = filepath.Join(bffMiddlewareDir, "gin_blacklist.go")
+			}
 		default:
 			fmt.Printf("  Unknown middleware: %s\n", m)
 			continue
@@ -515,6 +531,7 @@ func init() {
 	newMicroBffCmd.Flags().StringVarP(&microBffOutputDir, "output", "o", "", "项目目录（必填）")
 	newMicroBffCmd.Flags().StringArrayVar(&microBffModules, "modules", nil, "微服务列表（必填）")
 	newMicroBffCmd.Flags().StringVar(&microBffMiddleware, "middleware", "", "中间件列表（jwt,ratelimit,blacklist）")
+	newMicroBffCmd.Flags().StringVar(&microBffHTTP, "http", "gin", "HTTP 框架（gin/hertz）")
 	newMicroBffCmd.Flags().StringVar(&microBffDBHost, "db-host", "127.0.0.1", "数据库主机")
 	newMicroBffCmd.Flags().StringVar(&microBffDBPort, "db-port", "3306", "数据库端口")
 	newMicroBffCmd.Flags().StringVar(&microBffDBUser, "db-user", "root", "数据库用户")
