@@ -573,6 +573,9 @@ func genBffMiddleware(bffDir, bffName, projectName string) error {
 
 // genBffPkgMiddleware 生成 BFF 依赖的 pkg 层中间件
 func genBffPkgMiddleware(outputDir string) {
+	// 生成 logger 包（main.go 依赖）
+	genBffPkgLogger(outputDir)
+
 	for _, m := range strings.Split(microBffMiddleware, ",") {
 		m = strings.TrimSpace(m)
 		var pkgDir string
@@ -608,6 +611,42 @@ func genBffPkgMiddleware(outputDir string) {
 		}
 		fmt.Printf("  Generated pkg/%s\n", m)
 	}
+}
+
+// genBffPkgLogger 生成 pkg/logger 包
+func genBffPkgLogger(outputDir string) {
+	pkgLoggerDir := filepath.Join(outputDir, "pkg", "logger")
+	os.MkdirAll(pkgLoggerDir, 0755)
+
+	srcDir := filepath.Join(getTemplatesDir(), "pkg", "logger")
+	if _, err := os.Stat(srcDir); os.IsNotExist(err) {
+		fmt.Printf("Warning: logger templates not found\n")
+		return
+	}
+
+	tmplFiles := []string{
+		"config.go.tmpl", "logger.go.tmpl", "rotation.go.tmpl", "cleaner.go.tmpl",
+		"sampler.go.tmpl", "metrics.go.tmpl", "context.go.tmpl", "business.go.tmpl",
+		"access.go.tmpl", "audit.go.tmpl", "error.go.tmpl", "formatter.go.tmpl",
+		"mq.go.tmpl", "mq_kafka.go.tmpl",
+	}
+	goFiles := []string{
+		"config.go", "logger.go", "rotation.go", "cleaner.go",
+		"sampler.go", "metrics.go", "context.go", "business.go",
+		"access.go", "audit.go", "error.go", "formatter.go",
+		"mq.go", "mq_kafka.go",
+	}
+
+	for i, tmpl := range tmplFiles {
+		src := filepath.Join(srcDir, tmpl)
+		dst := filepath.Join(pkgLoggerDir, goFiles[i])
+		data, err := os.ReadFile(src)
+		if err != nil {
+			continue
+		}
+		os.WriteFile(dst, data, 0644)
+	}
+	fmt.Printf("  Generated pkg/logger\n")
 }
 
 func init() {
