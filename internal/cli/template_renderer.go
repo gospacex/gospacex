@@ -32,6 +32,7 @@ type TemplateData struct {
 	LowerModule string
 	EntityName     string // entity 名（如 "Attr"），用于 struct/文件名
 	UpperEntityName string // entity 名的 CamelCase（如 "ProductAttr"），用于 proto 类型引用
+	LowerEntityName string // entity 名的首字母小写形式（如 "productAttr"），用于变量名
 	BFFName     string
 	TableName   string
 	SrvPort     int    // 微服务 gRPC 端口
@@ -55,6 +56,7 @@ type TemplateData struct {
 	CreateFields []TemplateFieldData // Create 请求字段（排除自增主键）
 	UpdateFields []TemplateFieldData // Update 请求字段（排除主键）
 	HandlerRegs  string // main.go 中注册多个 handler 的代码
+	ProtoImports []string // main.go 中多表场景下的 proto import 列表
 }
 
 // buildTemplateData 从 ColumnInfo 构建模板数据
@@ -71,6 +73,7 @@ func buildTemplateData(module string, columns []ColumnInfo, bffName string, tabl
 		entityName = entityNames[0]
 	}
 	upperEntityName := toProtoGoFieldName(entityName)
+	lowerEntityName := strings.ToLower(upperEntityName[:1]) + upperEntityName[1:]
 
 	var cols []TemplateFieldData
 	var createFields []TemplateFieldData
@@ -134,6 +137,7 @@ func buildTemplateData(module string, columns []ColumnInfo, bffName string, tabl
 		LowerModule:        lowerModule,
 		EntityName:         entityName,
 		UpperEntityName:    upperEntityName,
+		LowerEntityName:    lowerEntityName,
 		BFFName:            bffName,
 		TableName:          tableName,
 		SrvPort:           srvPort,

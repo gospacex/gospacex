@@ -35,8 +35,9 @@ echo "--- List available services ---"
 grpcurl -plaintext "${SRV_HOST}:${SRV_PORT}" list
 echo ""
 
-echo "--- Test: ProductService/Create ---"
-CREATE_RESP=$(grpcurl -plaintext -d '{}' "${SRV_HOST}:${SRV_PORT}" product.ProductService/Create)
+{{range .Modules}}
+echo "--- Test: {{.ServiceName}}/Create ---"
+CREATE_RESP=$(grpcurl -plaintext -d '{}' "${SRV_HOST}:${SRV_PORT}" {{.RouteName}}.{{.ServiceName}}/Create)
 echo "$CREATE_RESP"
 CREATED_ID=$(echo "$CREATE_RESP" | grep -o '"id":"[^"]*"' | grep -o '[0-9]*' | head -1)
 if [ -z "$CREATED_ID" ]; then
@@ -44,21 +45,22 @@ if [ -z "$CREATED_ID" ]; then
 fi
 echo ""
 
-echo "--- Test: ProductService/List ---"
-grpcurl -plaintext -d '{}' "${SRV_HOST}:${SRV_PORT}" product.ProductService/List
+echo "--- Test: {{.ServiceName}}/List ---"
+grpcurl -plaintext -d '{}' "${SRV_HOST}:${SRV_PORT}" {{.RouteName}}.{{.ServiceName}}/List
 echo ""
 
-echo "--- Test: ProductService/Get (ID=${CREATED_ID}) ---"
-grpcurl -plaintext -d "{\"id\": ${CREATED_ID}}" "${SRV_HOST}:${SRV_PORT}" product.ProductService/Get
+echo "--- Test: {{.ServiceName}}/Get (ID=${CREATED_ID}) ---"
+grpcurl -plaintext -d "{\"id\": ${CREATED_ID}}" "${SRV_HOST}:${SRV_PORT}" {{.RouteName}}.{{.ServiceName}}/Get
 echo ""
 
-echo "--- Test: ProductService/Update (ID=${CREATED_ID}) ---"
-grpcurl -plaintext -d "{\"id\": ${CREATED_ID}, \"store_name\": \"Updated Product\"}" "${SRV_HOST}:${SRV_PORT}" product.ProductService/Update
+echo "--- Test: {{.ServiceName}}/Update (ID=${CREATED_ID}) ---"
+grpcurl -plaintext -d "{\"id\": ${CREATED_ID}, \"store_name\": \"Updated Product\"}" "${SRV_HOST}:${SRV_PORT}" {{.RouteName}}.{{.ServiceName}}/Update
 echo ""
 
-echo "--- Test: ProductService/Delete (ID=${CREATED_ID}) ---"
-grpcurl -plaintext -d "{\"id\": ${CREATED_ID}}" "${SRV_HOST}:${SRV_PORT}" product.ProductService/Delete
+echo "--- Test: {{.ServiceName}}/Delete (ID=${CREATED_ID}) ---"
+grpcurl -plaintext -d "{\"id\": ${CREATED_ID}}" "${SRV_HOST}:${SRV_PORT}" {{.RouteName}}.{{.ServiceName}}/Delete
 echo ""
+{{end}}
 
 echo "=========================================="
 echo "Service Tests Complete!"

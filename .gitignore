@@ -28,6 +28,13 @@ go.work.sum
 .planning
 
 # AI coding assistants and spec files
+get-started.md
+get-shit-done.md
+get-shit-done
+gpx
+gpx_bin
+gsd
+
 .opencode/
 .bg-shell
 .claude

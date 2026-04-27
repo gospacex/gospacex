@@ -10,16 +10,20 @@ import (
 {{- end}}
 	"{{.AppName}}/pkg/logger"
 	"{{.AppName}}/{{.BffDirName}}/internal/rpcClient"
-	pb "{{.AppName}}/common/kitexGen/{{.Module}}"
+	pb "{{.AppName}}/common/kitexGen/{{.TableName}}"
 
 	"github.com/gin-gonic/gin"
 )
 
 type {{.UpperEntityName}}Handler struct {
-	client *rpcclient.{{.UpperEntityName}}Client
+	client rpcclient.{{.UpperEntityName}}ServiceClientInterface
 }
 
 func New{{.UpperEntityName}}Handler() *{{.UpperEntityName}}Handler {
+	return New{{.UpperEntityName}}HandlerWithClient("127.0.0.1:{{.SrvPort}}")
+}
+
+func New{{.UpperEntityName}}HandlerWithClient(grpcAddr string) *{{.UpperEntityName}}Handler {
 {{- if eq .Register "consul"}}
 	cfg, _ := config.Load("configs/config.yaml")
 	cli, err := rpcclient.New{{.UpperEntityName}}Client(cfg.Registry.Address)
@@ -27,13 +31,13 @@ func New{{.UpperEntityName}}Handler() *{{.UpperEntityName}}Handler {
 	cfg, _ := config.Load("configs/config.yaml")
 	cli, err := rpcclient.New{{.UpperEntityName}}Client(cfg.Registry.Address)
 {{- else}}
-	cli, err := rpcclient.New{{.UpperEntityName}}Client("127.0.0.1:{{.SrvPort}}")
+	cli, err := rpcclient.New{{.UpperEntityName}}Client(grpcAddr)
 {{- end}}
 	if err != nil {
 		logger.Business.Errorw("failed to create {{.Module}} client", "error", err.Error())
 		panic("failed to create {{.Module}} client: " + err.Error())
 	}
-	logger.Business.Infow("{{.UpperEntityName}}Handler initialized")
+	logger.Business.Infow("{{.UpperEntityName}}Handler initialized", "addr", grpcAddr)
 	return &{{.UpperEntityName}}Handler{client: cli}
 }
 

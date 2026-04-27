@@ -10,7 +10,9 @@ import (
 	"{{.AppName}}/pkg/database"
 	"{{.AppName}}/pkg/logger"
 	"{{.AppName}}/{{.SrvDirName}}/internal/handler"
-	pb "{{.AppName}}/common/kitexGen/{{.Module}}"
+{{- range .ProtoImports}}
+	{{.}}
+{{- end}}
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"

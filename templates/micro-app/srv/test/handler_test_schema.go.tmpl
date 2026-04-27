@@ -5,19 +5,19 @@ import (
 	"net"
 	"testing"
 
-	"myshop/common/kitexGen/product"
-	"myshop/pkg/config"
-	"myshop/pkg/database"
-	"myshop/srvProduct/internal/handler"
-	"myshop/srvProduct/internal/service"
+	"{{.AppName}}/common/kitex_gen/{{.EntityName}}"
+	"{{.AppName}}/pkg/config"
+	"{{.AppName}}/pkg/database"
+	"{{.AppName}}/{{.SrvDirName}}/internal/handler"
+	"{{.AppName}}/{{.SrvDirName}}/internal/service"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 var (
-	testSrvAddr = "localhost:8001"
-	testClient  product.ProductServiceClient
+	testSrvAddr = "localhost:{{.SrvPort}}"
+	testClient  {{.UpperEntityName}}.{{.UpperEntityName}}ServiceClient
 	testConn    *grpc.ClientConn
 )
 
@@ -29,7 +29,7 @@ func setupGRPCClient(t *testing.T) {
 	if err != nil {
 		t.Skipf("skipping: cannot connect to gRPC server at %s: %v", testSrvAddr, err)
 	}
-	testClient = product.NewProductServiceClient(testConn)
+	testClient = {{.UpperEntityName}}.New{{.UpperEntityName}}ServiceClient(testConn)
 }
 
 func teardownGRPCClient() {
@@ -54,8 +54,8 @@ func startTestServer(t *testing.T) func() {
 	}
 
 	srv := grpc.NewServer()
-	productHandler := handler.NewProductHandler(db)
-	product.RegisterProductServiceServer(srv, productHandler)
+	{{.LowerEntityName}}Handler := handler.New{{.UpperEntityName}}Handler(db)
+	{{.UpperEntityName}}.Register{{.UpperEntityName}}ServiceServer(srv, {{.LowerEntityName}}Handler)
 	go srv.Serve(lis)
 
 	return func() {
@@ -68,13 +68,13 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
-// TestProductService_Create 测试创建
-func TestProductService_Create(t *testing.T) {
+// Test{{.UpperEntityName}}Service_Create 测试创建
+func Test{{.UpperEntityName}}Service_Create(t *testing.T) {
 	setupGRPCClient(t)
 	defer teardownGRPCClient()
 
-	resp, err := testClient.Create(context.Background(), &product.CreateProductReq{
-		StoreName: "Test Product",
+	resp, err := testClient.Create(context.Background(), &{{.UpperEntityName}}.Create{{.UpperEntityName}}Req{
+		StoreName: "Test {{.UpperEntityName}}",
 		Price:     99.9,
 	})
 	if err != nil {
@@ -83,57 +83,57 @@ func TestProductService_Create(t *testing.T) {
 	if resp.Id == 0 {
 		t.Error("Expected non-zero id")
 	}
-	t.Logf("Created product with id: %d", resp.Id)
+	t.Logf("Created {{.LowerEntityName}} with id: %d", resp.Id)
 }
 
-// TestProductService_List 测试列表
-func TestProductService_List(t *testing.T) {
+// Test{{.UpperEntityName}}Service_List 测试列表
+func Test{{.UpperEntityName}}Service_List(t *testing.T) {
 	setupGRPCClient(t)
 	defer teardownGRPCClient()
 
-	resp, err := testClient.List(context.Background(), &product.ListProductReq{})
+	resp, err := testClient.List(context.Background(), &{{.UpperEntityName}}.List{{.UpperEntityName}}Req{})
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
-	t.Logf("Listed %d products", len(resp.Items))
+	t.Logf("Listed %d {{.LowerEntityName}}s", len(resp.Items))
 }
 
-// TestProductService_Get 测试查询
-func TestProductService_Get(t *testing.T) {
+// Test{{.UpperEntityName}}Service_Get 测试查询
+func Test{{.UpperEntityName}}Service_Get(t *testing.T) {
 	setupGRPCClient(t)
 	defer teardownGRPCClient()
 
-	createResp, err := testClient.Create(context.Background(), &product.CreateProductReq{
-		StoreName: "Get Test Product",
+	createResp, err := testClient.Create(context.Background(), &{{.UpperEntityName}}.Create{{.UpperEntityName}}Req{
+		StoreName: "Get Test {{.UpperEntityName}}",
 	})
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
 
-	resp, err := testClient.Get(context.Background(), &product.GetProductReq{
+	resp, err := testClient.Get(context.Background(), &{{.UpperEntityName}}.Get{{.UpperEntityName}}Req{
 		Id: createResp.Id,
 	})
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
 	}
-	if resp.StoreName != "Get Test Product" {
-		t.Errorf("Expected store_name 'Get Test Product', got '%s'", resp.StoreName)
+	if resp.StoreName != "Get Test {{.UpperEntityName}}" {
+		t.Errorf("Expected store_name 'Get Test {{.UpperEntityName}}', got '%s'", resp.StoreName)
 	}
 }
 
-// TestProductService_Update 测试更新
-func TestProductService_Update(t *testing.T) {
+// Test{{.UpperEntityName}}Service_Update 测试更新
+func Test{{.UpperEntityName}}Service_Update(t *testing.T) {
 	setupGRPCClient(t)
 	defer teardownGRPCClient()
 
-	createResp, err := testClient.Create(context.Background(), &product.CreateProductReq{
+	createResp, err := testClient.Create(context.Background(), &{{.UpperEntityName}}.Create{{.UpperEntityName}}Req{
 		StoreName: "Before Update",
 	})
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
 
-	_, err = testClient.Update(context.Background(), &product.UpdateProductReq{
+	_, err = testClient.Update(context.Background(), &{{.UpperEntityName}}.Update{{.UpperEntityName}}Req{
 		Id:        createResp.Id,
 		StoreName: "After Update",
 	})
@@ -141,7 +141,7 @@ func TestProductService_Update(t *testing.T) {
 		t.Fatalf("Update failed: %v", err)
 	}
 
-	getResp, err := testClient.Get(context.Background(), &product.GetProductReq{
+	getResp, err := testClient.Get(context.Background(), &{{.UpperEntityName}}.Get{{.UpperEntityName}}Req{
 		Id: createResp.Id,
 	})
 	if err != nil {
@@ -152,29 +152,29 @@ func TestProductService_Update(t *testing.T) {
 	}
 }
 
-// TestProductService_Delete 测试删除
-func TestProductService_Delete(t *testing.T) {
+// Test{{.UpperEntityName}}Service_Delete 测试删除
+func Test{{.UpperEntityName}}Service_Delete(t *testing.T) {
 	setupGRPCClient(t)
 	defer teardownGRPCClient()
 
-	createResp, err := testClient.Create(context.Background(), &product.CreateProductReq{
+	createResp, err := testClient.Create(context.Background(), &{{.UpperEntityName}}.Create{{.UpperEntityName}}Req{
 		StoreName: "To Delete",
 	})
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
 
-	_, err = testClient.Delete(context.Background(), &product.DeleteProductReq{
+	_, err = testClient.Delete(context.Background(), &{{.UpperEntityName}}.Delete{{.UpperEntityName}}Req{
 		Id: createResp.Id,
 	})
 	if err != nil {
 		t.Fatalf("Delete failed: %v", err)
 	}
 
-	_, err = testClient.Get(context.Background(), &product.GetProductReq{
+	_, err = testClient.Get(context.Background(), &{{.UpperEntityName}}.Get{{.UpperEntityName}}Req{
 		Id: createResp.Id,
 	})
 	if err == nil {
-		t.Error("Expected error when getting deleted product, got nil")
+		t.Error("Expected error when getting deleted {{.LowerEntityName}}, got nil")
 	}
 }

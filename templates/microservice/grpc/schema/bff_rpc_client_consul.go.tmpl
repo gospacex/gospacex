@@ -4,17 +4,28 @@ import (
 	"context"
 	"fmt"
 
-	pb "{{.AppName}}/common/kitexGen/{{.Module}}"
+	pb "{{.AppName}}/common/kitexGen/{{.TableName}}"
 
 	"github.com/hashicorp/consul/api"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// {{.UpperEntityName}}ServiceClientInterface 定义 gRPC 客户端接口，方便单元测试 mock
+type {{.UpperEntityName}}ServiceClientInterface interface {
+	Create(ctx context.Context, req *pb.Create{{.UpperEntityName}}Req) (*pb.Create{{.UpperEntityName}}Resp, error)
+	Get(ctx context.Context, id {{.PKGoType}}) (*pb.Get{{.UpperEntityName}}Resp, error)
+	List(ctx context.Context) (*pb.List{{.UpperEntityName}}Resp, error)
+	Update(ctx context.Context, req *pb.Update{{.UpperEntityName}}Req) (*pb.Update{{.UpperEntityName}}Resp, error)
+	Delete(ctx context.Context, id {{.PKGoType}}) (*pb.Delete{{.UpperEntityName}}Resp, error)
+}
+
 type {{.UpperEntityName}}Client struct {
 	conn   *grpc.ClientConn
 	client pb.{{.UpperEntityName}}ServiceClient
 }
+
+var _ {{.UpperEntityName}}ServiceClientInterface = (*{{.UpperEntityName}}Client)(nil)
 
 func New{{.UpperEntityName}}Client(consulAddr string) (*{{.UpperEntityName}}Client, error) {
 	// 从 Consul 发现服务

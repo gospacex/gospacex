@@ -1,6 +1,7 @@
 package test
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,49 +10,102 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// setupRouter 初始化测试路由
-func setupRouter() *gin.Engine {
+// ------------------------------------------------------------------
+// Mock HTTP handlers (simulating BFF handler responses)
+// ------------------------------------------------------------------
+
+{{range .Modules}}
+type mock{{.UpperName}}Handler struct{}
+
+func (h *mock{{.UpperName}}Handler) List{{.UpperName}}(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"items": []map[string]interface{}{
+			{"id": float64(1), "store_name": "Mock {{.UpperName}} 1", "price": 10.0},
+			{"id": float64(2), "store_name": "Mock {{.UpperName}} 2", "price": 20.0},
+		},
+	})
+}
+
+func (h *mock{{.UpperName}}Handler) Get{{.UpperName}}(c *gin.Context) {
+	id := c.Param("id")
+	if id == "999" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "record not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"id":         id,
+		"store_name":  "Mock {{.UpperName}}",
+		"price":      99.9,
+		"is_show":    true,
+	})
+}
+
+func (h *mock{{.UpperName}}Handler) Create{{.UpperName}}(c *gin.Context) {
+	var req map[string]interface{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"id": 1})
+}
+
+func (h *mock{{.UpperName}}Handler) Update{{.UpperName}}(c *gin.Context) {
+	id := c.Param("id")
+	var req map[string]interface{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	_ = id
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+func (h *mock{{.UpperName}}Handler) Delete{{.UpperName}}(c *gin.Context) {
+	id := c.Param("id")
+	_ = id
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// setup{{.UpperName}}Router 创建测试用 Gin router
+func setup{{.UpperName}}Router() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	// TODO: 注入实际的 handler，此处仅作为模板
+	h := &mock{{.UpperName}}Handler{}
+	r.GET("/api/v1/{{.RouteName}}s", h.List{{.UpperName}})
+	r.GET("/api/v1/{{.RouteName}}s/:id", h.Get{{.UpperName}})
+	r.POST("/api/v1/{{.RouteName}}s", h.Create{{.UpperName}})
+	r.PUT("/api/v1/{{.RouteName}}s/:id", h.Update{{.UpperName}})
+	r.DELETE("/api/v1/{{.RouteName}}s/:id", h.Delete{{.UpperName}})
 	return r
 }
 
-{{range .Modules}}
-// Test{{.UpperName}}Handler_List 测试 {{.Name}} 列表接口
+// ------------------------------------------------------------------
+// Tests
+// ------------------------------------------------------------------
+
 func Test{{.UpperName}}Handler_List(t *testing.T) {
-	r := setupRouter()
-	r.GET("/api/v1/{{.Name}}s", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"items": []map[string]interface{}{},
-		})
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/{{.Name}}s", nil)
+	r := setup{{.UpperName}}Router()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/{{.RouteName}}s", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", w.Code)
+		t.Errorf("expected status 200, got %d, body: %s", w.Code, w.Body.String())
 	}
 
 	var resp map[string]interface{}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Errorf("failed to parse response: %v", err)
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	items, ok := resp["items"].([]interface{})
+	if !ok || len(items) == 0 {
+		t.Error("expected non-empty items")
 	}
 }
 
-// Test{{.UpperName}}Handler_Get 测试 {{.Name}} 详情接口
 func Test{{.UpperName}}Handler_Get(t *testing.T) {
-	r := setupRouter()
-	r.GET("/api/v1/{{.Name}}s/:id", func(c *gin.Context) {
-		id := c.Param("id")
-		c.JSON(http.StatusOK, gin.H{
-			"id": id,
-		})
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/{{.Name}}s/1", nil)
+	r := setup{{.UpperName}}Router()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/{{.RouteName}}s/5", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -60,42 +114,59 @@ func Test{{.UpperName}}Handler_Get(t *testing.T) {
 	}
 
 	var resp map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Errorf("failed to parse response: %v", err)
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["store_name"] != "Mock {{.UpperName}}" {
+		t.Errorf("unexpected store_name: %v", resp["store_name"])
 	}
 }
 
-// Test{{.UpperName}}Handler_Create 测试 {{.Name}} 创建接口
+func Test{{.UpperName}}Handler_Get_NotFound(t *testing.T) {
+	r := setup{{.UpperName}}Router()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/{{.RouteName}}s/999", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected status 404, got %d", w.Code)
+	}
+}
+
 func Test{{.UpperName}}Handler_Create(t *testing.T) {
-	r := setupRouter()
-	r.POST("/api/v1/{{.Name}}s", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"id": 1,
-		})
-	})
-
-	body := `{}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/{{.Name}}s", strings.NewReader(body))
+	r := setup{{.UpperName}}Router()
+	body := `{"store_name":"New {{.UpperName}}","price":88.8}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/{{.RouteName}}s", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", w.Code)
+		t.Errorf("expected status 200, got %d, body: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["id"] != float64(1) {
+		t.Errorf("expected id=1, got %v", resp["id"])
 	}
 }
 
-// Test{{.UpperName}}Handler_Update 测试 {{.Name}} 更新接口
+func Test{{.UpperName}}Handler_Create_InvalidJSON(t *testing.T) {
+	r := setup{{.UpperName}}Router()
+	body := `{invalid json}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/{{.RouteName}}s", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
 func Test{{.UpperName}}Handler_Update(t *testing.T) {
-	r := setupRouter()
-	r.PUT("/api/v1/{{.Name}}s/:id", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-		})
-	})
-
-	body := `{}`
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/{{.Name}}s/1", strings.NewReader(body))
+	r := setup{{.UpperName}}Router()
+	body := `{"store_name":"Updated Name","price":199.0}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/{{.RouteName}}s/1", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -103,24 +174,46 @@ func Test{{.UpperName}}Handler_Update(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d", w.Code)
 	}
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["success"] != true {
+		t.Errorf("expected success=true")
+	}
 }
 
-// Test{{.UpperName}}Handler_Delete 测试 {{.Name}} 删除接口
 func Test{{.UpperName}}Handler_Delete(t *testing.T) {
-	r := setupRouter()
-	r.DELETE("/api/v1/{{.Name}}s/:id", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-		})
-	})
-
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/{{.Name}}s/1", nil)
+	r := setup{{.UpperName}}Router()
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/{{.RouteName}}s/1", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["success"] != true {
+		t.Errorf("expected success=true")
 	}
 }
 
 {{end}}
+
+func TestResponseContentType(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/test", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if ct := w.Header().Get("Content-Type"); ct == "" {
+		t.Error("expected Content-Type header to be set")
+	} else {
+		t.Logf("Content-Type: %s", ct)
+	}
+}

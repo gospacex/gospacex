@@ -11,7 +11,9 @@ import (
 	"{{.AppName}}/pkg/config"
 	"{{.AppName}}/pkg/database"
 	"{{.AppName}}/{{.SrvDirName}}/internal/handler"
-	pb "{{.AppName}}/common/kitexGen/{{.Module}}"
+{{- range .ProtoImports}}
+	{{.}}
+{{- end}}
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"

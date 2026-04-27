@@ -31,7 +31,7 @@ echo ""
 
 {{range .Modules}}
 echo "--- Test: Create {{.UpperName}} ---"
-RESPONSE=$(curl -s -X POST "${BASE_URL}/api/v1/{{.Name}}s" -H "Content-Type: application/json" -d '{}')
+RESPONSE=$(curl -s -X POST "${BASE_URL}/api/v1/{{.RouteName}}s" -H "Content-Type: application/json" -d '{}')
 echo "$RESPONSE" | head -c 200
 echo ""
 echo ""
@@ -43,22 +43,22 @@ if [ -z "$CREATED_ID" ]; then
 fi
 
 echo "--- Test: List {{.UpperName}} ---"
-curl -s "${BASE_URL}/api/v1/{{.Name}}s" | head -c 200
+curl -s "${BASE_URL}/api/v1/{{.RouteName}}s" | head -c 200
 echo ""
 echo ""
 
 echo "--- Test: Get {{.UpperName}} (ID=${CREATED_ID}) ---"
-curl -s "${BASE_URL}/api/v1/{{.Name}}s/${CREATED_ID}" | head -c 200
+curl -s "${BASE_URL}/api/v1/{{.RouteName}}s/${CREATED_ID}" | head -c 200
 echo ""
 echo ""
 
 echo "--- Test: Update {{.UpperName}} (ID=${CREATED_ID}) ---"
-curl -s -X PUT "${BASE_URL}/api/v1/{{.Name}}s/${CREATED_ID}" -H "Content-Type: application/json" -d '{"store_name": "Updated Product"}' | head -c 200
+curl -s -X PUT "${BASE_URL}/api/v1/{{.RouteName}}s/${CREATED_ID}" -H "Content-Type: application/json" -d '{"store_name": "Updated Product"}' | head -c 200
 echo ""
 echo ""
 
 echo "--- Test: Delete {{.UpperName}} (ID=${CREATED_ID}) ---"
-curl -s -X DELETE "${BASE_URL}/api/v1/{{.Name}}s/${CREATED_ID}" | head -c 200
+curl -s -X DELETE "${BASE_URL}/api/v1/{{.RouteName}}s/${CREATED_ID}" | head -c 200
 echo ""
 echo ""
 {{end}}

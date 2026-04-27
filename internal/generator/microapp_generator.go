@@ -135,8 +135,8 @@ func (g *MicroAppGenerator) prepareModules() error {
 		mod.UpperName = strings.ToUpper(mod.Name[:1]) + mod.Name[1:]
 		mod.ServiceName = mod.UpperName
 
-		// 分配端口 (从 50050 开始)
-		mod.Port = 50050 + i
+		// 分配端口 (从 8001 开始)
+		mod.Port = 8001 + i
 
 		// 如果没有指定表名，使用模块名
 		if mod.TableName == "" {
@@ -1183,7 +1183,7 @@ type %sHandler struct {
 }
 
 func New%sHandler() *%sHandler {
-	client, _ := rpc_client.New%sClient("localhost:%s")
+	client, _ := rpc_client.New%sClient("127.0.0.1:%s")
 	return &%sHandler{client: client}
 }
 
@@ -1263,7 +1263,7 @@ func (h *%sHandler) Delete(c *gin.Context) {
 		mod.ServiceName, mod.ServiceName,
 		mod.ServiceName, mod.ServiceName,
 		mod.ServiceName, mod.ServiceName,
-		mod.ServiceName, mod.ServiceName)
+		mod.ServiceName, fmt.Sprintf("%d", mod.Port))
 
 	return os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff_%s", bffName), "internal", "handler", toCamelCaseFile(mod.Name)+"Handler.go"), []byte(handlerContent), 0644)
 }

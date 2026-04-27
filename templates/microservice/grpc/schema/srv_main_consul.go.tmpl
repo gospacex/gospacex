@@ -9,7 +9,9 @@ import (
 	"{{.AppName}}/pkg/config"
 	"{{.AppName}}/pkg/database"
 	"{{.AppName}}/{{.SrvDirName}}/internal/handler"
-	pb "{{.AppName}}/common/kitexGen/{{.Module}}"
+{{- range .ProtoImports}}
+	{{.}}
+{{- end}}
 
 	"github.com/hashicorp/consul/api"
 	"google.golang.org/grpc"
