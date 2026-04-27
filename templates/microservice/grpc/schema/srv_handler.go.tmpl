@@ -13,25 +13,25 @@ import (
 	"gorm.io/gorm"
 )
 
-type {{.UpperModule}}Handler struct {
-	pb.Unimplemented{{.UpperModule}}ServiceServer
-	svc *service.{{.UpperModule}}Service
+type {{.UpperEntityName}}Handler struct {
+	pb.Unimplemented{{.UpperEntityName}}ServiceServer
+	svc *service.{{.UpperEntityName}}Service
 }
 
-func New{{.UpperModule}}Handler(db *gorm.DB) *{{.UpperModule}}Handler {
-	logger.Business.Infow("{{.UpperModule}}Handler initializing")
-	return &{{.UpperModule}}Handler{
-		svc: service.New{{.UpperModule}}Service(
+func New{{.UpperEntityName}}Handler(db *gorm.DB) *{{.UpperEntityName}}Handler {
+	logger.Business.Infow("{{.UpperEntityName}}Handler initializing")
+	return &{{.UpperEntityName}}Handler{
+		svc: service.New{{.UpperEntityName}}Service(
 			{{.RepoInitCode}},
 		),
 	}
 }
 
-func (h *{{.UpperModule}}Handler) Create(ctx context.Context, req *pb.Create{{.UpperModule}}Req) (*pb.Create{{.UpperModule}}Resp, error) {
+func (h *{{.UpperEntityName}}Handler) Create(ctx context.Context, req *pb.Create{{.UpperEntityName}}Req) (*pb.Create{{.UpperEntityName}}Resp, error) {
 	start := time.Now()
 	logger.Business.Infow("handle create {{.Module}}")
 
-	m := &model.{{.UpperModule}}{
+	m := &model.{{.UpperEntityName}}{
 {{- range .CreateFields}}
 		{{.ProtoGoName}}: req.{{.ProtoGoName}},
 {{- end}}
@@ -42,10 +42,10 @@ func (h *{{.UpperModule}}Handler) Create(ctx context.Context, req *pb.Create{{.U
 	}
 
 	logger.Business.Infow("create {{.Module}} success", "id", m.Id, "duration", time.Since(start).String())
-	return &pb.Create{{.UpperModule}}Resp{ {{.PKProtoGoName}}: {{.PKRespConvert}} }, nil
+	return &pb.Create{{.UpperEntityName}}Resp{ {{.PKProtoGoName}}: {{.PKRespConvert}} }, nil
 }
 
-func (h *{{.UpperModule}}Handler) Get(ctx context.Context, req *pb.Get{{.UpperModule}}Req) (*pb.Get{{.UpperModule}}Resp, error) {
+func (h *{{.UpperEntityName}}Handler) Get(ctx context.Context, req *pb.Get{{.UpperEntityName}}Req) (*pb.Get{{.UpperEntityName}}Resp, error) {
 	start := time.Now()
 	logger.Business.Infow("handle get {{.Module}}", "id", req.{{.PKProtoGoName}})
 
@@ -56,14 +56,14 @@ func (h *{{.UpperModule}}Handler) Get(ctx context.Context, req *pb.Get{{.UpperMo
 	}
 
 	logger.Business.Infow("get {{.Module}} success", "id", m.Id, "duration", time.Since(start).String())
-	return &pb.Get{{.UpperModule}}Resp{
+	return &pb.Get{{.UpperEntityName}}Resp{
 {{- range .Columns}}
 		{{.ProtoGoName}}: {{.ModelToRespCode}},
 {{- end}}
 	}, nil
 }
 
-func (h *{{.UpperModule}}Handler) List(ctx context.Context, req *pb.List{{.UpperModule}}Req) (*pb.List{{.UpperModule}}Resp, error) {
+func (h *{{.UpperEntityName}}Handler) List(ctx context.Context, req *pb.List{{.UpperEntityName}}Req) (*pb.List{{.UpperEntityName}}Resp, error) {
 	start := time.Now()
 	logger.Business.Infow("handle list {{.Module}}")
 
@@ -73,9 +73,9 @@ func (h *{{.UpperModule}}Handler) List(ctx context.Context, req *pb.List{{.Upper
 		return nil, err
 	}
 
-	var items []*pb.{{.UpperModule}}Item
+	var items []*pb.{{.UpperEntityName}}Item
 	for _, m := range list {
-		items = append(items, &pb.{{.UpperModule}}Item{
+		items = append(items, &pb.{{.UpperEntityName}}Item{
 {{- range .Columns}}
 			{{.ProtoGoName}}: {{.ModelToRespCode}},
 {{- end}}
@@ -83,10 +83,10 @@ func (h *{{.UpperModule}}Handler) List(ctx context.Context, req *pb.List{{.Upper
 	}
 
 	logger.Business.Infow("list {{.Module}} success", "count", len(list), "duration", time.Since(start).String())
-	return &pb.List{{.UpperModule}}Resp{Items: items}, nil
+	return &pb.List{{.UpperEntityName}}Resp{Items: items}, nil
 }
 
-func (h *{{.UpperModule}}Handler) Update(ctx context.Context, req *pb.Update{{.UpperModule}}Req) (*pb.Update{{.UpperModule}}Resp, error) {
+func (h *{{.UpperEntityName}}Handler) Update(ctx context.Context, req *pb.Update{{.UpperEntityName}}Req) (*pb.Update{{.UpperEntityName}}Resp, error) {
 	start := time.Now()
 	logger.Business.Infow("handle update {{.Module}}", "id", req.{{.PKProtoGoName}})
 
@@ -106,10 +106,10 @@ func (h *{{.UpperModule}}Handler) Update(ctx context.Context, req *pb.Update{{.U
 	}
 
 	logger.Business.Infow("update {{.Module}} success", "id", req.{{.PKProtoGoName}}, "duration", time.Since(start).String())
-	return &pb.Update{{.UpperModule}}Resp{Success: true}, nil
+	return &pb.Update{{.UpperEntityName}}Resp{Success: true}, nil
 }
 
-func (h *{{.UpperModule}}Handler) Delete(ctx context.Context, req *pb.Delete{{.UpperModule}}Req) (*pb.Delete{{.UpperModule}}Resp, error) {
+func (h *{{.UpperEntityName}}Handler) Delete(ctx context.Context, req *pb.Delete{{.UpperEntityName}}Req) (*pb.Delete{{.UpperEntityName}}Resp, error) {
 	start := time.Now()
 	logger.Business.Infow("handle delete {{.Module}}", "id", req.{{.PKProtoGoName}})
 
@@ -119,5 +119,5 @@ func (h *{{.UpperModule}}Handler) Delete(ctx context.Context, req *pb.Delete{{.U
 	}
 
 	logger.Business.Infow("delete {{.Module}} success", "id", req.{{.PKProtoGoName}}, "duration", time.Since(start).String())
-	return &pb.Delete{{.UpperModule}}Resp{Success: true}, nil
+	return &pb.Delete{{.UpperEntityName}}Resp{Success: true}, nil
 }

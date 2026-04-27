@@ -4,7 +4,7 @@ package model
 import "time"
 {{- end}}
 
-type {{.UpperModule}} struct {
+type {{.UpperEntityName}} struct {
 {{- range .Columns}}
 {{- if and (ne .Name "created_at") (ne .Name "updated_at") (ne .Name "createdAt") (ne .Name "updatedAt") (ne .Name "create_time") (ne .Name "update_time")}}
 	{{.ProtoGoName}} {{.GoType}} `{{.GormTag}}`
@@ -18,4 +18,4 @@ type {{.UpperModule}} struct {
 {{- end}}
 }
 
-func ({{.UpperModule}}) TableName() string { return "{{.TableName}}" }
+func ({{.UpperEntityName}}) TableName() string { return "{{.TableName}}" }

@@ -80,6 +80,15 @@ type ColumnInfo struct {
 	Comment    string // 字段注释
 }
 
+// TableInfo 表信息，包含表名和字段
+type TableInfo struct {
+	TableName string       // 表名
+	Columns   []ColumnInfo // 字段列表
+}
+
+// ModuleTables module -> 多张表的映射
+type ModuleTables map[string][]TableInfo
+
 // JoinConfig 联表查询配置
 type JoinConfig struct {
 	LeftTable  string // 左表名
@@ -646,9 +655,15 @@ func runNewMicroAppWithFlags() error {
 		}
 	}
 
-	// 合并 --srvs 到 --modules
+	// 合并 --srvs 到 --modules（只有非默认值时才合并）
+	// 如果 microAppModules 是默认值 ["srv"] 且用户指定了 --srvs，则用用户值替换
 	if len(microAppSrvs) > 0 {
-		microAppModules = append(microAppModules, microAppSrvs...)
+		// 检查 microAppModules 是否是默认值（只有 "srv" 一个元素的情况视为默认值）
+		if len(microAppModules) == 1 && microAppModules[0] == "srv" {
+			microAppModules = microAppSrvs
+		} else {
+			microAppModules = append(microAppModules, microAppSrvs...)
+		}
 	}
 
 	// 支持中英文逗号分隔的 modules 参数
@@ -759,9 +774,8 @@ func runNewMicroAppWithFlags() error {
 
 	// 如果指定了 --db-table，读取表结构
 	hasDBTable := microAppDBTable != ""
-	tableColumns := make(map[string][]ColumnInfo) // module -> columns
+	moduleTables := make(ModuleTables)           // module -> 多张表
 	allTableColumns := make(map[string][]ColumnInfo) // tableName -> columns（包含所有表）
-	moduleTableName := make(map[string]string)     // module -> 原始表名（与入参保持一致）
 	var tableNames []string // 所有表名（提升到外层，供后续 aux model 和 join 使用）
 
 	if hasDBTable {
@@ -791,28 +805,23 @@ func runNewMicroAppWithFlags() error {
 			}
 			// 所有表都存入 allTableColumns（以表名为 key）
 			allTableColumns[tableName] = columns
-			// module 名称默认与表名相同
-			moduleName := tableName
-			// 如果 module 列表与表名一一对应，则使用对应的 module 名称
+
+			// 确定 module 名称
+			var moduleName string
 			if len(tableNames) == len(microAppModules) {
-				moduleName = microAppModules[len(tableColumns)]
+				// 一对一：按顺序对应
+				moduleName = microAppModules[len(moduleTables)]
 			} else if len(tableNames) > len(microAppModules) {
-				// 表数多于 module 数：按顺序将每张表分配给对应的 module
-				// 例如 modules=[product], tables=[p, p_desc, p_attr] → 三张表都归到 product
-				// 但 tableColumns 只存主表（每个 module 取第一张表），避免字段混合
-				tableIdx := len(tableColumns)
-				if tableIdx < len(microAppModules) {
-					moduleName = microAppModules[tableIdx]
-				} else {
-					// 超出 module 数量的表，归到最后一个 module（但不覆盖已有数据）
-					continue
-				}
+				// 多表归一：所有表都归入第一个 module
+				moduleName = microAppModules[0]
+			} else {
+				// 表数少于 module 数：归入第一个 module
+				moduleName = microAppModules[0]
 			}
-		// 每个 module 只存第一张表的字段（主表），后续表跳过
-		if _, exists := tableColumns[moduleName]; !exists {
-			tableColumns[moduleName] = columns
-			moduleTableName[moduleName] = tableName // 记录 module 对应的原始表名
-		}
+
+			// 添加到 moduleTables（每张表都添加，不跳过）
+			ti := TableInfo{TableName: tableName, Columns: columns}
+			moduleTables[moduleName] = append(moduleTables[moduleName], ti)
 		}
 	}
 
@@ -857,9 +866,9 @@ func runNewMicroAppWithFlags() error {
 	if hasDBTable {
 		// 基于表结构生成
 		if microAppIDL == "thrift" {
-			genThriftFilesFromSchema(projectDir, tableColumns)
+			genThriftFilesFromSchema(projectDir, moduleTables)
 		} else {
-			genProtoFilesFromSchema(projectDir, tableColumns)
+			genProtoFilesFromSchema(projectDir, moduleTables)
 		}
 		genErrors(projectDir)
 		genConstants(projectDir)
@@ -870,60 +879,26 @@ func runNewMicroAppWithFlags() error {
 
 		// 根据 HTTP 框架选择 BFF 生成函数
 		if microAppHTTP == "hertz" {
-			genBFFHertzFromSchema(projectDir, microAppBFFName, tableColumns, microAppProtocol)
+			genBFFHertzFromSchema(projectDir, microAppBFFName, moduleTables, microAppProtocol)
 		} else {
-			genBFFFromSchema(projectDir, microAppBFFName, tableColumns, microAppProtocol)
+			genBFFFromSchema(projectDir, microAppBFFName, moduleTables, microAppProtocol)
 		}
 
+		// Step 1: 为每个 module 生成一次 main.go 和 config.yaml
 		for i, m := range microAppModules {
-			tn := moduleTableName[m]
-			if tn == "" {
-				tn = m // 兜底：无表名时退化为 module 名
-			}
-			genMicroserviceFromSchema(projectDir, m, 8000+i+1, microAppProtocol, tableColumns[m], tn)
+			tables := moduleTables[m]
+			port := 50050 + i
+			genSrvMainAndConfig(projectDir, m, port, tables, tableNames)
 		}
 
-		// 为附属表（非主表）生成 model 文件到第一个 module 的 srv 目录下
-		// 附属表由 --db-table 指定但不在 --modules 对应的主表中
-		// tableColumns 的 key 是 module 名，需要反向查找哪些表名已被使用
-		mainModule := microAppModules[0]
-		// 收集已被主表使用的 tableName
-		usedTableNames := make(map[string]bool)
-		if len(tableNames) > len(microAppModules) {
-			// 当 tables > modules 时，前 len(modules) 张表归到主表
-			for i := 0; i < len(microAppModules) && i < len(tableNames); i++ {
-				usedTableNames[tableNames[i]] = true
+		// Step 2: 为每个 module 下的每张表生成 model/repo/service/handler 文件
+		for _, m := range microAppModules {
+			tables := moduleTables[m]
+			for i, tbl := range tables {
+				entityName := tableToEntityName(tbl.TableName, tableNames)
+				port := 50050 + i
+				genSrvTableFiles(projectDir, m, tbl.Columns, tbl.TableName, entityName, tableNames, port)
 			}
-		} else if len(tableNames) == len(microAppModules) {
-			for _, tn := range tableNames {
-				usedTableNames[tn] = true
-			}
-		}
-		for tableName, cols := range allTableColumns {
-			if usedTableNames[tableName] {
-				continue
-			}
-			// 从表名生成 module 名：去掉表前缀，如 eb_store_product_description → product_description
-			modelName := tableName
-			// 尝试提取表名去掉公共前缀后的部分
-			if len(tableNames) > 1 {
-				// 找公共前缀
-				prefix := tableNames[0]
-				for _, tn := range tableNames[1:] {
-					for i := 0; i < len(prefix) && i < len(tn); i++ {
-						if prefix[i] != tn[i] {
-							prefix = prefix[:i]
-							break
-						}
-					}
-				}
-				// 去掉末尾下划线
-				prefix = strings.TrimRight(prefix, "_")
-				if len(prefix) > 0 && strings.HasPrefix(tableName, prefix+"_") {
-					modelName = strings.TrimPrefix(tableName, prefix+"_")
-				}
-			}
-			genAuxModel(projectDir, mainModule, modelName, tableName, cols)
 		}
 
 		// 如果有联表配置，生成联表查询代码
@@ -978,11 +953,20 @@ func runNewMicroAppWithFlags() error {
 	if microAppTest {
 		bffPort := 8080
 		srvPort := 8001
+		// 构建 tableColumns 和 moduleTableName（供测试代码使用）
+		tableColumns := make(map[string][]ColumnInfo)
+		moduleTableName := make(map[string]string)
+		for m, tables := range moduleTables {
+			if len(tables) > 0 {
+				tableColumns[m] = tables[0].Columns
+				moduleTableName[m] = tables[0].TableName
+			}
+		}
 		genTestDirs(projectDir, microAppBFFName, microAppModules, hasDBTable, tableColumns, moduleTableName)
 		genShellScripts(projectDir, microAppBFFName, microAppModules, bffPort, srvPort)
 	}
 
-	genScripts(projectDir, microAppModules)
+	genScripts(projectDir, moduleTables)
 	genMakefile(projectDir, microAppModules)
 	genReadme(projectDir, microAppBFFName, microAppModules)
 	genGoMod(projectDir)
@@ -1080,90 +1064,97 @@ struct Delete%sResp {
 }
 
 // genThriftFilesFromSchema 基于表结构生成 Thrift IDL 文件
-func genThriftFilesFromSchema(projectDir string, tableColumns map[string][]ColumnInfo) {
-	for m, columns := range tableColumns {
-		upper := strings.ToUpper(m[:1]) + m[1:]
-		var buf strings.Builder
+func genThriftFilesFromSchema(projectDir string, moduleTables ModuleTables) {
+	for moduleName, tables := range moduleTables {
+		for _, table := range tables {
+			columns := table.Columns
+			upper := strings.ToUpper(moduleName[:1]) + moduleName[1:]
+			var buf strings.Builder
 
-		buf.WriteString(fmt.Sprintf("namespace go %s.%s\n\n", microAppName, m))
-
-		// 主结构体
-		buf.WriteString(fmt.Sprintf("struct %s {\n", upper))
-		idx := 1
-		for _, col := range columns {
-			thriftType := mysqlTypeToThrift(col.Type)
-			required := "optional"
-			if col.IsPrimary {
-				required = "required"
+			thriftFileName := table.TableName
+			if thriftFileName == "" {
+				thriftFileName = moduleName
 			}
-			comment := ""
-			if col.Comment != "" {
-				comment = " // " + col.Comment
+
+			buf.WriteString(fmt.Sprintf("namespace go %s.%s\n\n", microAppName, thriftFileName))
+
+			// 主结构体
+			buf.WriteString(fmt.Sprintf("struct %s {\n", upper))
+			idx := 1
+			for _, col := range columns {
+				thriftType := mysqlTypeToThrift(col.Type)
+				required := "optional"
+				if col.IsPrimary {
+					required = "required"
+				}
+				comment := ""
+				if col.Comment != "" {
+					comment = " // " + col.Comment
+				}
+				buf.WriteString(fmt.Sprintf("    %d: %s %s %s,%s\n", idx, required, thriftType, getLowerFirst(col.Name), comment))
+				idx++
 			}
-			buf.WriteString(fmt.Sprintf("    %d: %s %s %s,%s\n", idx, required, thriftType, getLowerFirst(col.Name), comment))
-			idx++
-		}
-		buf.WriteString("}\n\n")
+			buf.WriteString("}\n\n")
 
-		pkField := getPrimaryKeyField(columns)
-		pkThriftType := mysqlTypeToThrift(pkField.Type)
-		pkLowerName := getLowerFirst(pkField.Name)
+			pkField := getPrimaryKeyField(columns)
+			pkThriftType := mysqlTypeToThrift(pkField.Type)
+			pkLowerName := getLowerFirst(pkField.Name)
 
-		// Create
-		buf.WriteString(fmt.Sprintf("struct Create%sReq {\n", upper))
-		cidx := 1
-		for _, col := range columns {
-			if col.IsPrimary && strings.Contains(strings.ToLower(col.Type), "int") {
-				continue
+			// Create
+			buf.WriteString(fmt.Sprintf("struct Create%sReq {\n", upper))
+			cidx := 1
+			for _, col := range columns {
+				if col.IsPrimary && strings.Contains(strings.ToLower(col.Type), "int") {
+					continue
+				}
+				thriftType := mysqlTypeToThrift(col.Type)
+				buf.WriteString(fmt.Sprintf("    %d: required %s %s,\n", cidx, thriftType, getLowerFirst(col.Name)))
+				cidx++
 			}
-			thriftType := mysqlTypeToThrift(col.Type)
-			buf.WriteString(fmt.Sprintf("    %d: required %s %s,\n", cidx, thriftType, getLowerFirst(col.Name)))
-			cidx++
-		}
-		buf.WriteString("}\n\n")
+			buf.WriteString("}\n\n")
 
-		buf.WriteString(fmt.Sprintf("struct Create%sResp {\n    1: required %s %s,\n}\n\n", upper, pkThriftType, pkLowerName))
+			buf.WriteString(fmt.Sprintf("struct Create%sResp {\n    1: required %s %s,\n}\n\n", upper, pkThriftType, pkLowerName))
 
-		// Get
-		buf.WriteString(fmt.Sprintf("struct Get%sReq {\n    1: required %s %s,\n}\n\n", upper, pkThriftType, pkLowerName))
-		buf.WriteString(fmt.Sprintf("struct Get%sResp {\n", upper))
-		gidx := 1
-		for _, col := range columns {
-			thriftType := mysqlTypeToThrift(col.Type)
-			required := "optional"
-			if col.IsPrimary {
-				required = "required"
+			// Get
+			buf.WriteString(fmt.Sprintf("struct Get%sReq {\n    1: required %s %s,\n}\n\n", upper, pkThriftType, pkLowerName))
+			buf.WriteString(fmt.Sprintf("struct Get%sResp {\n", upper))
+			gidx := 1
+			for _, col := range columns {
+				thriftType := mysqlTypeToThrift(col.Type)
+				required := "optional"
+				if col.IsPrimary {
+					required = "required"
+				}
+				buf.WriteString(fmt.Sprintf("    %d: %s %s %s,\n", gidx, required, thriftType, getLowerFirst(col.Name)))
+				gidx++
 			}
-			buf.WriteString(fmt.Sprintf("    %d: %s %s %s,\n", gidx, required, thriftType, getLowerFirst(col.Name)))
-			gidx++
-		}
-		buf.WriteString("}\n\n")
+			buf.WriteString("}\n\n")
 
-		// List
-		buf.WriteString(fmt.Sprintf("struct List%sReq {}\n\n", upper))
-		buf.WriteString(fmt.Sprintf("struct List%sResp {\n    1: required list<%s> items,\n}\n\n", upper, upper))
+			// List
+			buf.WriteString(fmt.Sprintf("struct List%sReq {}\n\n", upper))
+			buf.WriteString(fmt.Sprintf("struct List%sResp {\n    1: required list<%s> items,\n}\n\n", upper, upper))
 
-		// Update
-		buf.WriteString(fmt.Sprintf("struct Update%sReq {\n    1: required %s %s,\n", upper, pkThriftType, pkLowerName))
-		uidx := 2
-		for _, col := range columns {
-			if col.IsPrimary {
-				continue
+			// Update
+			buf.WriteString(fmt.Sprintf("struct Update%sReq {\n    1: required %s %s,\n", upper, pkThriftType, pkLowerName))
+			uidx := 2
+			for _, col := range columns {
+				if col.IsPrimary {
+					continue
+				}
+				thriftType := mysqlTypeToThrift(col.Type)
+				buf.WriteString(fmt.Sprintf("    %d: optional %s %s,\n", uidx, thriftType, getLowerFirst(col.Name)))
+				uidx++
 			}
-			thriftType := mysqlTypeToThrift(col.Type)
-			buf.WriteString(fmt.Sprintf("    %d: optional %s %s,\n", uidx, thriftType, getLowerFirst(col.Name)))
-			uidx++
-		}
-		buf.WriteString("}\n\n")
+			buf.WriteString("}\n\n")
 
-		buf.WriteString(fmt.Sprintf("struct Update%sResp {\n    1: required bool success,\n}\n\n", upper))
+			buf.WriteString(fmt.Sprintf("struct Update%sResp {\n    1: required bool success,\n}\n\n", upper))
 
-		// Delete
-		buf.WriteString(fmt.Sprintf("struct Delete%sReq {\n    1: required %s %s,\n}\n\n", upper, pkThriftType, pkLowerName))
-		buf.WriteString(fmt.Sprintf("struct Delete%sResp {\n    1: required bool success,\n}\n\n", upper))
+			// Delete
+			buf.WriteString(fmt.Sprintf("struct Delete%sReq {\n    1: required %s %s,\n}\n\n", upper, pkThriftType, pkLowerName))
+			buf.WriteString(fmt.Sprintf("struct Delete%sResp {\n    1: required bool success,\n}\n\n", upper))
 
-		// Service
-		buf.WriteString(fmt.Sprintf(`service %sService {
+			// Service
+			buf.WriteString(fmt.Sprintf(`service %sService {
     Create%sResp Create(1: Create%sReq req),
     Get%sResp Get(1: Get%sReq req),
     List%sResp List(1: List%sReq req),
@@ -1172,8 +1163,9 @@ func genThriftFilesFromSchema(projectDir string, tableColumns map[string][]Colum
 }
 `, upper, upper, upper, upper, upper, upper, upper, upper, upper, upper, upper))
 
-		os.WriteFile(filepath.Join(projectDir, "common", "idl", m+".thrift"), []byte(buf.String()), 0644)
-		fmt.Printf("  Generated Thrift IDL: common/idl/%s.thrift\n", m)
+			os.WriteFile(filepath.Join(projectDir, "common", "idl", thriftFileName+".thrift"), []byte(buf.String()), 0644)
+			fmt.Printf("  Generated Thrift IDL: common/idl/%s.thrift\n", thriftFileName)
+		}
 	}
 }
 
@@ -1769,7 +1761,7 @@ func genMicroservice(projectDir, module string, port int, protocol string) {
 	os.WriteFile(filepath.Join(projectDir, toSrvDirName(module), "internal", "service", toCamelFileName(module, "Service.go")), []byte(svc), 0644)
 }
 
-func genScripts(projectDir string, modules []string) {
+func genScripts(projectDir string, moduleTables ModuleTables) {
 	var genProto strings.Builder
 	genProto.WriteString("#!/bin/bash\n")
 	genProto.WriteString("SCRIPT_DIR=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\"\n")
@@ -1777,21 +1769,33 @@ func genScripts(projectDir string, modules []string) {
 	genProto.WriteString("mkdir -p \"$PROJECT_DIR/common/kitexGen\"\n")
 	genProto.WriteString("cd \"$PROJECT_DIR/common/idl\"\n")
 	if microAppIDL == "thrift" {
-		for _, m := range modules {
-			genProto.WriteString("kitex -module " + microAppName + " -service " + m + " " + m + ".thrift\n")
+		for _, tables := range moduleTables {
+			for _, tbl := range tables {
+				genProto.WriteString("kitex -module " + microAppName + " -service " + tbl.TableName + " " + tbl.TableName + ".thrift\n")
+			}
 		}
 	} else {
-		for _, m := range modules {
-			genProto.WriteString("protoc --go_out=../../common/kitexGen --go_opt=module=" + microAppName + "/common/kitexGen --go-grpc_out=../../common/kitexGen --go-grpc_opt=module=" + microAppName + "/common/kitexGen " + m + ".proto\n")
+		for _, tables := range moduleTables {
+			for _, tbl := range tables {
+				genProto.WriteString("protoc --go_out=../../common/kitexGen --go_opt=module=" + microAppName + "/common/kitexGen --go-grpc_out=../../common/kitexGen --go-grpc_opt=module=" + microAppName + "/common/kitexGen " + tbl.TableName + ".proto\n")
+			}
 		}
 	}
 	genProto.WriteString("echo \"Done\"\n")
 	os.WriteFile(filepath.Join(projectDir, "scripts", "gen_proto.sh"), []byte(genProto.String()), 0755)
 
+	// build.sh 仍按 module 构建（每个 module 一个 service 目录）
 	var build strings.Builder
 	build.WriteString("#!/bin/bash\n")
 	build.WriteString("SCRIPT_DIR=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\"\n")
-	for _, m := range modules {
+	for _, tables := range moduleTables {
+		// 取第一个表所属的 module（所有表都属于同一 module）
+		if len(tables) > 0 {
+			// moduleTables 的 key 就是 module 名，直接用
+		}
+	}
+	// build.sh 的 modules 列表通过 microAppModules 传入，这里遍历 moduleTables 的 keys
+	for m := range moduleTables {
 		build.WriteString("cd \"$SCRIPT_DIR/../" + toSrvDirName(m) + "\" && go build -o ../../bin/" + toSrvDirName(m) + " ./cmd/main.go\n")
 	}
 	build.WriteString("echo \"Build done\"\n")
@@ -2148,122 +2152,139 @@ func cleanHiddenFiles(projectDir string) {
 // =============================================================================
 
 // genProtoFilesFromSchema 根据表结构生成 proto 文件
-func genProtoFilesFromSchema(projectDir string, tableColumns map[string][]ColumnInfo) {
-	for m, columns := range tableColumns {
-		upper := strings.ToUpper(m[:1]) + m[1:]
-		var proto strings.Builder
+func genProtoFilesFromSchema(projectDir string, moduleTables ModuleTables) {
+	for moduleName, tables := range moduleTables {
+		for _, table := range tables {
+			columns := table.Columns
+			upper := strings.ToUpper(moduleName[:1]) + moduleName[1:]
+			var proto strings.Builder
 
-		// syntax + service 声明
-		tmplPath := filepath.Join(getTemplatesDir(), "micro-app", "proto", "syntax.go.tmpl")
-		tmplBytes, err := os.ReadFile(tmplPath)
-		if err != nil {
-			fmt.Printf("Error reading syntax template: %v\n", err)
-			continue
-		}
-		result, err := executeTemplate(string(tmplBytes), map[string]interface{}{
-			"Module":    m,
-			"AppName":   microAppName,
-			"UpperName": upper,
-		})
-		if err != nil {
-			fmt.Printf("Error executing syntax template: %v\n", err)
-			continue
-		}
-		proto.WriteString(result)
-
-		// 添加字段（跳过主键自增字段）
-		for _, col := range columns {
-			if col.IsPrimary && strings.Contains(strings.ToLower(col.Type), "int") {
-				continue // 跳过主键，Create 不需要
+			// 为每张表生成独立的 proto 文件，使用表名作为文件名
+			protoFileName := table.TableName
+			if protoFileName == "" {
+				protoFileName = moduleName
 			}
-			comment := ""
-			if col.Comment != "" {
-				comment = " // " + col.Comment
-			}
-			proto.WriteString(fmt.Sprintf("  %s %s = %d;%s\n", col.ProtoType, col.Name, col.ProtoIndex, comment))
-		}
 
-		proto.WriteString("}\n\n")
-
-		// Create 响应
-		pkField := getPrimaryKeyField(columns)
-		proto.WriteString(execTemplateOrFail("proto/create_resp.go.tmpl", map[string]interface{}{
-			"UpperName":   upper,
-			"PKProtoType": pkField.ProtoType,
-			"PKLowerName": getLowerFirst(pkField.Name),
-		}))
-
-		// Get 请求 + 响应开头
-		proto.WriteString(execTemplateOrFail("proto/get_resp.go.tmpl", map[string]interface{}{
-			"UpperName":   upper,
-			"PKProtoType": pkField.ProtoType,
-			"PKLowerName": getLowerFirst(pkField.Name),
-		}))
-
-		// Get 响应 - 包含所有字段
-		proto.WriteString(fmt.Sprintf("message Get%sResp {\n", upper))
-		for _, col := range columns {
-			proto.WriteString(fmt.Sprintf("  %s %s = %d;\n", col.ProtoType, getLowerFirst(col.Name), col.ProtoIndex))
-		}
-		proto.WriteString("}\n\n")
-
-		// List 请求
-		proto.WriteString(execTemplateOrFail("proto/list_req.go.tmpl", map[string]interface{}{
-			"UpperName": upper,
-		}))
-
-		// List Item 开头
-		proto.WriteString(execTemplateOrFail("proto/item.go.tmpl", map[string]interface{}{
-			"UpperName": upper,
-		}))
-		for _, col := range columns {
-			proto.WriteString(fmt.Sprintf("  %s %s = %d;\n", col.ProtoType, getLowerFirst(col.Name), col.ProtoIndex))
-		}
-		proto.WriteString("}\n\n")
-
-		// List 响应
-		proto.WriteString(execTemplateOrFail("proto/list_resp.go.tmpl", map[string]interface{}{
-			"UpperName": upper,
-		}))
-
-		// Update 请求开头
-		proto.WriteString(execTemplateOrFail("proto/update_req.go.tmpl", map[string]interface{}{
-			"UpperName":   upper,
-			"PKProtoType": pkField.ProtoType,
-			"PKLowerName": getLowerFirst(pkField.Name),
-		}))
-		for _, col := range columns {
-			if col.IsPrimary {
+			// syntax + service 声明
+			tmplPath := filepath.Join(getTemplatesDir(), "micro-app", "proto", "syntax.go.tmpl")
+			tmplBytes, err := os.ReadFile(tmplPath)
+			if err != nil {
+				fmt.Printf("Error reading syntax template: %v\n", err)
 				continue
 			}
-			proto.WriteString(fmt.Sprintf("  %s %s = %d;\n", col.ProtoType, col.Name, col.ProtoIndex))
+			result, err := executeTemplate(string(tmplBytes), map[string]interface{}{
+				"Module":    protoFileName,
+				"AppName":   microAppName,
+				"UpperName": upper,
+			})
+			if err != nil {
+				fmt.Printf("Error executing syntax template: %v\n", err)
+				continue
+			}
+			proto.WriteString(result)
+
+			// 添加字段（跳过主键自增字段）
+			for _, col := range columns {
+				if col.IsPrimary && strings.Contains(strings.ToLower(col.Type), "int") {
+					continue // 跳过主键，Create 不需要
+				}
+				comment := ""
+				if col.Comment != "" {
+					comment = " // " + col.Comment
+				}
+				proto.WriteString(fmt.Sprintf("  %s %s = %d;%s\n", col.ProtoType, col.Name, col.ProtoIndex, comment))
+			}
+
+			proto.WriteString("}\n\n")
+
+			// Create 响应
+			pkField := getPrimaryKeyField(columns)
+			proto.WriteString(execTemplateOrFail("proto/create_resp.go.tmpl", map[string]interface{}{
+				"UpperName":   upper,
+				"PKProtoType": pkField.ProtoType,
+				"PKLowerName": getLowerFirst(pkField.Name),
+			}))
+
+			// Get 请求 + 响应开头
+			proto.WriteString(execTemplateOrFail("proto/get_resp.go.tmpl", map[string]interface{}{
+				"UpperName":   upper,
+				"PKProtoType": pkField.ProtoType,
+				"PKLowerName": getLowerFirst(pkField.Name),
+			}))
+
+			// Get 响应 - 包含所有字段
+			proto.WriteString(fmt.Sprintf("message Get%sResp {\n", upper))
+			for _, col := range columns {
+				proto.WriteString(fmt.Sprintf("  %s %s = %d;\n", col.ProtoType, getLowerFirst(col.Name), col.ProtoIndex))
+			}
+			proto.WriteString("}\n\n")
+
+			// List 请求
+			proto.WriteString(execTemplateOrFail("proto/list_req.go.tmpl", map[string]interface{}{
+				"UpperName": upper,
+			}))
+
+			// List Item 开头
+			proto.WriteString(execTemplateOrFail("proto/item.go.tmpl", map[string]interface{}{
+				"UpperName": upper,
+			}))
+			for _, col := range columns {
+				proto.WriteString(fmt.Sprintf("  %s %s = %d;\n", col.ProtoType, getLowerFirst(col.Name), col.ProtoIndex))
+			}
+			proto.WriteString("}\n\n")
+
+			// List 响应
+			proto.WriteString(execTemplateOrFail("proto/list_resp.go.tmpl", map[string]interface{}{
+				"UpperName": upper,
+			}))
+
+			// Update 请求开头
+			proto.WriteString(execTemplateOrFail("proto/update_req.go.tmpl", map[string]interface{}{
+				"UpperName":   upper,
+				"PKProtoType": pkField.ProtoType,
+				"PKLowerName": getLowerFirst(pkField.Name),
+			}))
+			for _, col := range columns {
+				if col.IsPrimary {
+					continue
+				}
+				proto.WriteString(fmt.Sprintf("  %s %s = %d;\n", col.ProtoType, col.Name, col.ProtoIndex))
+			}
+			proto.WriteString("}\n\n")
+
+			// Update 响应
+			proto.WriteString(execTemplateOrFail("proto/update_resp.go.tmpl", map[string]interface{}{
+				"UpperName": upper,
+			}))
+
+			// Delete 请求
+			proto.WriteString(execTemplateOrFail("proto/delete_req.go.tmpl", map[string]interface{}{
+				"UpperName":   upper,
+				"PKProtoType": pkField.ProtoType,
+				"PKLowerName": getLowerFirst(pkField.Name),
+			}))
+
+			// Delete 响应
+			proto.WriteString(execTemplateOrFail("proto/delete_resp.go.tmpl", map[string]interface{}{
+				"UpperName": upper,
+			}))
+
+			os.WriteFile(filepath.Join(projectDir, "common", "idl", protoFileName+".proto"), []byte(proto.String()), 0644)
+			fmt.Printf("Generated proto: %s\n", protoFileName+".proto")
 		}
-		proto.WriteString("}\n\n")
-
-		// Update 响应
-		proto.WriteString(execTemplateOrFail("proto/update_resp.go.tmpl", map[string]interface{}{
-			"UpperName": upper,
-		}))
-
-		// Delete 请求
-		proto.WriteString(execTemplateOrFail("proto/delete_req.go.tmpl", map[string]interface{}{
-			"UpperName":   upper,
-			"PKProtoType": pkField.ProtoType,
-			"PKLowerName": getLowerFirst(pkField.Name),
-		}))
-
-		// Delete 响应
-		proto.WriteString(execTemplateOrFail("proto/delete_resp.go.tmpl", map[string]interface{}{
-			"UpperName": upper,
-		}))
-
-		os.WriteFile(filepath.Join(projectDir, "common", "idl", m+".proto"), []byte(proto.String()), 0644)
-		fmt.Printf("Generated proto: %s\n", m+".proto")
 	}
 }
 
 // genBFFFromSchema 基于表结构生成 BFF 层 (Gin)
-func genBFFFromSchema(projectDir, bffName string, tableColumns map[string][]ColumnInfo, protocol string) {
+func genBFFFromSchema(projectDir, bffName string, moduleTables ModuleTables, protocol string) {
+	// 从 moduleTables 推导 tableNames（供 entityName 计算用）
+	var tableNames []string
+	for _, tables := range moduleTables {
+		for _, tbl := range tables {
+			tableNames = append(tableNames, tbl.TableName)
+		}
+	}
+
 	// main.go
 	tmplPath := filepath.Join(getTemplatesDir(), "micro-app", "bff", "main", "gin_main_schema.go.tmpl")
 	tmplStr, err := os.ReadFile(tmplPath)
@@ -2284,15 +2305,18 @@ func genBFFFromSchema(projectDir, bffName string, tableColumns map[string][]Colu
 	}
 	os.WriteFile(filepath.Join(projectDir, toBffDirName(bffName), "cmd", "main.go"), []byte(mainGo), 0644)
 
-	// router.go
+	// router.go - 为每张表生成路由，每张表路由到各自的 Handler
 	type crudRouteModule struct {
 		Name      string
 		UpperName string
 	}
 	var crudRouteModules []crudRouteModule
-	for m := range tableColumns {
-		upper := strings.ToUpper(m[:1]) + m[1:]
-		crudRouteModules = append(crudRouteModules, crudRouteModule{Name: m, UpperName: upper})
+	for _, tables := range moduleTables {
+		for _, table := range tables {
+			entityName := tableToEntityName(table.TableName, tableNames)
+			upperEntity := strings.ToUpper(entityName[:1]) + entityName[1:]
+			crudRouteModules = append(crudRouteModules, crudRouteModule{Name: table.TableName, UpperName: upperEntity})
+		}
 	}
 	tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "router", "gin_router_crud.go.tmpl")
 	tmplStr, err = os.ReadFile(tmplPath)
@@ -2333,22 +2357,22 @@ func Logger() gin.HandlerFunc {
 }
 `), 0644)
 
-	// 为每个 module 生成 rpc_client 和 handler
-	moduleKeys := make([]string, 0, len(tableColumns))
-	for m := range tableColumns {
-		moduleKeys = append(moduleKeys, m)
-	}
-	for i, m := range moduleKeys {
-		columns := tableColumns[m]
-		upper := strings.ToUpper(m[:1]) + m[1:]
-		pkField := getPrimaryKeyField(columns)
-		srvPort := 8000 + i + 1
+	// 为每个 module 下的每张表生成 rpc_client 和 handler
+	srvPort := 50050
+	for moduleName, tables := range moduleTables {
+		upper := strings.ToUpper(moduleName[:1]) + moduleName[1:]
+		for _, table := range tables {
+			columns := table.Columns
+			pkField := getPrimaryKeyField(columns)
 
-		// 生成 rpc_client - 基于表结构的 CRUD 方法
-		genBFFClientFromSchema(projectDir, bffName, m, upper, columns, protocol, m, srvPort)
+			// 生成 rpc_client - 基于表结构的 CRUD 方法
+			entityName := tableToEntityName(table.TableName, tableNames)
+			genBFFClientFromSchema(projectDir, bffName, moduleName, upper, columns, protocol, table.TableName, srvPort)
 
-		// 生成 handler - 入参与 proto 对齐
-		genBFFHandlerFromSchema(projectDir, bffName, m, upper, columns, pkField, m, srvPort)
+			// 生成 handler - 入参与 proto 对齐，使用 entityName 命名
+			genBFFHandlerFromSchema(projectDir, bffName, moduleName, entityName, upper, columns, pkField, table.TableName, srvPort, tableNames)
+		}
+		srvPort++
 	}
 }
 
@@ -2376,21 +2400,32 @@ func genBFFClientFromSchema(projectDir, bffName, m, upper string, columns []Colu
 	}
 }
 
-func genBFFHandlerFromSchema(projectDir, bffName, m, upper string, columns []ColumnInfo, pkField ColumnInfo, tableName string, srvPort int) {
-	data := buildTemplateData(m, columns, bffName, tableName, srvPort)
+func genBFFHandlerFromSchema(projectDir, bffName, m, entityName, upper string, columns []ColumnInfo, pkField ColumnInfo, tableName string, srvPort int, tableNames []string) {
+	if entityName == "" {
+		entityName = tableToEntityName(tableName, tableNames)
+	}
+	data := buildTemplateData(entityName, columns, bffName, tableName, srvPort)
 	tmplDir := filepath.Join(getTemplatesDir(), "microservice", "grpc", "schema")
 
 	if err := renderTemplate(
 		filepath.Join(tmplDir, "bff_handler.go.tmpl"),
 		data,
-		filepath.Join(projectDir, toBffDirName(bffName), "internal", "handler", toCamelFileName(m, "Handler.go")),
+		filepath.Join(projectDir, toBffDirName(bffName), "internal", "handler", toCamelFileName(entityName, "Handler.go")),
 	); err != nil {
 		fmt.Printf("ERROR rendering bff_handler: %v\n", err)
 	}
 }
 
-func genMicroserviceFromSchema(projectDir, module string, port int, protocol string, columns []ColumnInfo, tableName string) {
-	data := buildTemplateData(module, columns, "", tableName, port)
+// tableToEntityName 从表名推导 entity 名称（用于文件名和结构体命名）。
+// 直接使用表名，转换为小驼峰格式。例如："eb_store_product" → "ebStoreProduct"
+// 不再剥离公共前缀，保持表名完整性。
+func tableToEntityName(tableName string, allTableNames []string) string {
+	// 将表名转为小驼峰：eb_store_product → ebStoreProduct
+	return camelCase(tableName)
+}
+
+// genSrvMainAndConfig 为一个 module 生成 main.go 和 config.yaml（只调用一次）
+func genSrvMainAndConfig(projectDir, module string, port int, tables []TableInfo, tableNames []string) {
 	tmplDir := filepath.Join(getTemplatesDir(), "microservice", "grpc", "schema")
 
 	// main.go - 根据注册中心类型选择模板
@@ -2402,9 +2437,39 @@ func genMicroserviceFromSchema(projectDir, module string, port int, protocol str
 	} else {
 		mainTmplFile = "srv_main.go.tmpl"
 	}
+
+	// 构建 handler 注册代码（支持多表）
+	var handlerRegs []string
+	var initRegs string
+	for _, tbl := range tables {
+		entityName := tableToEntityName(tbl.TableName, tableNames)
+		upperEntity := strings.ToUpper(entityName[:1]) + entityName[1:]
+		handlerRegs = append(handlerRegs, fmt.Sprintf("\tpb.Register%sServiceServer(s, handler.New%sHandler(db))\n", upperEntity, upperEntity))
+	}
+	if len(handlerRegs) == 0 {
+		// 默认注册（兼容单表情况）
+		upperModule := strings.ToUpper(module[:1]) + module[1:]
+		initRegs = fmt.Sprintf("\tpb.Register%sServiceServer(s, handler.New%sHandler(db))\n", upperModule, upperModule)
+	} else {
+		initRegs = strings.Join(handlerRegs, "")
+	}
+
+	// 使用 module 名生成 main.go 的 data
+	upperModule := strings.ToUpper(module[:1]) + module[1:]
+	mainData := TemplateData{
+		AppName:           microAppName,
+		Module:            module,
+		UpperModule:       upperModule,
+		LowerModule:       strings.ToLower(module),
+		SrvDirName:        toSrvDirName(module),
+		SrvPort:          port,
+		Register:         microAppRegister,
+		UpperEntityName:   upperModule, // 用 module 名作为默认 entity 名
+		HandlerRegs:      initRegs,    // 多 handler 注册代码
+	}
 	if err := renderTemplate(
 		filepath.Join(tmplDir, mainTmplFile),
-		data,
+		mainData,
 		filepath.Join(projectDir, toSrvDirName(module), "cmd", "main.go"),
 	); err != nil {
 		fmt.Printf("ERROR rendering srv_main: %v\n", err)
@@ -2421,12 +2486,22 @@ func genMicroserviceFromSchema(projectDir, module string, port int, protocol str
 		cfg = fmt.Sprintf("server:\n  host: 0.0.0.0\n  port: %d\n\ndatabase:\n  host: %s\n  port: %s\n  user: %s\n  password: %s\n  database: %s\n", port, microAppDBHost, microAppDBPort, microAppDBUser, microAppDBPassword, microAppDBName)
 	}
 	os.WriteFile(filepath.Join(projectDir, toSrvDirName(module), "configs", "config.yaml"), []byte(cfg), 0644)
+}
+
+// genSrvTableFiles 为一张表生成 model/repo/service/handler 文件
+func genSrvTableFiles(projectDir, module string, columns []ColumnInfo, tableName string, entityName string, allTableNames []string, srvPort int) {
+	// 如果未传入 entityName，通过表名推导（兼容旧调用点）
+	if entityName == "" {
+		entityName = tableToEntityName(tableName, allTableNames)
+	}
+	data := buildTemplateData(module, columns, "", tableName, srvPort, entityName)
+	tmplDir := filepath.Join(getTemplatesDir(), "microservice", "grpc", "schema")
 
 	// model
 	if err := renderTemplate(
 		filepath.Join(tmplDir, "srv_model.go.tmpl"),
 		data,
-		filepath.Join(projectDir, toSrvDirName(module), "internal", "model", module+".go"),
+		filepath.Join(projectDir, toSrvDirName(module), "internal", "model", entityName+".go"),
 	); err != nil {
 		fmt.Printf("ERROR rendering srv_model: %v\n", err)
 	}
@@ -2435,7 +2510,7 @@ func genMicroserviceFromSchema(projectDir, module string, port int, protocol str
 	if err := renderTemplate(
 		filepath.Join(tmplDir, "srv_repo.go.tmpl"),
 		data,
-		filepath.Join(projectDir, toSrvDirName(module), "internal", "repository", toCamelFileName(module, "Repo.go")),
+		filepath.Join(projectDir, toSrvDirName(module), "internal", "repository", toCamelFileName(entityName, "Repo.go")),
 	); err != nil {
 		fmt.Printf("ERROR rendering srv_repo: %v\n", err)
 	}
@@ -2444,7 +2519,7 @@ func genMicroserviceFromSchema(projectDir, module string, port int, protocol str
 	if err := renderTemplate(
 		filepath.Join(tmplDir, "srv_service.go.tmpl"),
 		data,
-		filepath.Join(projectDir, toSrvDirName(module), "internal", "service", toCamelFileName(module, "Service.go")),
+		filepath.Join(projectDir, toSrvDirName(module), "internal", "service", toCamelFileName(entityName, "Service.go")),
 	); err != nil {
 		fmt.Printf("ERROR rendering srv_service: %v\n", err)
 	}
@@ -2453,14 +2528,14 @@ func genMicroserviceFromSchema(projectDir, module string, port int, protocol str
 	if err := renderTemplate(
 		filepath.Join(tmplDir, "srv_handler.go.tmpl"),
 		data,
-		filepath.Join(projectDir, toSrvDirName(module), "internal", "handler", toCamelFileName(module, "Handler.go")),
+		filepath.Join(projectDir, toSrvDirName(module), "internal", "handler", toCamelFileName(entityName, "Handler.go")),
 	); err != nil {
 		fmt.Printf("ERROR rendering srv_handler: %v\n", err)
 	}
 }
 
 // getTemplatesDir 获取模板目录的绝对路径
-func genBFFHertzFromSchema(projectDir, bffName string, tableColumns map[string][]ColumnInfo, protocol string) {
+func genBFFHertzFromSchema(projectDir, bffName string, moduleTables ModuleTables, protocol string) {
 	// main.go
 	tmplPath := filepath.Join(getTemplatesDir(), "micro-app", "bff", "main", "hertz_main_schema.go.tmpl")
 	tmplStr, err := os.ReadFile(tmplPath)
@@ -2487,7 +2562,7 @@ func genBFFHertzFromSchema(projectDir, bffName string, tableColumns map[string][
 		UpperName string
 	}
 	var hertzCrudRouteModules []hertzCrudRouteModule
-	for m := range tableColumns {
+	for m := range moduleTables {
 		upper := strings.ToUpper(m[:1]) + m[1:]
 		hertzCrudRouteModules = append(hertzCrudRouteModules, hertzCrudRouteModule{Name: m, UpperName: upper})
 	}
@@ -2544,12 +2619,12 @@ func CORS() app.HandlerFunc {
 `), 0644)
 
 	// 为每个 module 生成 rpc_client 和 handler
-	moduleKeys2 := make([]string, 0, len(tableColumns))
-	for m := range tableColumns {
+	moduleKeys2 := make([]string, 0, len(moduleTables))
+	for m := range moduleTables {
 		moduleKeys2 = append(moduleKeys2, m)
 	}
 	for i, m := range moduleKeys2 {
-		columns := tableColumns[m]
+		columns := moduleTables[m][0].Columns
 		upper := strings.ToUpper(m[:1]) + m[1:]
 		pkField := getPrimaryKeyField(columns)
 		srvPort := 8000 + i + 1

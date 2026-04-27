@@ -34,8 +34,7 @@ func main() {
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	lis, _ := net.Listen("tcp", addr)
 	s := grpc.NewServer()
-	pb.Register{{.UpperModule}}ServiceServer(s, handler.New{{.UpperModule}}Handler(db))
-	reflection.Register(s)
+{{.HandlerRegs}}	reflection.Register(s)
 
 	// Consul 服务注册
 	consulConfig := api.DefaultConfig()

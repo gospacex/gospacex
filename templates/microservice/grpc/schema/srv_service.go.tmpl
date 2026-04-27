@@ -7,28 +7,28 @@ import (
 	"{{.AppName}}/{{.SrvDirName}}/internal/repository"
 )
 
-type {{.UpperModule}}Service struct { repo *repository.{{.UpperModule}}Repo }
+type {{.UpperEntityName}}Service struct { repo *repository.{{.UpperEntityName}}Repo }
 
-func New{{.UpperModule}}Service(repo *repository.{{.UpperModule}}Repo) *{{.UpperModule}}Service {
-	return &{{.UpperModule}}Service{repo: repo}
+func New{{.UpperEntityName}}Service(repo *repository.{{.UpperEntityName}}Repo) *{{.UpperEntityName}}Service {
+	return &{{.UpperEntityName}}Service{repo: repo}
 }
 
-func (s *{{.UpperModule}}Service) Create(ctx context.Context, m *model.{{.UpperModule}}) error {
+func (s *{{.UpperEntityName}}Service) Create(ctx context.Context, m *model.{{.UpperEntityName}}) error {
 	return s.repo.Create(ctx, m)
 }
 
-func (s *{{.UpperModule}}Service) Get(ctx context.Context, id {{.PKGoType}}) (*model.{{.UpperModule}}, error) {
+func (s *{{.UpperEntityName}}Service) Get(ctx context.Context, id {{.PKGoType}}) (*model.{{.UpperEntityName}}, error) {
 	return s.repo.GetByID(ctx, {{.PKModelConvert}})
 }
 
-func (s *{{.UpperModule}}Service) List(ctx context.Context) ([]*model.{{.UpperModule}}, error) {
+func (s *{{.UpperEntityName}}Service) List(ctx context.Context) ([]*model.{{.UpperEntityName}}, error) {
 	return s.repo.List(ctx)
 }
 
-func (s *{{.UpperModule}}Service) Update(ctx context.Context, m *model.{{.UpperModule}}) error {
+func (s *{{.UpperEntityName}}Service) Update(ctx context.Context, m *model.{{.UpperEntityName}}) error {
 	return s.repo.Update(ctx, m)
 }
 
-func (s *{{.UpperModule}}Service) Delete(ctx context.Context, id {{.PKGoType}}) error {
+func (s *{{.UpperEntityName}}Service) Delete(ctx context.Context, id {{.PKGoType}}) error {
 	return s.repo.Delete(ctx, {{.PKModelConvert}})
 }

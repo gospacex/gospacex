@@ -15,29 +15,29 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type {{.UpperModule}}Handler struct {
-	client *rpcclient.{{.UpperModule}}Client
+type {{.UpperEntityName}}Handler struct {
+	client *rpcclient.{{.UpperEntityName}}Client
 }
 
-func New{{.UpperModule}}Handler() *{{.UpperModule}}Handler {
+func New{{.UpperEntityName}}Handler() *{{.UpperEntityName}}Handler {
 {{- if eq .Register "consul"}}
 	cfg, _ := config.Load("configs/config.yaml")
-	cli, err := rpcclient.New{{.UpperModule}}Client(cfg.Registry.Address)
+	cli, err := rpcclient.New{{.UpperEntityName}}Client(cfg.Registry.Address)
 {{- else if eq .Register "etcd"}}
 	cfg, _ := config.Load("configs/config.yaml")
-	cli, err := rpcclient.New{{.UpperModule}}Client(cfg.Registry.Address)
+	cli, err := rpcclient.New{{.UpperEntityName}}Client(cfg.Registry.Address)
 {{- else}}
-	cli, err := rpcclient.New{{.UpperModule}}Client("127.0.0.1:{{.SrvPort}}")
+	cli, err := rpcclient.New{{.UpperEntityName}}Client("127.0.0.1:{{.SrvPort}}")
 {{- end}}
 	if err != nil {
 		logger.Business.Errorw("failed to create {{.Module}} client", "error", err.Error())
 		panic("failed to create {{.Module}} client: " + err.Error())
 	}
-	logger.Business.Infow("{{.UpperModule}}Handler initialized")
-	return &{{.UpperModule}}Handler{client: cli}
+	logger.Business.Infow("{{.UpperEntityName}}Handler initialized")
+	return &{{.UpperEntityName}}Handler{client: cli}
 }
 
-func (h *{{.UpperModule}}Handler) Create(c *gin.Context) {
+func (h *{{.UpperEntityName}}Handler) Create(c *gin.Context) {
 	start := time.Now()
 	requestID, _ := c.Get("requestID")
 	logger.Access.Infow("create request start", "method", c.Request.Method, "path", c.Request.URL.Path, "requestID", requestID)
@@ -54,7 +54,7 @@ func (h *{{.UpperModule}}Handler) Create(c *gin.Context) {
 		return
 	}
 
-	rpcReq := &pb.Create{{.UpperModule}}Req{
+	rpcReq := &pb.Create{{.UpperEntityName}}Req{
 {{- range .CreateFields}}
 		{{.ProtoGoName}}: req.{{.ProtoGoName}},
 {{- end}}
@@ -73,7 +73,7 @@ func (h *{{.UpperModule}}Handler) Create(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"id": resp.{{.PKProtoGoName}}})
 }
 
-func (h *{{.UpperModule}}Handler) Get(c *gin.Context) {
+func (h *{{.UpperEntityName}}Handler) Get(c *gin.Context) {
 	start := time.Now()
 	requestID, _ := c.Get("requestID")
 	idStr := c.Param("id")
@@ -101,7 +101,7 @@ func (h *{{.UpperModule}}Handler) Get(c *gin.Context) {
 	})
 }
 
-func (h *{{.UpperModule}}Handler) List(c *gin.Context) {
+func (h *{{.UpperEntityName}}Handler) List(c *gin.Context) {
 	start := time.Now()
 	requestID, _ := c.Get("requestID")
 	logger.Business.Infow("list {{.Module}} start", "requestID", requestID)
@@ -125,7 +125,7 @@ func (h *{{.UpperModule}}Handler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
-func (h *{{.UpperModule}}Handler) Update(c *gin.Context) {
+func (h *{{.UpperEntityName}}Handler) Update(c *gin.Context) {
 	start := time.Now()
 	requestID, _ := c.Get("requestID")
 	idStr := c.Param("id")
@@ -149,7 +149,7 @@ func (h *{{.UpperModule}}Handler) Update(c *gin.Context) {
 		return
 	}
 
-	rpcReq := &pb.Update{{.UpperModule}}Req{
+	rpcReq := &pb.Update{{.UpperEntityName}}Req{
 		{{.PKProtoGoName}}: {{.PKGoType}}(id),
 {{- range .UpdateFields}}
 		{{.ProtoGoName}}: req.{{.ProtoGoName}},
@@ -169,7 +169,7 @@ func (h *{{.UpperModule}}Handler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": resp.Success})
 }
 
-func (h *{{.UpperModule}}Handler) Delete(c *gin.Context) {
+func (h *{{.UpperEntityName}}Handler) Delete(c *gin.Context) {
 	start := time.Now()
 	requestID, _ := c.Get("requestID")
 	idStr := c.Param("id")

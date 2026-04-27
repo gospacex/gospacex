@@ -11,17 +11,17 @@ import (
 	"gorm.io/gorm"
 )
 
-type {{.UpperModule}}Repo struct { db *gorm.DB }
+type {{.UpperEntityName}}Repo struct { db *gorm.DB }
 
-func New{{.UpperModule}}Repo(db *gorm.DB) *{{.UpperModule}}Repo {
+func New{{.UpperEntityName}}Repo(db *gorm.DB) *{{.UpperEntityName}}Repo {
 	if db == nil {
 		db, _ = database.NewDB(nil)
 	}
-	logger.Business.Infow("{{.UpperModule}}Repo initialized")
-	return &{{.UpperModule}}Repo{db: db}
+	logger.Business.Infow("{{.UpperEntityName}}Repo initialized")
+	return &{{.UpperEntityName}}Repo{db: db}
 }
 
-func (r *{{.UpperModule}}Repo) Create(ctx context.Context, m *model.{{.UpperModule}}) error {
+func (r *{{.UpperEntityName}}Repo) Create(ctx context.Context, m *model.{{.UpperEntityName}}) error {
 	start := time.Now()
 	logger.Business.Infow("create {{.Module}}", "model", m)
 
@@ -34,11 +34,11 @@ func (r *{{.UpperModule}}Repo) Create(ctx context.Context, m *model.{{.UpperModu
 	return nil
 }
 
-func (r *{{.UpperModule}}Repo) GetByID(ctx context.Context, id {{.PKGoType}}) (*model.{{.UpperModule}}, error) {
+func (r *{{.UpperEntityName}}Repo) GetByID(ctx context.Context, id {{.PKGoType}}) (*model.{{.UpperEntityName}}, error) {
 	start := time.Now()
 	logger.Business.Infow("get {{.Module}} by id", "id", id)
 
-	var m model.{{.UpperModule}}
+	var m model.{{.UpperEntityName}}
 {{- if .HasSoftDelete}}
 	if err := r.db.WithContext(ctx).Where("{{.PKProtoName}} = ? AND {{.SoftDeleteCol}} = 0", id).First(&m).Error; err != nil {
 {{- else}}
@@ -52,11 +52,11 @@ func (r *{{.UpperModule}}Repo) GetByID(ctx context.Context, id {{.PKGoType}}) (*
 	return &m, nil
 }
 
-func (r *{{.UpperModule}}Repo) List(ctx context.Context) ([]*model.{{.UpperModule}}, error) {
+func (r *{{.UpperEntityName}}Repo) List(ctx context.Context) ([]*model.{{.UpperEntityName}}, error) {
 	start := time.Now()
 	logger.Business.Infow("list {{.Module}}")
 
-	var list []*model.{{.UpperModule}}
+	var list []*model.{{.UpperEntityName}}
 {{- if .HasSoftDelete}}
 	err := r.db.WithContext(ctx).Where("{{.SoftDeleteCol}} = 0").Find(&list).Error
 {{- else}}
@@ -71,7 +71,7 @@ func (r *{{.UpperModule}}Repo) List(ctx context.Context) ([]*model.{{.UpperModul
 	return list, nil
 }
 
-func (r *{{.UpperModule}}Repo) Update(ctx context.Context, m *model.{{.UpperModule}}) error {
+func (r *{{.UpperEntityName}}Repo) Update(ctx context.Context, m *model.{{.UpperEntityName}}) error {
 	start := time.Now()
 	logger.Business.Infow("update {{.Module}}", "id", m.Id)
 
@@ -84,14 +84,14 @@ func (r *{{.UpperModule}}Repo) Update(ctx context.Context, m *model.{{.UpperModu
 	return nil
 }
 
-func (r *{{.UpperModule}}Repo) Delete(ctx context.Context, id {{.PKGoType}}) error {
+func (r *{{.UpperEntityName}}Repo) Delete(ctx context.Context, id {{.PKGoType}}) error {
 	start := time.Now()
 	logger.Business.Infow("delete {{.Module}}", "id", id)
 
 {{- if .HasSoftDelete}}
-	err := r.db.WithContext(ctx).Model(&model.{{.UpperModule}}{}).Where("{{.PKProtoName}} = ?", id).Update("{{.SoftDeleteCol}}", 1).Error
+	err := r.db.WithContext(ctx).Model(&model.{{.UpperEntityName}}{}).Where("{{.PKProtoName}} = ?", id).Update("{{.SoftDeleteCol}}", 1).Error
 {{- else}}
-	err := r.db.WithContext(ctx).Delete(&model.{{.UpperModule}}{}, id).Error
+	err := r.db.WithContext(ctx).Delete(&model.{{.UpperEntityName}}{}, id).Error
 {{- end}}
 	if err != nil {
 		logger.Business.Errorw("delete {{.Module}} failed", "error", err.Error())

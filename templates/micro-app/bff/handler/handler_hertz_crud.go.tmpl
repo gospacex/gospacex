@@ -11,15 +11,15 @@ import (
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 )
 
-type {{.UpperModule}}Handler struct {
-	client *rpcclient.{{.UpperModule}}Client
+type {{.UpperEntityName}}Handler struct {
+	client *rpcclient.{{.UpperEntityName}}Client
 }
 
-func New{{.UpperModule}}Handler() *{{.UpperModule}}Handler {
-	return &{{.UpperModule}}Handler{}
+func New{{.UpperEntityName}}Handler() *{{.UpperEntityName}}Handler {
+	return &{{.UpperEntityName}}Handler{}
 }
 
-func (h *{{.UpperModule}}Handler) Create(ctx context.Context, c *app.RequestContext) {
+func (h *{{.UpperEntityName}}Handler) Create(ctx context.Context, c *app.RequestContext) {
 	var req struct {
 {{range .CreateFields}}		{{.GoType}} {{.Name}} `json:"{{.Name}}"`
 {{end}}	}
@@ -28,7 +28,7 @@ func (h *{{.UpperModule}}Handler) Create(ctx context.Context, c *app.RequestCont
 		return
 	}
 
-	rpcReq := &{{.Module}}.Create{{.UpperModule}}Req{
+	rpcReq := &{{.Module}}.Create{{.UpperEntityName}}Req{
 {{range .CreateFields}}		{{.ProtoGoName}}: req.{{.Name}},
 {{end}}	}
 
@@ -40,7 +40,7 @@ func (h *{{.UpperModule}}Handler) Create(ctx context.Context, c *app.RequestCont
 	c.JSON(consts.StatusOK, map[string]interface{}{"id": resp.{{.PKProtoGoName}}})
 }
 
-func (h *{{.UpperModule}}Handler) Get(ctx context.Context, c *app.RequestContext) {
+func (h *{{.UpperEntityName}}Handler) Get(ctx context.Context, c *app.RequestContext) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
@@ -59,7 +59,7 @@ func (h *{{.UpperModule}}Handler) Get(ctx context.Context, c *app.RequestContext
 {{end}}	})
 }
 
-func (h *{{.UpperModule}}Handler) List(ctx context.Context, c *app.RequestContext) {
+func (h *{{.UpperEntityName}}Handler) List(ctx context.Context, c *app.RequestContext) {
 	resp, err := h.client.List(ctx)
 	if err != nil {
 		c.JSON(consts.StatusInternalServerError, map[string]interface{}{"error": err.Error()})
@@ -75,7 +75,7 @@ func (h *{{.UpperModule}}Handler) List(ctx context.Context, c *app.RequestContex
 	c.JSON(consts.StatusOK, map[string]interface{}{"items": items})
 }
 
-func (h *{{.UpperModule}}Handler) Update(ctx context.Context, c *app.RequestContext) {
+func (h *{{.UpperEntityName}}Handler) Update(ctx context.Context, c *app.RequestContext) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
@@ -92,7 +92,7 @@ func (h *{{.UpperModule}}Handler) Update(ctx context.Context, c *app.RequestCont
 		return
 	}
 
-	rpcReq := &{{.Module}}.Update{{.UpperModule}}Req{
+	rpcReq := &{{.Module}}.Update{{.UpperEntityName}}Req{
 		{{.PKProtoGoName}}: {{.PKGoType}}(id),
 {{range .UpdateFields}}		{{.ProtoGoName}}: req.{{.Name}},
 {{end}}	}
@@ -105,7 +105,7 @@ func (h *{{.UpperModule}}Handler) Update(ctx context.Context, c *app.RequestCont
 	c.JSON(consts.StatusOK, map[string]interface{}{"success": resp.Success})
 }
 
-func (h *{{.UpperModule}}Handler) Delete(ctx context.Context, c *app.RequestContext) {
+func (h *{{.UpperEntityName}}Handler) Delete(ctx context.Context, c *app.RequestContext) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {

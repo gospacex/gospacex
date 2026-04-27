@@ -11,7 +11,7 @@ import (
 	"{{.AppName}}/pkg/config"
 	"{{.AppName}}/pkg/database"
 	"{{.AppName}}/{{.SrvDirName}}/internal/handler"
-	{{.Module}} "{{.AppName}}/common/kitexGen/{{.Module}}"
+	pb "{{.AppName}}/common/kitexGen/{{.Module}}"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
@@ -36,8 +36,7 @@ func main() {
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	lis, _ := net.Listen("tcp", addr)
 	s := grpc.NewServer()
-	{{.Module}}.Register{{.UpperModule}}ServiceServer(s, handler.New{{.UpperModule}}Handler(db))
-	reflection.Register(s)
+{{.HandlerRegs}}	reflection.Register(s)
 
 	// Etcd 服务注册
 	etcdClient, err := clientv3.New(clientv3.Config{

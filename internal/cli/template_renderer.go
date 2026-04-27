@@ -27,9 +27,11 @@ type TemplateFieldData struct {
 // TemplateData 模板渲染数据
 type TemplateData struct {
 	AppName     string
-	Module      string
+	Module      string // 服务 module 名（如 "srvProduct"），用于 import 路径
 	UpperModule string
 	LowerModule string
+	EntityName     string // entity 名（如 "Attr"），用于 struct/文件名
+	UpperEntityName string // entity 名的 CamelCase（如 "ProductAttr"），用于 proto 类型引用
 	BFFName     string
 	TableName   string
 	SrvPort     int    // 微服务 gRPC 端口
@@ -52,15 +54,23 @@ type TemplateData struct {
 	Columns     []TemplateFieldData
 	CreateFields []TemplateFieldData // Create 请求字段（排除自增主键）
 	UpdateFields []TemplateFieldData // Update 请求字段（排除主键）
+	HandlerRegs  string // main.go 中注册多个 handler 的代码
 }
 
 // buildTemplateData 从 ColumnInfo 构建模板数据
-func buildTemplateData(module string, columns []ColumnInfo, bffName string, tableName string, srvPort int) TemplateData {
+// entityName 用于 struct 命名（可为空，此时等于 module）
+func buildTemplateData(module string, columns []ColumnInfo, bffName string, tableName string, srvPort int, entityNames ...string) TemplateData {
 	pkField := getPrimaryKeyField(columns)
 	pkGoType := protoTypeToGoType(pkField.ProtoType)
 	pkProtoGoName := toProtoGoFieldName(pkField.Name)
 	upperModule := strings.ToUpper(module[:1]) + module[1:]
 	lowerModule := strings.ToLower(module)
+	// entityName 用于 struct 命名（若未提供则用 module）
+	entityName := module
+	if len(entityNames) > 0 && entityNames[0] != "" {
+		entityName = entityNames[0]
+	}
+	upperEntityName := toProtoGoFieldName(entityName)
 
 	var cols []TemplateFieldData
 	var createFields []TemplateFieldData
@@ -115,13 +125,15 @@ func buildTemplateData(module string, columns []ColumnInfo, bffName string, tabl
 	pkUpdateReqConvert := fmt.Sprintf("%s(req.%s)", pkGoType, pkProtoGoName)
 	pkDeleteReqConvert := fmt.Sprintf("%s(req.%s)", pkGoType, pkProtoGoName)
 	pkRespConvert := fmt.Sprintf("%s(m.%s)", pkGoType, toProtoGoFieldName(pkField.Name))
-	repoInitCode := "repository.New" + upperModule + "Repo(db)"
+	repoInitCode := "repository.New" + upperEntityName + "Repo(db)"
 
 	return TemplateData{
 		AppName:            microAppName,
 		Module:             module,
 		UpperModule:        upperModule,
 		LowerModule:        lowerModule,
+		EntityName:         entityName,
+		UpperEntityName:    upperEntityName,
 		BFFName:            bffName,
 		TableName:          tableName,
 		SrvPort:           srvPort,

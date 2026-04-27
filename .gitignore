@@ -16,7 +16,7 @@
 *.out
 
 # Dependency directories (remove the comment below to include it)
-# vendor/
+vendor/
 
 # Go workspace file
 go.work
@@ -25,9 +25,12 @@ go.work.sum
 # env file
 .env
 .idea
+.planning
 
 # AI coding assistants and spec files
 .opencode/
+.bg-shell
+.claude
 opencode.json
 .claudecode/
 .gsd/
@@ -40,11 +43,13 @@ claudecode.lock
 spec-kit.lock
 .worktrees
 
-
 output
 
 examples
 data
-
+docs/superpowers
+docs/1.md
+docs/logging-usage.md
+docs/middleware.md
 
 .worktrees

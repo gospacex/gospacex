@@ -11,12 +11,12 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-type {{.UpperModule}}Client struct {
+type {{.UpperEntityName}}Client struct {
 	conn   *grpc.ClientConn
-	client pb.{{.UpperModule}}ServiceClient
+	client pb.{{.UpperEntityName}}ServiceClient
 }
 
-func New{{.UpperModule}}Client(consulAddr string) (*{{.UpperModule}}Client, error) {
+func New{{.UpperEntityName}}Client(consulAddr string) (*{{.UpperEntityName}}Client, error) {
 	// 从 Consul 发现服务
 	consulConfig := api.DefaultConfig()
 	consulConfig.Address = consulAddr
@@ -34,41 +34,41 @@ func New{{.UpperModule}}Client(consulAddr string) (*{{.UpperModule}}Client, erro
 	if err != nil {
 		return nil, err
 	}
-	return &{{.UpperModule}}Client{conn: conn, client: pb.New{{.UpperModule}}ServiceClient(conn)}, nil
+	return &{{.UpperEntityName}}Client{conn: conn, client: pb.New{{.UpperEntityName}}ServiceClient(conn)}, nil
 }
 
-func (c *{{.UpperModule}}Client) Close() error {
+func (c *{{.UpperEntityName}}Client) Close() error {
 	if c.conn != nil {
 		return c.conn.Close()
 	}
 	return nil
 }
 
-// New{{.UpperModule}}ClientDirect 直接连接（绕过 Consul，用于测试）
-func New{{.UpperModule}}ClientDirect(grpcAddr string) (*{{.UpperModule}}Client, error) {
+// New{{.UpperEntityName}}ClientDirect 直接连接（绕过 Consul，用于测试）
+func New{{.UpperEntityName}}ClientDirect(grpcAddr string) (*{{.UpperEntityName}}Client, error) {
 	conn, err := grpc.Dial(grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
 	}
-	return &{{.UpperModule}}Client{conn: conn, client: pb.New{{.UpperModule}}ServiceClient(conn)}, nil
+	return &{{.UpperEntityName}}Client{conn: conn, client: pb.New{{.UpperEntityName}}ServiceClient(conn)}, nil
 }
 
-func (c *{{.UpperModule}}Client) Create(ctx context.Context, req *pb.Create{{.UpperModule}}Req) (*pb.Create{{.UpperModule}}Resp, error) {
+func (c *{{.UpperEntityName}}Client) Create(ctx context.Context, req *pb.Create{{.UpperEntityName}}Req) (*pb.Create{{.UpperEntityName}}Resp, error) {
 	return c.client.Create(ctx, req)
 }
 
-func (c *{{.UpperModule}}Client) Get(ctx context.Context, id {{.PKGoType}}) (*pb.Get{{.UpperModule}}Resp, error) {
-	return c.client.Get(ctx, &pb.Get{{.UpperModule}}Req{ {{.PKProtoGoName}}: id })
+func (c *{{.UpperEntityName}}Client) Get(ctx context.Context, id {{.PKGoType}}) (*pb.Get{{.UpperEntityName}}Resp, error) {
+	return c.client.Get(ctx, &pb.Get{{.UpperEntityName}}Req{ {{.PKProtoGoName}}: id })
 }
 
-func (c *{{.UpperModule}}Client) List(ctx context.Context) (*pb.List{{.UpperModule}}Resp, error) {
-	return c.client.List(ctx, &pb.List{{.UpperModule}}Req{})
+func (c *{{.UpperEntityName}}Client) List(ctx context.Context) (*pb.List{{.UpperEntityName}}Resp, error) {
+	return c.client.List(ctx, &pb.List{{.UpperEntityName}}Req{})
 }
 
-func (c *{{.UpperModule}}Client) Update(ctx context.Context, req *pb.Update{{.UpperModule}}Req) (*pb.Update{{.UpperModule}}Resp, error) {
+func (c *{{.UpperEntityName}}Client) Update(ctx context.Context, req *pb.Update{{.UpperEntityName}}Req) (*pb.Update{{.UpperEntityName}}Resp, error) {
 	return c.client.Update(ctx, req)
 }
 
-func (c *{{.UpperModule}}Client) Delete(ctx context.Context, id {{.PKGoType}}) (*pb.Delete{{.UpperModule}}Resp, error) {
-	return c.client.Delete(ctx, &pb.Delete{{.UpperModule}}Req{ {{.PKProtoGoName}}: id })
+func (c *{{.UpperEntityName}}Client) Delete(ctx context.Context, id {{.PKGoType}}) (*pb.Delete{{.UpperEntityName}}Resp, error) {
+	return c.client.Delete(ctx, &pb.Delete{{.UpperEntityName}}Req{ {{.PKProtoGoName}}: id })
 }

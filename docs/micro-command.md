@@ -405,7 +405,7 @@ go run . micro \
   --db-name myshop \
   --db-table eb_product,eb_product_description \
   --db-join-condition "eb_product.id=eb_product_description.product_id" \
-  --db-join-style "eb_product:eb_product_description=1tn"
+  --db-join-style "eb_product:eb_product_description=1t1"
 ```
 
 多组联表（每组 condition + style 一一对应）：
