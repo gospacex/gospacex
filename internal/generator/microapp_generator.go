@@ -199,7 +199,7 @@ func (g *MicroAppGenerator) createDirectories() error {
 	// 微服务目录 - 仅在有数据库配置时创建 internal 目录和文件
 	if g.config.DBName != "" {
 		for _, mod := range g.config.Modules {
-srvDir := filepath.Join(projectDir, toSnakeCaseDir(mod.Name))
+srvDir := filepath.Join(projectDir, toCamelCaseDir(mod.Name))
 			srvDirs := []string{
 				filepath.Join(srvDir, "cmd"),
 				filepath.Join(srvDir, "configs"),
@@ -288,15 +288,17 @@ const (
 
 		for _, mod := range g.config.Modules {
 			protoContent := g.generateProtoContent(&mod)
-			protoPath := filepath.Join(idlDir, mod.Name+".proto")
+			// 使用表名转换作为 proto 文件名（去掉前缀，小驼峰）
+			protoFileName := toCamelCaseFile(mod.TableName) + ".proto"
+			protoPath := filepath.Join(idlDir, protoFileName)
 			if err := os.WriteFile(protoPath, []byte(protoContent), 0644); err != nil {
 				return fmt.Errorf("write proto file: %w", err)
 			}
 
 			// 调用 protoc 生成 pb.go 文件
 			cmd := exec.Command("sh", "-c",
-				fmt.Sprintf("cd %s && protoc -I . --go_out=../kitex_gen --go-grpc_out=../kitex_gen %s.proto",
-					idlDir, mod.Name))
+				fmt.Sprintf("cd %s && protoc -I . --go_out=../kitex_gen --go-grpc_out=../kitex_gen %s",
+					idlDir, protoFileName))
 			output, err := cmd.CombinedOutput()
 			if err != nil {
 				log.Printf("protoc output: %%s", string(output))
@@ -1285,7 +1287,7 @@ func (g *MicroAppGenerator) generateMicroService(mod *ModuleConfig) error {
 // generateGRPCMicroService 生成 gRPC 微服务
 func (g *MicroAppGenerator) generateGRPCMicroService(mod *ModuleConfig) error {
 	projectDir := filepath.Join(g.outputDir, g.config.ProjectName)
-	srvDir := filepath.Join(projectDir, toSnakeCaseDir(mod.Name))
+	srvDir := filepath.Join(projectDir, toCamelCaseDir(mod.Name))
 
 	// main.go
 	mainContent := fmt.Sprintf(`package main
@@ -2989,7 +2991,7 @@ func Recovery() app.HandlerFunc {
 // generateKitexMicroService 生成 Kitex 微服务
 func (g *MicroAppGenerator) generateKitexMicroService(mod *ModuleConfig) error {
 	projectDir := filepath.Join(g.outputDir, g.config.ProjectName)
-	srvDir := filepath.Join(projectDir, toSnakeCaseDir(mod.Name))
+	srvDir := filepath.Join(projectDir, toCamelCaseDir(mod.Name))
 
 	// main.go - Kitex 服务端
 	mainContent := fmt.Sprintf(`package main
@@ -3350,7 +3352,7 @@ func checkProtoTools() bool {
 	return allInstalled
 }
 
-func toSnakeCaseDir(tableName string) string {
+func toCamelCaseDir(tableName string) string {
 	prefixes := []string{"eb_", "t_", "sys_", "tb_", "bc_"}
 	name := tableName
 	for _, prefix := range prefixes {
@@ -3359,7 +3361,15 @@ func toSnakeCaseDir(tableName string) string {
 			break
 		}
 	}
-	return "srv_" + name
+	parts := strings.Split(name, "_")
+	result := "srv"
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		result += strings.ToUpper(part[:1]) + part[1:]
+	}
+	return result
 }
 
 func toCamelCaseFile(tableName string) string {

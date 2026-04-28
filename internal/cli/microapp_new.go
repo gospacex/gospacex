@@ -45,6 +45,32 @@ var (
 	microAppConfigFile    string   // 配置文件路径: yaml/json/toml
 )
 
+// toCamelCaseFile converts table name to camelCase file name
+// e.g., "eb_store_product" -> "storeProduct"
+func toCamelCaseFile(tableName string) string {
+	prefixes := []string{"eb_", "t_", "sys_", "tb_", "bc_"}
+	name := tableName
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(strings.ToLower(name), prefix) {
+			name = strings.TrimPrefix(name, prefix)
+			break
+		}
+	}
+	parts := strings.Split(name, "_")
+	result := ""
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		if result == "" {
+			result += strings.ToLower(part[:1]) + part[1:]
+		} else {
+			result += strings.ToUpper(part[:1]) + part[1:]
+		}
+	}
+	return result
+}
+
 var newMicroAppCmd = &cobra.Command{
 	Use:     "micro-app",
 	Aliases: []string{"micro"},
@@ -2164,8 +2190,8 @@ func genProtoFilesFromSchema(projectDir string, moduleTables ModuleTables) {
 			columns := table.Columns
 			var proto strings.Builder
 
-			// 为每张表生成独立的 proto 文件，使用表名作为文件名
-			protoFileName := table.TableName
+			// 为每张表生成独立的 proto 文件，使用表名转换为小驼峰作为文件名
+			protoFileName := toCamelCaseFile(table.TableName)
 			if protoFileName == "" {
 				protoFileName = moduleName
 			}
