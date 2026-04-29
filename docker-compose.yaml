@@ -123,13 +123,12 @@ services:
       - "9300:9300"
     volumes:
       - ./data/search/elasticsearch/data:/usr/share/elasticsearch/data
-    restart: always
+#    restart: always
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
       interval: 30s
       timeout: 10s
       retries: 5
-
   kibana:
     image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.elastic.co/kibana/kibana:7.6.2
     container_name: kibana

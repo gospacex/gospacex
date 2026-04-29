@@ -131,9 +131,13 @@ func (g *MicroAppGenerator) prepareModules() error {
 	protoGen := NewProtoGenerator(g.db, "", g.config.ProjectName)
 
 	for i, mod := range g.config.Modules {
-		// 生成服务名和首字母大写
-		mod.UpperName = strings.ToUpper(mod.Name[:1]) + mod.Name[1:]
+		// 去除表名的 eb_ 前缀 (eb_store_product → store_product)
+		strippedName := strings.TrimPrefix(mod.Name, "eb_")
+		
+		// 生成服务名和首字母大写（使用 toPascalCase 处理下划线）
+		mod.UpperName = toPascalCase(strippedName)
 		mod.ServiceName = mod.UpperName
+		mod.Name = strippedName // 更新模块名
 
 		// 分配端口 (从 8001 开始)
 		mod.Port = 8001 + i
@@ -327,7 +331,7 @@ service %%sService {
   rpc Delete(Delete%sReq) returns (Delete%%sResp);
 }
 
-`, mod.Name, g.config.ProjectName, mod.Name, mod.ServiceName,
+`, mod.Name, g.config.ProjectName, toCamelCaseFile(mod.TableName), mod.ServiceName,
 		mod.ServiceName, mod.ServiceName, mod.ServiceName, mod.ServiceName,
 		mod.ServiceName, mod.ServiceName, mod.ServiceName, mod.ServiceName))
 
@@ -1059,16 +1063,17 @@ func NewRouter() *gin.Engine {
 `, g.config.ProjectName, bffName))
 
 	for _, mod := range g.config.Modules {
+		routeName := toCamelCaseFile(mod.TableName)
 		routerContent.WriteString(fmt.Sprintf(`	// %s 模块
 	%sHandler := handler.New%sHandler()
-	r.GET("/api/v1/%ss", %%sHandler.List)
-	r.GET("/api/v1/%ss/:id", %%sHandler.Get)
-	r.POST("/api/v1/%ss", %%sHandler.Create)
-	r.PUT("/api/v1/%ss/:id", %%sHandler.Update)
-r.DELETE("/api/v1/%%ss/:id", %%sHandler.Delete)
+	r.GET("/api/v1/%ss", %sHandler.List)
+	r.GET("/api/v1/%ss/:id", %sHandler.Get)
+	r.POST("/api/v1/%ss", %sHandler.Create)
+	r.PUT("/api/v1/%ss/:id", %sHandler.Update)
+	r.DELETE("/api/v1/%ss/:id", %sHandler.Delete)
 
-`, mod.UpperName, mod.Name,
-		mod.Name, mod.Name, mod.Name, mod.Name, mod.Name))
+`, mod.UpperName, routeName,
+		routeName, routeName, routeName, routeName, routeName))
 	}
 	routerContent.WriteString("\treturn r\n}\n")
 
@@ -1153,16 +1158,16 @@ func (c *%sClient) Update(ctx context.Context, id int64, name string) (*%s.Updat
 func (c *%sClient) Delete(ctx context.Context, id int64) (*%s.Delete%sResp, error) {
 	return c.client.Delete%s(ctx, &%s.Delete%sReq{Id: id})
 }
-`, g.config.ProjectName, mod.Name,
-		mod.ServiceName, mod.Name, mod.ServiceName,
+`, g.config.ProjectName, toCamelCaseFile(mod.Name),
+		mod.ServiceName, toCamelCaseFile(mod.Name), mod.ServiceName,
 		mod.ServiceName, mod.ServiceName, mod.ServiceName,
-		mod.Name, mod.ServiceName,
-		mod.ServiceName, mod.ServiceName, mod.Name, mod.ServiceName,
-		mod.ServiceName, mod.Name, mod.ServiceName, mod.ServiceName,
-		mod.Name, mod.ServiceName, mod.ServiceName, mod.Name, mod.ServiceName,
-		mod.ServiceName, mod.Name, mod.ServiceName, mod.ServiceName, mod.Name, mod.ServiceName,
-		mod.ServiceName, mod.Name, mod.ServiceName, mod.ServiceName, mod.Name, mod.ServiceName,
-		mod.ServiceName, mod.Name, mod.ServiceName, mod.ServiceName, mod.Name, mod.ServiceName)
+		toCamelCaseFile(mod.Name), mod.ServiceName,
+		mod.ServiceName, mod.ServiceName, toCamelCaseFile(mod.Name), mod.ServiceName,
+		mod.ServiceName, toCamelCaseFile(mod.Name), mod.ServiceName, mod.ServiceName,
+		toCamelCaseFile(mod.Name), mod.ServiceName, mod.ServiceName, toCamelCaseFile(mod.Name), mod.ServiceName,
+		mod.ServiceName, toCamelCaseFile(mod.Name), mod.ServiceName, mod.ServiceName, toCamelCaseFile(mod.Name), mod.ServiceName,
+		mod.ServiceName, toCamelCaseFile(mod.Name), mod.ServiceName, mod.ServiceName, toCamelCaseFile(mod.Name), mod.ServiceName,
+		mod.ServiceName, toCamelCaseFile(mod.Name), mod.ServiceName, mod.ServiceName, toCamelCaseFile(mod.Name), mod.ServiceName)
 
 	if err := os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff_%s", bffName), "internal", "rpc_client", toCamelCaseFile(mod.Name)+"Client.go"), []byte(clientContent), 0644); err != nil {
 		return err
@@ -1267,7 +1272,7 @@ func (h *%sHandler) Delete(c *gin.Context) {
 		mod.ServiceName, mod.ServiceName,
 		mod.ServiceName, fmt.Sprintf("%d", mod.Port))
 
-	return os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff_%s", bffName), "internal", "handler", toCamelCaseFile(mod.Name)+"Handler.go"), []byte(handlerContent), 0644)
+	return os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff_%s", bffName), "internal", "handler", toCamelCaseFile(mod.TableName)+"Handler.go"), []byte(handlerContent), 0644)
 }
 
 func (g *MicroAppGenerator) generateMicroService(mod *ModuleConfig) error {
@@ -1350,10 +1355,10 @@ func generateListener(addr string) net.Listener {
 	}
 	return lis
 }
-`, g.config.ProjectName, mod.Name,
+`, g.config.ProjectName, toPascalCase(mod.Name),
 		g.config.ProjectName, g.config.ProjectName,
 		g.config.ProjectName, g.config.ProjectName,
-		g.config.ProjectName, mod.Name,
+		g.config.ProjectName, toCamelCaseFile(mod.TableName),
 		mod.ServiceName, mod.ServiceName,
 		mod.ServiceName, mod.ServiceName, mod.ServiceName,
 		mod.ServiceName, mod.UpperName)
@@ -1455,22 +1460,22 @@ func (h *%sHandler) Delete(ctx context.Context, req *%s.Delete%sReq) (*%s.Delete
 	}
 	return &%s.Delete%sResp{Success: true}, nil
 }
-`, g.config.ProjectName, mod.Name,
-		g.config.ProjectName, mod.Name,
-		g.config.ProjectName, mod.Name,
-		g.config.ProjectName, mod.Name,
+`, g.config.ProjectName, toPascalCase(mod.Name),
+		g.config.ProjectName, toPascalCase(mod.Name),
+		g.config.ProjectName, toPascalCase(mod.Name),
+		g.config.ProjectName, toCamelCaseFile(mod.TableName),
 		mod.ServiceName,
 		mod.ServiceName, mod.ServiceName, mod.ServiceName,
 		mod.ServiceName, mod.ServiceName, mod.ServiceName,
 		mod.ServiceName,
-		mod.ServiceName, mod.ServiceName, mod.Name, mod.ServiceName,
-		mod.ServiceName, mod.ServiceName, mod.Name, mod.ServiceName,
-		mod.ServiceName, mod.ServiceName, mod.Name, mod.ServiceName,
-		mod.ServiceName, mod.Name,
-		mod.ServiceName, mod.Name,
+		mod.ServiceName, mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName,
+		mod.ServiceName, mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName,
+		mod.ServiceName, mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName,
+		mod.ServiceName, toCamelCaseFile(mod.TableName),
+		mod.ServiceName, toCamelCaseFile(mod.TableName),
 		mod.ServiceName,
-		mod.ServiceName, mod.Name, mod.ServiceName, mod.ServiceName,
-		mod.ServiceName, mod.Name, mod.ServiceName,
+		mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName, mod.ServiceName,
+		mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName,
 		mod.ServiceName, mod.Name, mod.ServiceName,
 		mod.ServiceName,
 		mod.ServiceName, mod.Name, mod.ServiceName,
@@ -1478,7 +1483,7 @@ func (h *%sHandler) Delete(ctx context.Context, req *%s.Delete%sReq) (*%s.Delete
 		mod.ServiceName,
 		mod.ServiceName, mod.Name, mod.ServiceName,
 		mod.ServiceName, mod.Name, mod.ServiceName)
-	if err := os.WriteFile(filepath.Join(srvDir, "internal", "handler", toCamelCaseFile(mod.Name)+"Handler.go"), []byte(handlerContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(srvDir, "internal", "handler", toCamelCaseFile(mod.TableName)+"Handler.go"), []byte(handlerContent), 0644); err != nil {
 		return err
 	}
 
@@ -1568,7 +1573,7 @@ func (r *%sRepository) Delete(ctx context.Context, id int64) error {
 		mod.UpperName,
 		mod.UpperName,
 		mod.UpperName)
-	if err := os.WriteFile(filepath.Join(srvDir, "internal", "repository", toCamelCaseFile(mod.Name)+"Repo.go"), []byte(repoContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(srvDir, "internal", "repository", toCamelCaseFile(mod.TableName)+"Repo.go"), []byte(repoContent), 0644); err != nil {
 		return err
 	}
 
@@ -1636,7 +1641,7 @@ func (s *%sService) Delete(ctx context.Context, id int64) error {
 		mod.UpperName,
 		mod.UpperName,
 		mod.UpperName)
-	return os.WriteFile(filepath.Join(srvDir, "internal", "service", toCamelCaseFile(mod.Name)+"Service.go"), []byte(svcContent), 0644)
+	return os.WriteFile(filepath.Join(srvDir, "internal", "service", toCamelCaseFile(mod.TableName)+"Service.go"), []byte(svcContent), 0644)
 }
 
 func (g *MicroAppGenerator) generateScripts() error {
@@ -1666,9 +1671,10 @@ cd "$IDL_DIR"
 # 为每个模块生成 proto 代码
 `)
 	for _, mod := range g.config.Modules {
+		protoFileName := toCamelCaseFile(mod.TableName)
 		genProtoContent.WriteString(fmt.Sprintf(`echo "Generating %s..."
 protoc --go_out=../../common/kitex_gen --go-grpc_out=../../common/kitex_gen %s.proto
-`, mod.Name, mod.Name))
+`, protoFileName, protoFileName))
 	}
 	genProtoContent.WriteString(`
 echo ""
@@ -2064,11 +2070,12 @@ func (g *MicroAppGenerator) generateReadme() string {
 
 	sb.WriteString("```\n\n## API 接口\n\n| 方法 | 路径 | 描述 |\n|------|------|------|\n")
 	for _, mod := range g.config.Modules {
-		sb.WriteString(fmt.Sprintf("| GET | /api/v1/%ss | 列表 |\n", mod.Name))
-		sb.WriteString(fmt.Sprintf("| GET | /api/v1/%ss/:id | 详情 |\n", mod.Name))
-		sb.WriteString(fmt.Sprintf("| POST | /api/v1/%ss | 创建 |\n", mod.Name))
-		sb.WriteString(fmt.Sprintf("| PUT | /api/v1/%ss/:id | 更新 |\n", mod.Name))
-		sb.WriteString(fmt.Sprintf("| DELETE | /api/v1/%ss/:id | 删除 |\n\n", mod.Name))
+		routeName := toCamelCaseFile(mod.TableName)
+		sb.WriteString(fmt.Sprintf("| GET | /api/v1/%ss | 列表 |\n", routeName))
+		sb.WriteString(fmt.Sprintf("| GET | /api/v1/%ss/:id | 详情 |\n", routeName))
+		sb.WriteString(fmt.Sprintf("| POST | /api/v1/%ss | 创建 |\n", routeName))
+		sb.WriteString(fmt.Sprintf("| PUT | /api/v1/%ss/:id | 更新 |\n", routeName))
+		sb.WriteString(fmt.Sprintf("| DELETE | /api/v1/%ss/:id | 删除 |\n\n", routeName))
 	}
 
 	sb.WriteString("## 服务端口\n\n")
@@ -2423,7 +2430,7 @@ func Test%sService_CRUD(t *testing.T) {
 		t.Logf("Listed %%d items, total: %%d", len(resp.Items), resp.Total)
 	})
 }
-`, g.config.ProjectName, mod.Name,
+`, g.config.ProjectName, toPascalCase(mod.Name),
 		mod.ServiceName,
 		mod.ServiceName, mod.ServiceName, mod.Name, mod.ServiceName,
 		mod.Name, mod.ServiceName,
@@ -2495,7 +2502,7 @@ func TestBFFAPI_%s(t *testing.T) {
 	})
 }
 `, g.config.ProjectName, bffName,
-		mod.Name, mod.Name, mod.Name)
+		mod.UpperName, toCamelCaseFile(mod.TableName), toCamelCaseFile(mod.TableName))
 
 	return os.WriteFile(filepath.Join(projectDir, "tests", "e2e", "api_test.go"), []byte(e2eTestContent), 0644)
 }
@@ -2613,7 +2620,7 @@ func (g *MicroAppGenerator) generateBFFModuleHertz(mod *ModuleConfig, bffName st
 
 	// rpc_client - 使用 gRPC 或 Kitex
 	clientContent := g.generateRPCClient(mod)
-	if err := os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff_%s", bffName), "internal", "rpc_client", toCamelCaseFile(mod.Name)+"Client.go"), []byte(clientContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff_%s", bffName), "internal", "rpc_client", toCamelCaseFile(mod.TableName)+"Client.go"), []byte(clientContent), 0644); err != nil {
 		return err
 	}
 
@@ -2720,7 +2727,7 @@ func (h *%sHandler) Delete(ctx context.Context, c *app.RequestContext) {
 		mod.ServiceName,
 		mod.ServiceName)
 
-	return os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff_%s", bffName), "internal", "handler", toCamelCaseFile(mod.Name)+"Handler.go"), []byte(handlerContent), 0644)
+	return os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff_%s", bffName), "internal", "handler", toCamelCaseFile(mod.TableName)+"Handler.go"), []byte(handlerContent), 0644)
 }
 
 // generateRPCClient 根据 Protocol 生成 RPC 客户端代码
@@ -2792,16 +2799,16 @@ func (c *%sClient) Update(ctx context.Context, id int64, name string) (*%s.Updat
 func (c *%sClient) Delete(ctx context.Context, id int64) (*%s.Delete%sResp, error) {
 	return c.client.Delete%s(ctx, &%s.Delete%sReq{Id: id})
 }
-`, g.config.ProjectName, mod.Name,
-		mod.ServiceName, mod.Name, mod.ServiceName,
+`, g.config.ProjectName, toCamelCaseFile(mod.TableName),
+		mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName,
 		mod.ServiceName, mod.ServiceName, mod.ServiceName,
-		mod.Name, mod.ServiceName,
-		mod.ServiceName, mod.ServiceName, mod.Name, mod.ServiceName,
-		mod.ServiceName, mod.Name, mod.ServiceName, mod.ServiceName,
-		mod.Name, mod.ServiceName, mod.ServiceName, mod.Name, mod.ServiceName,
-		mod.ServiceName, mod.Name, mod.ServiceName, mod.ServiceName, mod.Name, mod.ServiceName,
-		mod.ServiceName, mod.Name, mod.ServiceName, mod.ServiceName, mod.Name, mod.ServiceName,
-		mod.ServiceName, mod.Name, mod.ServiceName, mod.ServiceName, mod.Name, mod.ServiceName)
+		toCamelCaseFile(mod.TableName), mod.ServiceName,
+		mod.ServiceName, mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName,
+		mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName, mod.ServiceName,
+		toCamelCaseFile(mod.TableName), mod.ServiceName, mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName,
+		mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName, mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName,
+		mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName, mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName,
+		mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName, mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName)
 }
 
 // generateKitexClient 生成 Kitex 客户端代码
@@ -2871,12 +2878,12 @@ func (c *%sClient) Update(ctx context.Context, id int64, name string) (*%s.Updat
 func (c *%sClient) Delete(ctx context.Context, id int64) (*%s.Delete%sResp, error) {
 	return c.kitexClient.Delete%s(ctx, &%s.Delete%sReq{Id: id})
 }
-`, g.config.ProjectName, mod.Name,
+`, g.config.ProjectName, toCamelCaseFile(mod.TableName),
 		mod.ServiceName,
 		mod.ServiceName,
 		mod.ServiceName, mod.Port, mod.Port,
 		mod.ServiceName,
-		mod.ServiceName, mod.Name, mod.ServiceName,
+		mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName,
 		mod.ServiceName,
 		mod.ServiceName,
 		mod.Name, mod.ServiceName,
@@ -3045,10 +3052,10 @@ func main() {
 		log.Fatalf("%%s service run failed: %%v", err)
 	}
 }
-`, g.config.ProjectName, mod.Name,
+`, g.config.ProjectName, toCamelCaseFile(mod.TableName),
 		g.config.ProjectName, g.config.ProjectName,
 		g.config.ProjectName, g.config.ProjectName,
-		g.config.ProjectName, mod.Name,
+		g.config.ProjectName, toCamelCaseFile(mod.TableName),
 		mod.ServiceName,
 		mod.ServiceName,
 		mod.UpperName)
@@ -3145,31 +3152,28 @@ func (h *%sHandler) Delete(ctx context.Context, req *%s.Delete%sReq) (*%s.Delete
 	}
 	return &%s.Delete%sResp{Success: true}, nil
 }
-`, g.config.ProjectName, mod.Name,
-		g.config.ProjectName, mod.Name,
-		g.config.ProjectName, mod.Name,
-		g.config.ProjectName, mod.Name,
+`, g.config.ProjectName, toPascalCase(mod.Name),
+		g.config.ProjectName, toPascalCase(mod.Name),
+		g.config.ProjectName, toPascalCase(mod.Name),
+		g.config.ProjectName, toCamelCaseFile(mod.TableName),
 		mod.ServiceName,
 		mod.ServiceName, mod.ServiceName, mod.ServiceName,
 		mod.ServiceName,
-		mod.ServiceName, mod.Name, mod.ServiceName, mod.ServiceName,
+		mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName, mod.ServiceName,
 		mod.ServiceName,
-		mod.ServiceName, mod.Name, mod.ServiceName,
-		mod.ServiceName, mod.Name, mod.ServiceName,
+		mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName,
+		mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName,
 		mod.ServiceName,
-		mod.Name,
-		mod.ServiceName, mod.Name,
+		toCamelCaseFile(mod.TableName),
+		mod.ServiceName, toCamelCaseFile(mod.TableName),
 		mod.ServiceName,
-		mod.ServiceName, mod.Name, mod.ServiceName, mod.ServiceName,
-		mod.ServiceName, mod.Name, mod.ServiceName,
-		mod.ServiceName, mod.Name, mod.ServiceName,
+		mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName, mod.ServiceName,
+		mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName,
+		mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName,
 		mod.ServiceName,
-		mod.ServiceName, mod.Name, mod.ServiceName,
-		mod.ServiceName, mod.Name, mod.ServiceName,
-		mod.ServiceName,
-		mod.ServiceName, mod.Name, mod.ServiceName,
-		mod.ServiceName, mod.Name, mod.ServiceName)
-	if err := os.WriteFile(filepath.Join(srvDir, "internal", "handler", toCamelCaseFile(mod.Name)+"Handler.go"), []byte(handlerContent), 0644); err != nil {
+		mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName,
+		mod.ServiceName, toCamelCaseFile(mod.TableName), mod.ServiceName)
+	if err := os.WriteFile(filepath.Join(srvDir, "internal", "handler", toCamelCaseFile(mod.TableName)+"Handler.go"), []byte(handlerContent), 0644); err != nil {
 		return err
 	}
 
@@ -3259,7 +3263,7 @@ func (r *%sRepository) Delete(ctx context.Context, id int64) error {
 		mod.UpperName,
 		mod.UpperName,
 		mod.UpperName)
-	if err := os.WriteFile(filepath.Join(srvDir, "internal", "repository", toCamelCaseFile(mod.Name)+"Repo.go"), []byte(repoContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(srvDir, "internal", "repository", toCamelCaseFile(mod.TableName)+"Repo.go"), []byte(repoContent), 0644); err != nil {
 		return err
 	}
 
@@ -3327,7 +3331,7 @@ func (s *%sService) Delete(ctx context.Context, id int64) error {
 		mod.UpperName,
 		mod.UpperName,
 		mod.UpperName)
-	return os.WriteFile(filepath.Join(srvDir, "internal", "service", toCamelCaseFile(mod.Name)+"Service.go"), []byte(svcContent), 0644)
+	return os.WriteFile(filepath.Join(srvDir, "internal", "service", toCamelCaseFile(mod.TableName)+"Service.go"), []byte(svcContent), 0644)
 }
 
 // checkProtoTools 检查 protoc 和相关插件是否已安装
@@ -3392,6 +3396,26 @@ func toCamelCaseFile(tableName string) string {
 		} else {
 			result += strings.ToUpper(part[:1]) + part[1:]
 		}
+	}
+	return result
+}
+
+func toPascalCase(tableName string) string {
+	prefixes := []string{"eb_", "t_", "sys_", "tb_", "bc_"}
+	name := tableName
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(strings.ToLower(name), prefix) {
+			name = strings.TrimPrefix(name, prefix)
+			break
+		}
+	}
+	parts := strings.Split(name, "_")
+	result := ""
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		result += strings.ToUpper(part[:1]) + part[1:]
 	}
 	return result
 }

@@ -1,6 +1,6 @@
 syntax = "proto3";
 package {{.Module}};
-option go_package = "{{.AppName}}/common/kitexGen/{{.Module}}";
+option go_package = "{{.AppName}}/common/kitexGen/{{.ProtoImportPath}}";
 
 service {{.UpperName}}Service {
   rpc Create(Create{{.UpperName}}Req) returns (Create{{.UpperName}}Resp);

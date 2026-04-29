@@ -1008,7 +1008,7 @@ func runNewMicroAppWithFlags() error {
 
 func genProtoFiles(projectDir string) {
 	for _, m := range microAppModules {
-		upper := strings.ToUpper(m[:1]) + m[1:]
+		upper := toPascalCase(m)
 		tmplPath := filepath.Join(getTemplatesDir(), "micro-app", "proto", "proto_header.go.tmpl")
 		tmplBytes, err := os.ReadFile(tmplPath)
 		if err != nil {
@@ -1016,9 +1016,10 @@ func genProtoFiles(projectDir string) {
 			continue
 		}
 		result, err := executeTemplate(string(tmplBytes), map[string]interface{}{
-			"Module":    m,
-			"AppName":   microAppName,
-			"UpperName": upper,
+			"Module":          m,
+			"AppName":         microAppName,
+			"UpperName":       upper,
+			"ProtoImportPath": toCamelCase(m),
 		})
 		if err != nil {
 			fmt.Printf("Error executing proto template: %v\n", err)
@@ -1035,7 +1036,7 @@ func genProtoFiles(projectDir string) {
 // genThriftFiles 生成默认 Thrift IDL 文件（不含表结构）
 func genThriftFiles(projectDir string) {
 	for _, m := range microAppModules {
-		upper := strings.ToUpper(m[:1]) + m[1:]
+		upper := toPascalCase(m)
 		content := fmt.Sprintf(`namespace go %s.%s
 
 struct %s {
@@ -1094,7 +1095,7 @@ func genThriftFilesFromSchema(projectDir string, moduleTables ModuleTables) {
 	for moduleName, tables := range moduleTables {
 		for _, table := range tables {
 			columns := table.Columns
-			upper := strings.ToUpper(moduleName[:1]) + moduleName[1:]
+			upper := toPascalCase(moduleName)
 			var buf strings.Builder
 
 			thriftFileName := table.TableName
@@ -1467,7 +1468,7 @@ func genBFF(projectDir, bffName string, modules []string, protocol string) {
 	}
 	var routeModules []routeModule
 	for _, m := range modules {
-		upper := strings.ToUpper(m[:1]) + m[1:]
+		upper := toPascalCase(m)
 		routeModules = append(routeModules, routeModule{Name: m, UpperName: upper})
 	}
 	tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "router", "gin_router.go.tmpl")
@@ -1511,7 +1512,7 @@ func Logger() gin.HandlerFunc {
 
 	// generate handlers and rpc clients - BFF internal 不生成 dto 文件
 	for _, m := range modules {
-		upper := strings.ToUpper(m[:1]) + m[1:]
+		upper := toPascalCase(m)
 		// rpc client - 根据协议选择
 		if protocol == "kitex" {
 			genKitexClient(projectDir, bffName, m, upper)
@@ -1527,9 +1528,10 @@ func Logger() gin.HandlerFunc {
 			continue
 		}
 		handler, err := executeTemplate(string(tmplStr), map[string]interface{}{
-			"UpperName": upper,
-			"AppName":   microAppName,
-			"LowerName": m,
+			"UpperName":       upper,
+			"AppName":         microAppName,
+			"LowerName":       m,
+			"ProtoImportPath": toCamelCase(m),
 		})
 		if err != nil {
 			fmt.Printf("ERROR executing handler template: %v\n", err)
@@ -1558,11 +1560,12 @@ func genGRPCClient(projectDir, bffName, m, upper string) {
 	}
 
 	client, err := executeTemplate(string(tmplStr), map[string]interface{}{
-		"AppName":    microAppName,
-		"ModuleName": microAppName,
-		"SrvDirName":         toSrvDirName(microAppName),
-		"TableName":  m,
-		"UpperName":  upper,
+		"AppName":         microAppName,
+		"ModuleName":      microAppName,
+		"SrvDirName":      toSrvDirName(microAppName),
+		"TableName":       m,
+		"UpperName":       upper,
+		"ProtoImportPath": toCamelCase(m),
 	})
 	if err != nil {
 		fmt.Printf("ERROR executing gRPC client template: %v\n", err)
@@ -1582,11 +1585,12 @@ func genKitexClient(projectDir, bffName, m, upper string) {
 	}
 
 	client, err := executeTemplate(string(tmplStr), map[string]interface{}{
-		"AppName":    microAppName,
-		"ModuleName": microAppName,
-		"SrvDirName":         toSrvDirName(microAppName),
-		"TableName":  m,
-		"UpperName":  upper,
+		"AppName":         microAppName,
+		"ModuleName":      microAppName,
+		"SrvDirName":      toSrvDirName(microAppName),
+		"TableName":       m,
+		"UpperName":       upper,
+		"ProtoImportPath": toCamelCase(m),
 	})
 	if err != nil {
 		fmt.Printf("ERROR executing Kitex client template: %v\n", err)
@@ -1624,7 +1628,7 @@ func genBFFHertz(projectDir, bffName string, modules []string, protocol string) 
 	}
 	var hertzRouteModules []hertzRouteModule
 	for _, m := range modules {
-		upper := strings.ToUpper(m[:1]) + m[1:]
+		upper := toPascalCase(m)
 		hertzRouteModules = append(hertzRouteModules, hertzRouteModule{Name: m, UpperName: upper})
 	}
 	tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "router", "hertz_router.go.tmpl")
@@ -1681,7 +1685,7 @@ func CORS() app.HandlerFunc {
 
 	// generate handlers and rpc clients
 	for _, m := range modules {
-		upper := strings.ToUpper(m[:1]) + m[1:]
+		upper := toPascalCase(m)
 		// rpc client
 		if protocol == "kitex" {
 			genKitexClient(projectDir, bffName, m, upper)
@@ -1697,9 +1701,10 @@ func CORS() app.HandlerFunc {
 			continue
 		}
 		handler, err := executeTemplate(string(tmplStr), map[string]interface{}{
-			"AppName":     microAppName,
-			"BFFName":     bffName,
-			"UpperModule": upper,
+			"AppName":         microAppName,
+			"BFFName":         bffName,
+			"UpperModule":     upper,
+			"ProtoImportPath": toCamelCase(m),
 		})
 		if err != nil {
 			fmt.Printf("ERROR executing BFF Hertz handler template: %v\n", err)
@@ -1710,7 +1715,7 @@ func CORS() app.HandlerFunc {
 }
 
 func genMicroservice(projectDir, module string, port int, protocol string) {
-	upper := strings.ToUpper(module[:1]) + module[1:]
+	upper := toPascalCase(module)
 
 	// main.go - 根据注册中心类型生成不同版本
 	var mainGo string
@@ -1727,11 +1732,12 @@ func genMicroservice(projectDir, module string, port int, protocol string) {
 		return
 	}
 	mainGo, err = executeTemplate(string(tmplStr), map[string]interface{}{
-		"AppName":     microAppName,
-		"Module":      module,
-		"UpperModule": upper,
-		"SrvDirName":  toSrvDirName(module),
-		"Otel":        microAppOtel,
+		"AppName":         microAppName,
+		"Module":          module,
+		"UpperModule":     upper,
+		"SrvDirName":      toSrvDirName(module),
+		"Otel":            microAppOtel,
+		"ProtoImportPath": toCamelCase(module),
 	})
 	if err != nil {
 		fmt.Printf("ERROR executing SRV main template: %v\n", err)
@@ -1803,7 +1809,7 @@ func genScripts(projectDir string, moduleTables ModuleTables) {
 	} else {
 		for _, tables := range moduleTables {
 			for _, tbl := range tables {
-				genProto.WriteString("protoc --go_out=../../common/kitexGen --go_opt=module=" + microAppName + "/common/kitexGen --go-grpc_out=../../common/kitexGen --go-grpc_opt=module=" + microAppName + "/common/kitexGen " + tbl.TableName + ".proto\n")
+				genProto.WriteString("protoc --go_out=../../common/kitexGen --go_opt=module=" + microAppName + "/common/kitexGen --go-grpc_out=../../common/kitexGen --go-grpc_opt=module=" + microAppName + "/common/kitexGen " + toCamelCaseFile(tbl.TableName) + ".proto\n")
 			}
 		}
 	}
@@ -1897,7 +1903,7 @@ func genMakefile(projectDir string, modules []string) {
 	mf.WriteString("\t@echo 'BFF: http://localhost:8080'\n")
 	for i, m := range modules {
 		port := 8001 + i
-		mf.WriteString("\t@echo '" + strings.ToUpper(m[:1]) + m[1:] + " SRV: localhost:" + fmt.Sprintf("%d", port) + "'\n")
+		mf.WriteString("\t@echo '" + toPascalCase(m) + " SRV: localhost:" + fmt.Sprintf("%d", port) + "'\n")
 	}
 	mf.WriteString("\n")
 
@@ -2198,7 +2204,7 @@ func genProtoFilesFromSchema(projectDir string, moduleTables ModuleTables) {
 
 			// 使用 entity 名（从表名推导）作为 service 名称，以避免多个表冲突
 			entityName := tableToEntityName(table.TableName, allTableNames)
-			entityUpper := strings.ToUpper(entityName[:1]) + entityName[1:]
+			entityUpper := toPascalCase(entityName)
 
 			// syntax + service 声明
 			tmplPath := filepath.Join(getTemplatesDir(), "micro-app", "proto", "syntax.go.tmpl")
@@ -2208,9 +2214,10 @@ func genProtoFilesFromSchema(projectDir string, moduleTables ModuleTables) {
 				continue
 			}
 			result, err := executeTemplate(string(tmplBytes), map[string]interface{}{
-				"Module":    protoFileName,
-				"AppName":   microAppName,
-				"UpperName": entityUpper, // 使用 entity 名作为 service 名，避免多表冲突
+				"Module":          protoFileName,
+				"AppName":         microAppName,
+				"UpperName":       entityUpper,
+				"ProtoImportPath": toCamelCase(protoFileName),
 			})
 			if err != nil {
 				fmt.Printf("Error executing syntax template: %v\n", err)
@@ -2344,13 +2351,15 @@ func genBFFFromSchema(projectDir, bffName string, moduleTables ModuleTables, pro
 	type crudRouteModule struct {
 		Name      string
 		UpperName string
+		PathName  string
 	}
 	var crudRouteModules []crudRouteModule
 	for _, tables := range moduleTables {
 		for _, table := range tables {
 			entityName := tableToEntityName(table.TableName, tableNames)
-			upperEntity := strings.ToUpper(entityName[:1]) + entityName[1:]
-			crudRouteModules = append(crudRouteModules, crudRouteModule{Name: table.TableName, UpperName: upperEntity})
+			upperEntity := toPascalCase(entityName)
+			lowerEntity := strings.ToLower(entityName[:1]) + entityName[1:]
+			crudRouteModules = append(crudRouteModules, crudRouteModule{Name: table.TableName, UpperName: upperEntity, PathName: lowerEntity})
 		}
 	}
 	tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "router", "gin_router_crud.go.tmpl")
@@ -2395,7 +2404,7 @@ func Logger() gin.HandlerFunc {
 	// 为每个 module 下的每张表生成 rpc_client 和 handler
 	srvPort := 50050
 	for moduleName, tables := range moduleTables {
-		upper := strings.ToUpper(moduleName[:1]) + moduleName[1:]
+		upper := toPascalCase(moduleName)
 		for _, table := range tables {
 			columns := table.Columns
 			pkField := getPrimaryKeyField(columns)
@@ -2452,11 +2461,9 @@ func genBFFHandlerFromSchema(projectDir, bffName, m, entityName, upper string, c
 }
 
 // tableToEntityName 从表名推导 entity 名称（用于文件名和结构体命名）。
-// 直接使用表名，转换为小驼峰格式。例如："eb_store_product" → "ebStoreProduct"
-// 不再剥离公共前缀，保持表名完整性。
+// 使用 toCamelCase 转换为小驼峰格式并去除前缀。例如："eb_store_product" → "storeProduct"
 func tableToEntityName(tableName string, allTableNames []string) string {
-	// 将表名转为小驼峰：eb_store_product → ebStoreProduct
-	return camelCase(tableName)
+	return toCamelCase(tableName)
 }
 
 // genSrvMainAndConfig 为一个 module 生成 main.go 和 config.yaml（只调用一次）
@@ -2475,16 +2482,16 @@ func genSrvMainAndConfig(projectDir, module string, port int, tables []TableInfo
 
 	// 构建 handler 注册代码（支持多表）
 	// 注意：proto 使用的是 entity 名（如 EbStoreProductService），不是 module 名（如 ProductService）
-	upperModule := strings.ToUpper(module[:1]) + module[1:]
+	upperModule := toPascalCase(module)
 	// 生成多表 proto import 列表（每行一个完整的 import 语句，含唯一别名）
 	var protoImports []string
 	var handlerRegs []string
 	for _, tbl := range tables {
 		entityName := tableToEntityName(tbl.TableName, tableNames)
 		// 用 camelCase entity 名作 import 别名（如 ebstoreproduct）
-		alias := strings.ToLower(entityName[:1]) + entityName[1:]
-		protoImports = append(protoImports, fmt.Sprintf("%s \"%s/common/kitexGen/%s\"", alias, microAppName, tbl.TableName))
-		upperEntity := strings.ToUpper(entityName[:1]) + entityName[1:]
+		alias := toCamelCase(entityName)
+		protoImports = append(protoImports, fmt.Sprintf("%s \"%s/common/kitexGen/%s\"", alias, microAppName, toCamelCase(tbl.TableName)))
+		upperEntity := toPascalCase(entityName)
 		handlerRegs = append(handlerRegs, fmt.Sprintf("\t%s.Register%sServiceServer(s, handler.New%sHandler(db))\n", alias, upperEntity, upperEntity))
 	}
 	// 兼容单表场景
@@ -2492,16 +2499,16 @@ func genSrvMainAndConfig(projectDir, module string, port int, tables []TableInfo
 	var initRegs string
 	if len(tables) > 0 {
 		tableName = tables[0].TableName
-		alias := strings.ToLower(upperModule[:1]) + upperModule[1:]
+		alias := toCamelCase(upperModule)
 		if len(tables) == 1 {
-			protoImports = []string{fmt.Sprintf("%s \"%s/common/kitexGen/%s\"", alias, microAppName, tableName)}
+			protoImports = []string{fmt.Sprintf("%s \"%s/common/kitexGen/%s\"", alias, microAppName, toCamelCase(tableName))}
 			initRegs = fmt.Sprintf("\t%s.Register%sServiceServer(s, handler.New%sHandler(db))\n", alias, upperModule, upperModule)
 		} else {
 			initRegs = strings.Join(handlerRegs, "")
 		}
 	}
 	if len(protoImports) == 0 {
-		protoImports = []string{fmt.Sprintf("pb \"%s/common/kitexGen/%s\"", microAppName, tableName)}
+		protoImports = []string{fmt.Sprintf("pb \"%s/common/kitexGen/%s\"", microAppName, toCamelCase(tableName))}
 	}
 	mainData := TemplateData{
 		AppName:           microAppName,
@@ -2612,7 +2619,7 @@ func genBFFHertzFromSchema(projectDir, bffName string, moduleTables ModuleTables
 	}
 	var hertzCrudRouteModules []hertzCrudRouteModule
 	for m := range moduleTables {
-		upper := strings.ToUpper(m[:1]) + m[1:]
+		upper := toPascalCase(m)
 		hertzCrudRouteModules = append(hertzCrudRouteModules, hertzCrudRouteModule{Name: m, UpperName: upper})
 	}
 	tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "router", "hertz_router_crud.go.tmpl")
@@ -2674,7 +2681,7 @@ func CORS() app.HandlerFunc {
 	}
 	for i, m := range moduleKeys2 {
 		columns := moduleTables[m][0].Columns
-		upper := strings.ToUpper(m[:1]) + m[1:]
+		upper := toPascalCase(m)
 		pkField := getPrimaryKeyField(columns)
 		srvPort := 8000 + i + 1
 
@@ -2782,8 +2789,19 @@ func getUpperFirst(s string) string {
 
 // toProtoGoFieldName 将 snake_case 字段名转为 proto 生成的 Go 字段名（CamelCase）
 // 例如: image_input -> ImageInput, admin_id -> AdminId, id -> Id
+// 也会剥离常见的表名前缀，如 eb_, t_, sys_, tb_, bc_
 func toProtoGoFieldName(s string) string {
-	parts := strings.Split(s, "_")
+	// 剥离表名前缀
+	prefixes := []string{"eb_", "t_", "sys_", "tb_", "bc_"}
+	name := s
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(strings.ToLower(name), prefix) {
+			name = strings.TrimPrefix(name, prefix)
+			break
+		}
+	}
+	// 蛇形转 CamelCase
+	parts := strings.Split(name, "_")
 	var result strings.Builder
 	for _, part := range parts {
 		if part == "" {
@@ -2966,7 +2984,7 @@ func genTestDirs(projectDir, bffName string, modules []string, hasDBTable bool, 
 		srvTestDir := filepath.Join(projectDir, toSrvDirName(m), "test")
 		os.MkdirAll(srvTestDir, 0755)
 
-		upper := strings.ToUpper(m[:1]) + m[1:]
+		upper := toPascalCase(m)
 		srvPort := 8001 + i
 		if hasDBTable && tableColumns[m] != nil {
 			tn := moduleTableName[m]
@@ -2996,7 +3014,7 @@ func genShellScripts(projectDir, bffName string, modules []string, bffPort, srvP
 	}
 	var testModules []testModule
 	for _, m := range modules {
-		upper := strings.ToUpper(m[:1]) + m[1:]
+		upper := toPascalCase(m)
 		tableName := m
 		if moduleTableName != nil {
 			if tn, ok := moduleTableName[m]; ok && tn != "" {
@@ -3008,7 +3026,7 @@ func genShellScripts(projectDir, bffName string, modules []string, bffPort, srvP
 			Name:        m,
 			UpperName:   upper,
 			Package:     m,
-			RouteName:   tableName,
+			RouteName:   toCamelCaseFile(tableName),
 			ServiceName: entityName + "Service",
 		})
 	}
@@ -3064,14 +3082,14 @@ func genBFFTestFile(projectDir, bffName string, modules []string, hasDBTable boo
 	}
 	var testModules []testModule
 	for _, m := range modules {
-		upper := strings.ToUpper(m[:1]) + m[1:]
+		upper := toPascalCase(m)
 		tableName := m
 		if moduleTableName != nil {
 			if tn, ok := moduleTableName[m]; ok && tn != "" {
 				tableName = tn
 			}
 		}
-		testModules = append(testModules, testModule{Name: m, UpperName: upper, RouteName: tableName})
+		testModules = append(testModules, testModule{Name: m, UpperName: upper, RouteName: toCamelCaseFile(tableName)})
 	}
 
 	tmplPath := filepath.Join(getTemplatesDir(), "micro-app", "bff", "test", "handler_test.go.tmpl")
@@ -3247,8 +3265,8 @@ func genJoinCode(projectDir string, modules []string, joinCfg *JoinConfig, allTa
 	// 使用 tableToEntityName 获取正确的 entity 名称
 	leftEntityName := tableToEntityName(leftTableName, actualTableNames)
 	rightEntityName := tableToEntityName(rightTableName, actualTableNames)
-	leftUpper := strings.ToUpper(leftEntityName[:1]) + leftEntityName[1:]
-	rightUpper := strings.ToUpper(rightEntityName[:1]) + rightEntityName[1:]
+	leftUpper := toPascalCase(leftEntityName)
+	rightUpper := toPascalCase(rightEntityName)
 
 	// 生成联表 Repository
 	genJoinRepository(projectDir, leftModule, leftUpper, rightModule, rightUpper, joinCfg, rightIsAux)
@@ -3684,11 +3702,28 @@ func executeTemplate(templateStr string, data interface{}) (string, error) {
 
 // toSrvDirName 生成 srv 目录名（小驼峰）：srvProduct, srvOrder
 func toSrvDirName(module string) string {
-	if module == "" || module == "srv" {
+	// 去除表名前缀
+	prefixes := []string{"eb_", "t_", "sys_", "tb_", "bc_"}
+	name := module
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(strings.ToLower(name), prefix) {
+			name = strings.TrimPrefix(name, prefix)
+			break
+		}
+	}
+	// 蛇形转帕斯卡命名
+	parts := strings.Split(name, "_")
+	result := ""
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		result += strings.ToUpper(part[:1]) + part[1:]
+	}
+	if result == "" || result == "Srv" {
 		return "srv"
 	}
-	// 仅当模块名长度 > 1 且不是 srv 时添加前缀
-	return "srv" + strings.ToUpper(module[:1]) + module[1:]
+	return "srv" + result
 }
 
 // toBffDirName 生成 BFF 目录名（小驼峰）：bffApi, bffH5, bff
@@ -3702,10 +3737,32 @@ func toBffDirName(bffName string) string {
 
 // toCamelFileName 生成小驼峰文件名：productHandler.go, productRepo.go
 func toCamelFileName(module, suffix string) string {
-	if suffix == "" {
-		return module
+	// 去除表名前缀
+	prefixes := []string{"eb_", "t_", "sys_", "tb_", "bc_"}
+	name := module
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(strings.ToLower(name), prefix) {
+			name = strings.TrimPrefix(name, prefix)
+			break
+		}
 	}
-	return module + strings.ToUpper(suffix[:1]) + suffix[1:]
+	// 蛇形转小驼峰
+	parts := strings.Split(name, "_")
+	result := ""
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		if result == "" {
+			result += strings.ToLower(part[:1]) + part[1:]
+		} else {
+			result += strings.ToUpper(part[:1]) + part[1:]
+		}
+	}
+	if suffix == "" {
+		return result
+	}
+	return result + strings.ToUpper(suffix[:1]) + suffix[1:]
 }
 
 // =============================================================================
@@ -3963,4 +4020,53 @@ func genNacosConfig(projectDir, bffName string, modules []string) {
 		os.WriteFile(configGoPath, []byte(cfgStr), 0644)
 		fmt.Println("  Updated: pkg/config/config.go (added NacosConfig)")
 	}
+}
+
+// toPascalCase converts table name to PascalCase (大驼峰)
+// e.g., "eb_store_product" -> "StoreProduct"
+// e.g., "store_product" -> "StoreProduct"
+func toPascalCase(tableName string) string {
+	prefixes := []string{"eb_", "t_", "sys_", "tb_", "bc_"}
+	name := tableName
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(strings.ToLower(name), prefix) {
+			name = strings.TrimPrefix(name, prefix)
+			break
+		}
+	}
+	parts := strings.Split(name, "_")
+	result := ""
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		result += strings.ToUpper(part[:1]) + part[1:]
+	}
+	return result
+}
+
+// toCamelCase converts table name to camelCase (小驼峰)
+// e.g., "eb_store_product" -> "storeProduct"
+func toCamelCase(tableName string) string {
+	prefixes := []string{"eb_", "t_", "sys_", "tb_", "bc_"}
+	name := tableName
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(strings.ToLower(name), prefix) {
+			name = strings.TrimPrefix(name, prefix)
+			break
+		}
+	}
+	parts := strings.Split(name, "_")
+	result := ""
+	for i, part := range parts {
+		if part == "" {
+			continue
+		}
+		if i == 0 {
+			result += strings.ToLower(part[:1]) + part[1:]
+		} else {
+			result += strings.ToUpper(part[:1]) + part[1:]
+		}
+	}
+	return result
 }

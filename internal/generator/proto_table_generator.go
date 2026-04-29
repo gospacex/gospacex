@@ -124,9 +124,13 @@ func (g *ProtoGenerator) GenerateFromTable(tableName string) (*ProtoTableInfo, e
 		}
 
 		protoType := g.mysqlTypeToProtoType(ftype)
-		protoName := snakeToCamel(field)
+		protoName := snakeToCamel(strings.TrimPrefix(field, "is_")) // 去除 is_ 前缀
 		isPrimary := key == "PRI"
 		isAutoIncr := strings.Contains(strings.ToLower(extra), "auto_increment")
+		// is_ 前缀的列映射为 bool 类型
+		if strings.HasPrefix(field, "is_") {
+			protoType = "bool"
+		}
 
 		if isPrimary {
 			primaryKey = protoName
@@ -145,11 +149,12 @@ func (g *ProtoGenerator) GenerateFromTable(tableName string) (*ProtoTableInfo, e
 		})
 	}
 
-	// 获取服务名 (首字母大写)
-	serviceName := snakeToCamel(tableName)
+	// 获取服务名 (首字母大写) - 去除 eb_ 前缀
+	strippedTable := strings.TrimPrefix(tableName, "eb_")
+	serviceName := snakeToCamel(strippedTable)
 	// 首字母大写
 	serviceName = strings.ToUpper(serviceName[:1]) + serviceName[1:]
-	moduleName := strings.ToLower(snakeToCamel(tableName))
+	moduleName := strings.ToLower(snakeToCamel(strippedTable))
 	moduleName = strings.ToLower(moduleName[:1]) + moduleName[1:]
 
 	info := &ProtoTableInfo{

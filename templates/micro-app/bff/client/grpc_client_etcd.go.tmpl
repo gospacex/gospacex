@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"{{.ModuleName}}/common/kitexGen/{{.TableName}}"
+	"{{.ModuleName}}/common/kitexGen/{{.ProtoImportPath}}"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
@@ -14,7 +14,7 @@ import (
 
 type {{.UpperName}}Client struct {
 	conn *grpc.ClientConn
-	client {{.TableName}}.{{.UpperName}}ServiceClient
+	client {{.ProtoImportPath}}.{{.UpperName}}ServiceClient
 }
 
 func New{{.UpperName}}Client(etcdAddr string) (*{{.UpperName}}Client, error) {
@@ -37,5 +37,5 @@ func New{{.UpperName}}Client(etcdAddr string) (*{{.UpperName}}Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &{{.UpperName}}Client{conn: conn, client: {{.TableName}}.New{{.UpperName}}ServiceClient(conn)}, nil
+	return &{{.UpperName}}Client{conn: conn, client: {{.ProtoImportPath}}.New{{.UpperName}}ServiceClient(conn)}, nil
 }

@@ -146,10 +146,12 @@ func (g *CRUDGenerator) getTableInfo(db *sql.DB, table string) (*CRUDTableInfo, 
 	}
 	defer rows.Close()
 
+	// 去除表名前缀（eb_store_product → store_product）
+	strippedTable := strings.TrimPrefix(table, "eb_")
 	ti := &CRUDTableInfo{
 		Name:      table,
-		GoName:    snakeToCamel(table),
-		CamelName: toLowerCamelCase(table),
+		GoName:    snakeToCamel(strippedTable),
+		CamelName: toLowerCamelCase(strippedTable),
 		Columns:   make([]CRUDColumnInfo, 0),
 	}
 
@@ -162,11 +164,15 @@ func (g *CRUDGenerator) getTableInfo(db *sql.DB, table string) (*CRUDTableInfo, 
 
 		col := CRUDColumnInfo{
 			Name:      colName,
-			GoName:    snakeToCamel(colName),
+			GoName:    snakeToCamel(strings.TrimPrefix(colName, "is_")), // 去除 is_ 前缀
 			GoType:    sqlTypeToGoType(dataType),
 			SQLType:   dataType,
 			Comment:   comment,
 			IsPrimary: colKey == "PRI",
+		}
+		// is_ 前缀的列映射为 bool 类型
+		if strings.HasPrefix(colName, "is_") {
+			col.GoType = "bool"
 		}
 
 		if col.IsPrimary {

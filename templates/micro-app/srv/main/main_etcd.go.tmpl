@@ -13,7 +13,7 @@ import (
 	"{{.AppName}}/pkg/logger"
 	"{{.AppName}}/{{.SrvDirName}}/internal/handler"
 	"{{.AppName}}/{{.SrvDirName}}/internal/interceptor"
-	"{{.AppName}}/common/kitexGen/{{.Module}}"
+	"{{.AppName}}/common/kitexGen/{{.ProtoImportPath}}"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 {{if .Otel}}

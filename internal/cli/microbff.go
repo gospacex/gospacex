@@ -427,14 +427,14 @@ func NewRouter() *Router {
 func (r *Router) registerRoutes() {
 `, projectName, bffName)
 	for _, module := range modules {
-		moduleUpper := strings.ToUpper(module[:1]) + module[1:]
+		moduleUpper := toPascalCase(module)
 		routerContent += fmt.Sprintf("\th%[1]s := handler.New%[1]sHandler()\n", moduleUpper)
 		routerContent += fmt.Sprintf("\tv1 := r.engine.Group(\"/api/v1\")\n")
 		routerContent += fmt.Sprintf("\t{\n")
-		routerContent += fmt.Sprintf("\t\tv1.POST(\"/%[1]ss\", h%[2]s.Create)\n", module, moduleUpper)
-		routerContent += fmt.Sprintf("\t\tv1.GET(\"/%[1]ss\", h%[2]s.List)\n", module, moduleUpper)
-		routerContent += fmt.Sprintf("\t\tv1.GET(\"/%[1]ss/:id\", h%[2]s.Get)\n", module, moduleUpper)
-		routerContent += fmt.Sprintf("\t\tv1.PUT(\"/%[1]ss/:id\", h%[2]s.Update)\n", module, moduleUpper)
+		routerContent += fmt.Sprintf("\t\tv1.POST(\"/%[1]ss\", h%[2]s.Create)\n", toCamelCase(module), moduleUpper)
+		routerContent += fmt.Sprintf("\t\tv1.GET(\"/%[1]ss\", h%[2]s.List)\n", toCamelCase(module), moduleUpper)
+		routerContent += fmt.Sprintf("\t\tv1.GET(\"/%[1]ss/:id\", h%[2]s.Get)\n", toCamelCase(module), moduleUpper)
+		routerContent += fmt.Sprintf("\t\tv1.PUT(\"/%[1]ss/:id\", h%[2]s.Update)\n", toCamelCase(module), moduleUpper)
 		routerContent += fmt.Sprintf("\t\tv1.DELETE(\"/%[1]ss/:id\", h%[2]s.Delete)\n", module, moduleUpper)
 		routerContent += fmt.Sprintf("\t}\n\n")
 	}
@@ -485,7 +485,7 @@ func Recovery() gin.HandlerFunc {
 
 	// 为每个模块创建 handler, rpc_client, dto
 	for _, module := range modules {
-		moduleUpper := strings.ToUpper(module[:1]) + module[1:]
+		moduleUpper := toPascalCase(module)
 
 		// gRPC client
 		grpcClient := fmt.Sprintf(`package rpc_client

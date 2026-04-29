@@ -57,6 +57,7 @@ type TemplateData struct {
 	UpdateFields []TemplateFieldData // Update 请求字段（排除主键）
 	HandlerRegs  string // main.go 中注册多个 handler 的代码
 	ProtoImports []string // main.go 中多表场景下的 proto import 列表
+	ProtoImportPath string // camelCase 化的 import 路径（如 storeProductAttr），用于 handler 模板中的 import
 }
 
 // buildTemplateData 从 ColumnInfo 构建模板数据
@@ -157,6 +158,7 @@ func buildTemplateData(module string, columns []ColumnInfo, bffName string, tabl
 		PKDeleteReqConvert: pkDeleteReqConvert,
 		PKRespConvert:      pkRespConvert,
 		RepoInitCode:       repoInitCode,
+		ProtoImportPath:    toCamelCase(tableName),
 		Columns:            cols,
 		CreateFields:       createFields,
 		UpdateFields:       updateFields,

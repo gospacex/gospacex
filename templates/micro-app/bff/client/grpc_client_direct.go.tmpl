@@ -3,12 +3,12 @@ package rpcclient
 import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"{{.ModuleName}}/common/kitexGen/{{.TableName}}"
+	"{{.ModuleName}}/common/kitexGen/{{.ProtoImportPath}}"
 )
 
 type {{.UpperName}}Client struct {
 	conn *grpc.ClientConn
-	client {{.TableName}}.{{.UpperName}}ServiceClient
+	client {{.ProtoImportPath}}.{{.UpperName}}ServiceClient
 }
 
 func New{{.UpperName}}Client(addr string) (*{{.UpperName}}Client, error) {
@@ -16,5 +16,5 @@ func New{{.UpperName}}Client(addr string) (*{{.UpperName}}Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &{{.UpperName}}Client{conn: conn, client: {{.TableName}}.New{{.UpperName}}ServiceClient(conn)}, nil
+	return &{{.UpperName}}Client{conn: conn, client: {{.ProtoImportPath}}.New{{.UpperName}}ServiceClient(conn)}, nil
 }

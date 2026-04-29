@@ -11,7 +11,7 @@ import (
 	"{{.AppName}}/pkg/logger"
 	"{{.AppName}}/{{.SrvDirName}}/internal/handler"
 	"{{.AppName}}/{{.SrvDirName}}/internal/interceptor"
-	"{{.AppName}}/common/kitexGen/{{.Module}}"
+	"{{.AppName}}/common/kitexGen/{{.ProtoImportPath}}"
 
 	"github.com/hashicorp/consul/api"
 {{if .Otel}}

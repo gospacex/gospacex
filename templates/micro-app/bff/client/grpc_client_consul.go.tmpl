@@ -3,7 +3,7 @@ package rpcclient
 import (
 	"fmt"
 
-	"{{.ModuleName}}/common/kitexGen/{{.TableName}}"
+	"{{.ModuleName}}/common/kitexGen/{{.ProtoImportPath}}"
 
 	"github.com/hashicorp/consul/api"
 	"google.golang.org/grpc"
@@ -12,7 +12,7 @@ import (
 
 type {{.UpperName}}Client struct {
 	conn *grpc.ClientConn
-	client {{.TableName}}.{{.UpperName}}ServiceClient
+	client {{.ProtoImportPath}}.{{.UpperName}}ServiceClient
 }
 
 func New{{.UpperName}}Client(consulAddr string) (*{{.UpperName}}Client, error) {
@@ -33,5 +33,5 @@ func New{{.UpperName}}Client(consulAddr string) (*{{.UpperName}}Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &{{.UpperName}}Client{conn: conn, client: {{.TableName}}.New{{.UpperName}}ServiceClient(conn)}, nil
+	return &{{.UpperName}}Client{conn: conn, client: {{.ProtoImportPath}}.New{{.UpperName}}ServiceClient(conn)}, nil
 }
