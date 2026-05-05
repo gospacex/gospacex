@@ -1,0 +1,118 @@
+package interceptor
+
+import (
+	"context"
+	"time"
+
+	"{{.AppName}}/pkg/logger"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+{{if .Otel}}
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc/metadata"
+	"{{.AppName}}/pkg/tracing"
+{{end}}
+)
+
+func UnaryInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	start := time.Now()
+
+	var traceID string
+{{if .Otel}}
+	var span trace.Span
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		propagator := otel.GetTextMapPropagator()
+		ctx = propagator.Extract(ctx, tracing.NewGRPCMetadataCarrier(md))
+		if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
+			traceID = sc.TraceID().String()
+		}
+	}
+	spanName := info.FullMethod
+	ctx, span = otel.Tracer("").Start(ctx, spanName)
+	defer span.End()
+{{end}}
+
+	resp, err := handler(ctx, req)
+
+	latency := time.Since(start)
+	code := codes.OK
+	if err != nil {
+		if st, ok := status.FromError(err); ok {
+			code = st.Code()
+		}
+		fields := []interface{}{
+			"method", info.FullMethod,
+			"status", code.String(),
+			"latency", latency.String(),
+		}
+		if traceID != "" {
+			fields = append(fields, "trace_id", traceID)
+		}
+		logger.Access.Infow("gRPC call", fields...)
+		logger.Error.LogContext(ctx, err, "gRPC error",
+			"method", info.FullMethod,
+			"status", code.String(),
+		)
+	} else {
+		fields := []interface{}{
+			"method", info.FullMethod,
+			"status", code.String(),
+			"latency", latency.String(),
+		}
+		if traceID != "" {
+			fields = append(fields, "trace_id", traceID)
+		}
+		logger.Access.Infow("gRPC call", fields...)
+	}
+
+	return resp, err
+}
+
+func StreamInterceptor(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	start := time.Now()
+
+	ctx := ss.Context()
+	var traceID string
+{{if .Otel}}
+	var span trace.Span
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		propagator := otel.GetTextMapPropagator()
+		ctx = propagator.Extract(ctx, tracing.NewGRPCMetadataCarrier(md))
+		if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
+			traceID = sc.TraceID().String()
+		}
+	}
+	spanName := info.FullMethod
+	ctx, span = otel.Tracer("").Start(ctx, spanName)
+	defer span.End()
+{{end}}
+
+	err := handler(srv, &serverStreamWrapper{ServerStream: ss, ctx: ctx})
+
+	latency := time.Since(start)
+	if err != nil {
+		fields := []interface{}{
+			"method", info.FullMethod,
+			"latency", latency.String(),
+		}
+		if traceID != "" {
+			fields = append(fields, "trace_id", traceID)
+		}
+		logger.Access.Infow("gRPC stream", fields...)
+		logger.Error.LogContext(ctx, err, "gRPC stream error", "method", info.FullMethod)
+	}
+
+	return err
+}
+
+type serverStreamWrapper struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (w *serverStreamWrapper) Context() context.Context {
+	return w.ctx
+}

@@ -1,0 +1,158 @@
+package repository
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"{{.AppName}}/pkg/database"
+	"{{.AppName}}/pkg/logger"
+	"{{.AppName}}/{{.SrvDirName}}/internal/model"
+	pb "{{.AppName}}/common/kitexGen/{{.ProtoImportPath}}"
+
+	"gorm.io/gorm"
+)
+
+type {{.UpperEntityName}}Repo struct { db *gorm.DB }
+
+func New{{.UpperEntityName}}Repo(db *gorm.DB) *{{.UpperEntityName}}Repo {
+	if db == nil {
+		db, _ = database.NewDB(nil)
+	}
+	logger.Business.Infow("{{.UpperEntityName}}Repo initialized")
+	return &{{.UpperEntityName}}Repo{db: db}
+}
+
+func (r *{{.UpperEntityName}}Repo) Create(ctx context.Context, m *model.{{.UpperEntityName}}) error {
+	start := time.Now()
+	logger.Business.Infow("create {{.Module}}", "model", m)
+
+	if err := r.db.WithContext(ctx).Create(m).Error; err != nil {
+		logger.Business.Errorw("create {{.Module}} failed", "error", err.Error())
+		return err
+	}
+
+	logger.Business.Infow("create {{.Module}} success", "id", m.Id, "duration", time.Since(start).String())
+	return nil
+}
+
+func (r *{{.UpperEntityName}}Repo) GetByID(ctx context.Context, id {{.PKGoType}}) (*model.{{.UpperEntityName}}, error) {
+	start := time.Now()
+	logger.Business.Infow("get {{.Module}} by id", "id", id)
+
+	var m model.{{.UpperEntityName}}
+{{- if .HasSoftDelete}}
+	if err := r.db.WithContext(ctx).Where("{{.PKProtoName}} = ? AND {{.SoftDeleteCol}} = 0", id).First(&m).Error; err != nil {
+{{- else}}
+	if err := r.db.WithContext(ctx).First(&m, id).Error; err != nil {
+{{- end}}
+		logger.Business.Errorw("get {{.Module}} failed", "error", err.Error())
+		return nil, err
+	}
+
+	logger.Business.Infow("get {{.Module}} success", "id", id, "duration", time.Since(start).String())
+	return &m, nil
+}
+
+func (r *{{.UpperEntityName}}Repo) List(ctx context.Context) ([]*model.{{.UpperEntityName}}, error) {
+	start := time.Now()
+	logger.Business.Infow("list {{.Module}}")
+
+	var list []*model.{{.UpperEntityName}}
+{{- if .HasSoftDelete}}
+	err := r.db.WithContext(ctx).Where("{{.SoftDeleteCol}} = 0").Find(&list).Error
+{{- else}}
+	err := r.db.WithContext(ctx).Find(&list).Error
+{{- end}}
+	if err != nil {
+		logger.Business.Errorw("list {{.Module}} failed", "error", err.Error())
+		return nil, err
+	}
+
+	logger.Business.Infow("list {{.Module}} success", "count", len(list), "duration", time.Since(start).String())
+	return list, nil
+}
+
+// ListWithFilter 支持分页和过滤条件的列表查询
+func (r *{{.UpperEntityName}}Repo) ListWithFilter(ctx context.Context, req *pb.List{{.UpperEntityName}}Req) ([]*model.{{.UpperEntityName}}, error) {
+	start := time.Now()
+	logger.Business.Infow("list {{.Module}} with filter", "page", req.Page, "pageSize", req.PageSize)
+
+	query := r.db.WithContext(ctx)
+{{- if .HasSoftDelete}}
+	query = query.Where("{{.SoftDeleteCol}} = 0")
+{{- end}}
+
+	// 分页处理
+	page := req.Page
+	pageSize := req.PageSize
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	offset := (page - 1) * pageSize
+
+	var list []*model.{{.UpperEntityName}}
+	err := query.Offset(offset).Limit(pageSize).Find(&list).Error
+	if err != nil {
+		logger.Business.Errorw("list {{.Module}} with filter failed", "error", err.Error())
+		return nil, err
+	}
+
+	logger.Business.Infow("list {{.Module}} with filter success", "count", len(list), "page", page, "pageSize", pageSize, "duration", time.Since(start).String())
+	return list, nil
+}
+
+func (r *{{.UpperEntityName}}Repo) Update(ctx context.Context, m *model.{{.UpperEntityName}}) error {
+	start := time.Now()
+	logger.Business.Infow("update {{.Module}}", "id", m.Id)
+
+	if err := r.db.WithContext(ctx).Save(m).Error; err != nil {
+		logger.Business.Errorw("update {{.Module}} failed", "error", err.Error())
+		return err
+	}
+
+	logger.Business.Infow("update {{.Module}} success", "id", m.Id, "duration", time.Since(start).String())
+	return nil
+}
+
+func (r *{{.UpperEntityName}}Repo) Delete(ctx context.Context, id {{.PKGoType}}) error {
+	start := time.Now()
+	logger.Business.Infow("delete {{.Module}}", "id", id)
+
+{{- if .HasSoftDelete}}
+	err := r.db.WithContext(ctx).Model(&model.{{.UpperEntityName}}{}).Where("{{.PKProtoName}} = ?", id).Update("{{.SoftDeleteCol}}", 1).Error
+{{- else}}
+	err := r.db.WithContext(ctx).Delete(&model.{{.UpperEntityName}}{}, id).Error
+{{- end}}
+	if err != nil {
+		logger.Business.Errorw("delete {{.Module}} failed", "error", err.Error())
+		return err
+	}
+
+	logger.Business.Infow("delete {{.Module}} success", "id", id, "duration", time.Since(start).String())
+	return nil
+}
+
+{{if .HasJoin}}
+// {{.JoinRepoMethodName}} 一对一联表查询
+func (r *{{.UpperEntityName}}Repo) {{.JoinRepoMethodName}}(ctx context.Context, id int64) (*model.{{.JoinModelName}}, error) {
+	var result model.{{.JoinModelName}}
+	err := r.db.WithContext(ctx).
+		Table("`{{.LeftTable}}` AS {{.LeftAlias}}").
+		Select("`{{.LeftAlias}}`.id{{range .LeftColumns}}, `{{$.LeftAlias}}`.{{.Name}}{{end}}{{range .RightColumns}}, `{{$.RightAlias}}`.{{.Name}} AS {{.AliasName}}{{end}}").
+		Joins("LEFT JOIN `{{.RightTable}}` AS {{.RightAlias}} ON `{{$.RightAlias}}`.`{{.RightJoinField}}` = `{{$.LeftAlias}}`.`{{.LeftJoinField}}`").
+		Where("`{{.LeftAlias}}`.`id` = ?", id).
+		Scan(&result).
+		Error
+	if err != nil {
+		return nil, fmt.Errorf("join query failed: %w", err)
+	}
+	return &result, nil
+}
+{{end}}

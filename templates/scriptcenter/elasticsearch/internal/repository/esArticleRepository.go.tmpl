@@ -1,0 +1,46 @@
+package repository
+
+import (
+	"context"
+	"fmt"
+
+	"{{.ModuleName}}/internal/model"
+	"{{.ModuleName}}/internal/search"
+)
+
+// ESArticleRepository 纯 Elasticsearch 文章仓储
+type ESArticleRepository struct {
+	esClient *search.ESClient
+}
+
+// NewESArticleRepository 创建仓储
+func NewESArticleRepository(esClient *search.ESClient) *ESArticleRepository {
+	return &ESArticleRepository{
+		esClient: esClient,
+	}
+}
+
+// Index 索引文章
+func (r *ESArticleRepository) Index(ctx context.Context, article *model.EbArticle) error {
+	return r.esClient.Index(ctx, article)
+}
+
+// Get 获取文章
+func (r *ESArticleRepository) Get(ctx context.Context, id int64) (*model.EbArticle, error) {
+	return r.esClient.Get(ctx, fmt.Sprintf("%d", id))
+}
+
+// Search 搜索文章
+func (r *ESArticleRepository) Search(ctx context.Context, query string) ([]*model.EbArticle, int64, error) {
+	return r.esClient.Search(ctx, query)
+}
+
+// Delete 删除文章
+func (r *ESArticleRepository) Delete(ctx context.Context, id int64) error {
+	return r.esClient.Delete(ctx, fmt.Sprintf("%d", id))
+}
+
+// Update 更新文章
+func (r *ESArticleRepository) Update(ctx context.Context, article *model.EbArticle) error {
+	return r.esClient.Update(ctx, article)
+}

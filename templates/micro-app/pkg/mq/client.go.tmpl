@@ -1,0 +1,84 @@
+package mq
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+)
+
+// Config MQ 配置
+type Config struct {
+	Type     string   // kafka|rabbitmq|rocketmq
+	Host     string
+	Port     string
+	Topic    string
+	User     string
+	Password string
+	Group    string // kafka consumer group
+}
+
+// Client MQ 客户端接口
+type Client interface {
+	Publish(ctx context.Context, topic string, data interface{}) error
+	Subscribe(ctx context.Context, topic string, handler func([]byte)) error
+	Close() error
+}
+
+// NewClient 创建 MQ 客户端
+func NewClient(cfg *Config) (Client, error) {
+	switch cfg.Type {
+	case "kafka":
+		return NewKafkaClient(KafkaConfig{
+			Brokers: []string{fmt.Sprintf("%s:%s", cfg.Host, cfg.Port)},
+			Topic:   cfg.Topic,
+			Group:   cfg.Group,
+		})
+	case "rabbitmq":
+		return NewRabbitMQClient(RabbitMQConfig{
+			URL:      fmt.Sprintf("amqp://%s:%s@%s:%s/", cfg.User, cfg.Password, cfg.Host, cfg.Port),
+			Queue:    cfg.Topic,
+			Exchange: "",
+		})
+	case "rocketmq":
+		return NewRocketMQClient(RocketMQConfig{
+			Endpoint: fmt.Sprintf("http://%s:%s", cfg.Host, cfg.Port),
+			Topic:    cfg.Topic,
+			Group:    cfg.Group,
+		})
+	default:
+		return nil, fmt.Errorf("unsupported mq type: %s", cfg.Type)
+	}
+}
+
+// Producer 生产者接口
+type Producer interface {
+	Send(ctx context.Context, topic string, msg []byte) error
+	SendBatch(ctx context.Context, topic string, msgs [][]byte) error
+	Close() error
+}
+
+// Consumer 消费者接口
+type Consumer interface {
+	Subscribe(topic string, handler func([]byte)) error
+	Start() error
+	Stop() error
+}
+
+// Message 消息结构
+type Message struct {
+	Key   string
+	Value []byte
+	Topic string
+}
+
+// MarshalJSON 序列化消息
+func (m *Message) MarshalJSON() ([]byte, error) {
+	type Alias Message
+	return json.Marshal(&struct {
+		*Alias
+		Value string `json:"value"` // 显示为字符串便于调试
+	}{
+		Alias: (*Alias)(m),
+		Value: string(m.Value),
+	})
+}

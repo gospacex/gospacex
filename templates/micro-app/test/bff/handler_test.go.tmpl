@@ -1,0 +1,91 @@
+package test
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+	"{{.ModuleName}}/{{.BffDirName}}/internal/router"
+)
+
+// Test{{.UpperName}}Handler_List 测试列表接口
+func Test{{.UpperName}}Handler_List(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := router.NewRouter()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/{{.ModuleName}}s", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Errorf("failed to parse response: %v", err)
+	}
+}
+
+// Test{{.UpperName}}Handler_Get 测试详情接口
+func Test{{.UpperName}}Handler_Get(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := router.NewRouter()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/{{.ModuleName}}s/1", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+}
+
+// Test{{.UpperName}}Handler_Create 测试创建接口
+func Test{{.UpperName}}Handler_Create(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := router.NewRouter()
+
+	body := `{"name": "test"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/{{.ModuleName}}s", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+}
+
+// Test{{.UpperName}}Handler_Update 测试更新接口
+func Test{{.UpperName}}Handler_Update(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := router.NewRouter()
+
+	body := `{"name": "updated"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/{{.ModuleName}}s/1", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+}
+
+// Test{{.UpperName}}Handler_Delete 测试删除接口
+func Test{{.UpperName}}Handler_Delete(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := router.NewRouter()
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/{{.ModuleName}}s/1", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+}

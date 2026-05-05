@@ -1,0 +1,75 @@
+package mw
+
+import (
+	"context"
+	"log"
+	"time"
+	
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
+)
+
+// Logger returns a logger middleware
+func Logger() app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		start := time.Now()
+		path := string(c.Request.URI().Path())
+		
+		// Process request
+		c.Next(ctx)
+		
+		// Log after processing
+		latency := time.Since(start)
+		statusCode := c.Response.StatusCode()
+		
+		log.Printf("[%s] %s %d %v",
+			ctx.Value("request_id"),
+			path,
+			statusCode,
+			latency,
+		)
+	}
+}
+
+// CORS returns a CORS middleware
+func CORS() app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Origin,Content-Type,Authorization")
+		
+		if string(c.Request.Method()) == "OPTIONS" {
+			c.AbortWithStatus(consts.StatusNoContent)
+			return
+		}
+		
+		c.Next(ctx)
+	}
+}
+
+// Auth returns an authentication middleware
+func Auth() app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		token := string(c.GetHeader("Authorization"))
+		if token == "" {
+			c.AbortWithStatusJSON(consts.StatusUnauthorized, map[string]interface{}{
+				"code":    401,
+				"message": "Unauthorized",
+			})
+			return
+		}
+		
+		// TODO: Validate token and extract user info
+		// ctx = context.WithValue(ctx, "user_id", userID)
+		
+		c.Next(ctx)
+	}
+}
+
+// RateLimit returns a rate limiter middleware
+func RateLimit() app.HandlerFunc {
+	// TODO: Implement rate limiting
+	return func(ctx context.Context, c *app.RequestContext) {
+		c.Next(ctx)
+	}
+}

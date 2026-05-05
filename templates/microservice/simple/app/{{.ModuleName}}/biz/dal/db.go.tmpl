@@ -1,0 +1,30 @@
+package dal
+
+import (
+	"database/sql"
+	"fmt"
+
+	_"github.com/go-sql-driver/mysql"
+)
+
+var (
+	DB   *sql.DB
+	Once doOnce
+)
+
+func Init(host, port int, user, password, dbname string) error {
+	dsn := fmt.Sprintf("%s:%s@tcp(localhost:%d)/%s?parseTime=true", user, password, port, dbname)
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return fmt.Errorf("open db: %w", err)
+	}
+	DB = db
+	return nil
+}
+
+func Close() error {
+	if DB != nil {
+		return DB.Close()
+	}
+	return nil
+}

@@ -1,0 +1,418 @@
+# Copyright 2021 CloudWeGo Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+services:
+  # ==================== 数据库/缓存 ====================
+  
+  mysql:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/mysql:8.4
+    container_name: mysql
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./data/database/mysql/init:/docker-entrypoint-initdb.d
+      - ./data/database/mysql/data:/var/lib/mysql
+    environment:
+      MYSQL_DATABASE: gorm
+      MYSQL_USER: gorm
+      MYSQL_PASSWORD: gorm
+      MYSQL_ROOT_PASSWORD: 123456
+    restart: always
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/redis:7.2-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/cache/redis/config/redis.conf:/etc/redis/redis.conf:ro
+      - ./data/cache/redis/data:/data
+    command: redis-server /etc/redis/redis.conf
+    restart: always
+
+  # ==================== 服务注册/配置中心 ====================
+
+  etcd:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/bitnami/etcd:latest-linuxarm64
+    container_name: etcd
+    environment:
+      ALLOW_NONE_AUTHENTICATION: "yes"
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd:2379
+    ports:
+      - "2379:2379"
+      - "2380:2380"
+    volumes:
+      - ./data/registry/etcd/data:/bitnami/etcd
+    restart: always
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  etcdkeeper:
+    image: evildecay/etcdkeeper:latest
+    container_name: etcdkeeper
+    environment:
+      - ETCD_ENDPOINTS=http://etcd:2379
+    ports:
+      - "8080:8080"
+    depends_on:
+      - etcd
+    restart: always
+
+  consul:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/hashicorp/consul:1.22.4
+    container_name: consul
+    ports:
+      - "8500:8500"
+    environment:
+      CONSUL_BIND_INTERFACE: eth0
+    command: agent -server -ui -node=server-1 -bootstrap-expect=1 -client=0.0.0.0
+    volumes:
+      - ./data/registry/consul/data:/consul/data
+    restart: always
+
+  nacos:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/nacos/nacos-server:v2.4.2
+    container_name: nacos
+    ports:
+      - "8848:8848"
+      - "9848:9848"
+    environment:
+      MODE: standalone
+      SPRING_DATASOURCE_PLATFORM: mysql
+      MYSQL_SERVICE_HOST: mysql
+      MYSQL_SERVICE_PORT: 3306
+      MYSQL_SERVICE_DB_NAME: nacos
+      MYSQL_SERVICE_USER: gorm
+      MYSQL_SERVICE_PASSWORD: gorm
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: always
+
+  # ==================== 搜索引擎 ====================
+
+  elasticsearch:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/elasticsearch:7.6.2
+    container_name: elasticsearch
+    environment:
+      cluster.name: elasticsearch
+      discovery.type: single-node
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      xpack.security.enabled: "false"
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - ./data/search/elasticsearch/data:/usr/share/elasticsearch/data
+#    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+  kibana:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.elastic.co/kibana/kibana:7.6.2
+    container_name: kibana
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+      I18N_LOCALE: zh-CN
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    restart: always
+
+  # ==================== 消息队列 ====================
+
+  nats:
+    image: nats:latest
+    container_name: nats
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    restart: always
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - ./data/mq/kafka/zookeeper/data:/var/lib/zookeeper/data
+      - ./data/mq/kafka/zookeeper/log:/var/lib/zookeeper/log
+    restart: always
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - ./data/mq/kafka/data:/var/lib/kafka/data
+    restart: always
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9093
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    depends_on:
+      - kafka
+    restart: always
+
+  rabbitmq:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin
+      RABBITMQ_DEFAULT_VHOST: /
+    volumes:
+      - ./data/mq/rabbitmq/data:/var/lib/rabbitmq
+      - ./data/mq/rabbitmq/logs:/var/log/rabbitmq
+    restart: always
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  rocketmq-nameserver:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/apache/rocketmq:latest
+    container_name: rocketmq-nameserver
+    ports:
+      - "9876:9876"
+    environment:
+      JAVA_OPT_EXT: "-server -Xms512m -Xmx512m"
+    command: sh mqnamesrv
+    volumes:
+      - ./data/mq/rocketmq/nameserver/logs:/home/rocketmq/logs
+    restart: always
+
+  rocketmq-broker:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/apache/rocketmq:latest
+    container_name: rocketmq-broker
+    ports:
+      - "10909:10909"
+      - "10911:10911"
+      - "10912:10912"
+    environment:
+      NAMESRV_ADDR: rocketmq-nameserver:9876
+      JAVA_OPT_EXT: "-server -Xms256m -Xmx256m -Xmn128m"
+    command: ["sh", "mqbroker", "-c", "/home/rocketmq/conf/broker.conf"]
+    volumes:
+      - ./data/mq/rocketmq/broker/conf/broker.conf:/home/rocketmq/conf/broker.conf:ro
+      - ./data/mq/rocketmq/broker/logs:/home/rocketmq/logs
+      - ./data/mq/rocketmq/broker/store:/home/rocketmq/store
+    depends_on:
+      rocketmq-nameserver:
+        condition: service_started
+    restart: always
+    healthcheck:
+      test: ["CMD", "sh", "-c", "mqadmin clusterList -n rocketmq-nameserver:9876 | grep broker-a"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  rocketmq-dashboard:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/apacherocketmq/rocketmq-dashboard:latest
+    container_name: rocketmq-dashboard
+    ports:
+      - "8081:8080"
+    environment:
+      JAVA_OPTS: "-Drocketmq.namesrv.addr=rocketmq-nameserver:9876 -Dcom.rocketmq.sendMessageWithVIPChannel=false"
+    depends_on:
+      - rocketmq-nameserver
+    restart: always
+
+  # ==================== 分布式事务管理器 ====================
+
+  dtm:
+    image: yedf/dtm:latest
+    container_name: dtm
+    environment:
+      STORE_DRIVER: mysql
+      STORE_HOST: mysql
+      STORE_USER: root
+      STORE_PASSWORD: root
+      STORE_PORT: 3306
+      STORE_DB: dtm
+      IS_DOCKER: "true"
+    ports:
+      - "36789:36789"
+      - "36790:36790"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: always
+    command: >
+      sh -c "
+        echo 'Waiting for MySQL...' &&
+        sleep 10 &&
+        /app/dtm/dtm -c /app/dtm/dtm.yaml
+      "
+
+  # ==================== 可观测性（监控/日志/追踪） ====================
+
+  jaeger-all-in-one:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/jaegertracing/all-in-one:latest
+    container_name: jaeger-all-in-one
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"
+      - "14268:14268"
+      - "14250:14250"
+      - "6831:6831/udp"
+      - "4317:4317"
+      - "4318:4318"
+    restart: always
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib-dev:latest
+    container_name: otel-collector
+    command:
+      - "--config=/etc/otel-collector-config.yaml"
+      - "${OTELCOL_ARGS:-}"
+    volumes:
+      - ./data/observability/otel/config/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "1888:1888"
+      - "8888:8888"
+      - "8889:8889"
+      - "13133:13133"
+      - "4317:4317"
+      - "55679:55679"
+    depends_on:
+      - jaeger-all-in-one
+      - victoriametrics
+    # restart: always
+
+  victoriametrics:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/victoriametrics/victoria-metrics:latest
+    container_name: victoriametrics
+    ports:
+      - "8428:8428"
+      - "8089:8089"
+      - "8089:8089/udp"
+      - "2003:2003"
+      - "2003:2003/udp"
+      - "4242:4242"
+    command:
+      - '--storageDataPath=/storage'
+      - '--graphiteListenAddr=:2003'
+      - '--opentsdbListenAddr=:4242'
+      - '--httpListenAddr=:8428'
+      - '--influxListenAddr=:8089'
+    volumes:
+      - ./data/observability/victoriametrics/data:/storage
+#    restart: always
+
+  prometheus:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/prom/prometheus:latest
+    container_name: prometheus
+    user: "0:0"  # 以 root 运行，避免权限问题（或提前 chown 65534:65534 data 目录）
+    volumes:
+      - ./data/observability/prometheus/config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./data/observability/prometheus/data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"  # 支持运行时重载配置
+    ports:
+      - "9090:9090"
+
+#    restart: always
+
+  grafana:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/grafana:latest
+    container_name: grafana
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data/observability/grafana/data:/var/lib/grafana
+      - ./data/observability/grafana/config/dashboards:/etc/grafana/provisioning/dashboards
+      - ./data/observability/grafana/config/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - victoriametrics
+      - prometheus
+      - loki
+#    restart: always
+
+  loki:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/loki:latest
+    container_name: loki
+    user: "0:0"
+    volumes:
+      - ./data/observability/loki/config/loki.yml:/etc/loki/local-config.yaml:ro
+      - ./data/observability/loki/data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "3100:3100"
+#    restart: always
+
+  promtail:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/promtail:latest
+    container_name: promtail
+    volumes:
+      - ./data/observability/promtail/config/promtail.yml:/etc/promtail/config.yml:ro
+      - ./data/logs/frontend:/logs/frontend:ro
+      - /var/log:/var/log:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    restart: always
+
+# ==================== 网络定义 ====================
+
+networks:
+  default:
+    name: gpx-network
+    driver: bridge

@@ -1,0 +1,18 @@
+// GetJoin{{.LeftUpper}}{{.RightUpper}} 获取一对一联表数据
+func (h *StoreProductHandler) GetJoin{{.LeftUpper}}{{.RightUpper}}(ctx context.Context, req *pb.GetJoin{{.LeftUpper}}{{.RightUpper}}Req) (*pb.GetJoin{{.LeftUpper}}{{.RightUpper}}Resp, error) {
+	start := time.Now()
+	logger.Business.Infow("handle get join {{.LeftLower}}{{.RightLower}}", "id", req.Id)
+
+	result, err := h.svc.JoinGet{{.LeftUpper}}{{.RightUpper}}(ctx, int64(req.Id))
+	if err != nil {
+		logger.Business.Errorw("get join product failed", "error", err.Error())
+		return nil, err
+	}
+
+	logger.Business.Infow("get join product success", "id", req.Id, "duration", time.Since(start).String())
+
+	// 转换为 protobuf 响应
+	resp := &pb.GetJoin{{.LeftUpper}}{{.RightUpper}}Resp{}
+	copier.Copy(resp, result)
+	return resp, nil
+}

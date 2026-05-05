@@ -1,0 +1,47 @@
+package logger
+
+import (
+	"context"
+
+	"go.uber.org/zap"
+)
+
+type ErrorLogger struct {
+	*zap.SugaredLogger
+}
+
+func NewErrorLogger(logger *zap.Logger) *ErrorLogger {
+	return &ErrorLogger{
+		logger.Named("error").Sugar(),
+	}
+}
+
+func (l *ErrorLogger) Log(err error, msg string, keysAndValues ...interface{}) {
+	fields := []interface{}{"error", err.Error()}
+	fields = append(fields, keysAndValues...)
+	l.Errorw(msg, fields...)
+}
+
+func (l *ErrorLogger) LogContext(ctx context.Context, err error, msg string, keysAndValues ...interface{}) {
+	fields := []interface{}{"error", err.Error()}
+	if traceID := getTraceID(ctx); traceID != "" {
+		fields = append(fields, "trace_id", traceID)
+	}
+	fields = append(fields, keysAndValues...)
+	l.Errorw(msg, fields...)
+}
+
+func (l *ErrorLogger) WithStack(err error) *zap.SugaredLogger {
+	return l.SugaredLogger.Desugar().With(zap.Stack("stack")).Sugar()
+}
+
+func (l *ErrorLogger) With(keysAndValues ...interface{}) *ErrorLogger {
+	return &ErrorLogger{l.SugaredLogger.With(keysAndValues...)}
+}
+
+func (l *ErrorLogger) WithContext(ctx context.Context) *ErrorLogger {
+	if traceID := getTraceID(ctx); traceID != "" {
+		return &ErrorLogger{l.SugaredLogger.With("trace_id", traceID)}
+	}
+	return &ErrorLogger{l.SugaredLogger}
+}

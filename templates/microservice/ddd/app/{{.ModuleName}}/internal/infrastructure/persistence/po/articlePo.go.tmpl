@@ -1,0 +1,17 @@
+package po
+
+import "time"
+
+type ArticlePo struct {
+	ID        int64     `gorm:"column:id"`
+	Title     string    `gorm:"column:title"`
+	Content   string    `gorm:"column:content"`
+	AuthorID  int64     `gorm:"column:author_id"`
+	Status   string    `gorm:"column:status"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+	UpdatedAt time.Time `gorm:"column:updated_at"`
+}
+
+func (ArticlePo) TableName() string {
+	return "articles"
+}

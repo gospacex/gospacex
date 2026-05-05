@@ -1,0 +1,31 @@
+package interceptor
+
+import (
+	"context"
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+type timeoutConfig struct {
+	defaultTimeout time.Duration
+}
+
+func (i *Interceptor) timeoutInterceptor() grpc.UnaryServerInterceptor {
+	cfg := &timeoutConfig{defaultTimeout: 500 * time.Millisecond}
+
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		ctx, cancel := context.WithTimeout(ctx, cfg.defaultTimeout)
+		defer cancel()
+
+		resp, err := handler(ctx, req)
+		if err != nil {
+			if ctx.Err() == context.DeadlineExceeded {
+				return nil, status.Error(codes.DeadlineExceeded, "timeout exceeded")
+			}
+		}
+		return resp, err
+	}
+}

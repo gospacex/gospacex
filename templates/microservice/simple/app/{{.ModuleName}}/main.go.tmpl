@@ -1,0 +1,23 @@
+package main
+
+import (
+	"fmt"
+	"log"
+
+	"github.com/cloudwego/kitex/server"
+
+	"{{.ModuleName}}/idls"
+)
+
+func main() {
+	svr := server.New(
+		server.WithServiceAddr(&addr),
+		server.WithMiddleware(middleware),
+	)
+	if err := idls.RegisterService(svr); err != nil {
+		log.Fatal(err)
+	}
+	if err := svr.Run(); err != nil {
+		log.Fatal(err)
+	}
+}

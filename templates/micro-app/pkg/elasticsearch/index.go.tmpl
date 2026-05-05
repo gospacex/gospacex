@@ -1,0 +1,265 @@
+package elasticsearch
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+)
+
+// IndexClient 索引管理客户端
+type IndexClient struct {
+	client *Client
+}
+
+// Create 创建索引
+func (c *IndexClient) Create(ctx context.Context, index string, mappings map[string]interface{}) error {
+	req := map[string]interface{}{}
+	if mappings != nil {
+		req["mappings"] = mappings
+	}
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(req); err != nil {
+		return fmt.Errorf("encode mappings: %w", err)
+	}
+
+	res, err := c.client.es.Indices.Create(
+		index,
+		c.client.es.Indices.Create.WithContext(ctx),
+		c.client.es.Indices.Create.WithBody(&buf),
+	)
+	if err != nil {
+		return fmt.Errorf("create index: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("create index error: %s", res.String())
+	}
+
+	return nil
+}
+
+// Delete 删除索引
+func (c *IndexClient) Delete(ctx context.Context, index string) error {
+	res, err := c.client.es.Indices.Delete(
+		[]string{index},
+		c.client.es.Indices.Delete.WithContext(ctx),
+	)
+	if err != nil {
+		return fmt.Errorf("delete index: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("delete index error: %s", res.String())
+	}
+
+	return nil
+}
+
+// Exists 检查索引是否存在
+func (c *IndexClient) Exists(ctx context.Context, index string) (bool, error) {
+	res, err := c.client.es.Indices.Exists(
+		index,
+		c.client.es.Indices.Exists.WithContext(ctx),
+	)
+	if err != nil {
+		return false, fmt.Errorf("check index exists: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode == 200 {
+		return true, nil
+	}
+	if res.StatusCode == 404 {
+		return false, nil
+	}
+
+	return false, fmt.Errorf("check index exists error: %s", res.String())
+}
+
+// PutMapping 更新索引映射
+func (c *IndexClient) PutMapping(ctx context.Context, index string, mappings map[string]interface{}) error {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(mappings); err != nil {
+		return fmt.Errorf("encode mappings: %w", err)
+	}
+
+	res, err := c.client.es.Indices.PutMapping(
+		&buf,
+		c.client.es.Indices.PutMapping.WithContext(ctx),
+		c.client.es.Indices.PutMapping.WithIndex(index),
+	)
+	if err != nil {
+		return fmt.Errorf("put mapping: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("put mapping error: %s", res.String())
+	}
+
+	return nil
+}
+
+// GetMapping 获取索引映射
+func (c *IndexClient) GetMapping(ctx context.Context, index string) (map[string]interface{}, error) {
+	res, err := c.client.es.Indices.GetMapping(
+		c.client.es.Indices.GetMapping.WithContext(ctx),
+		c.client.es.Indices.GetMapping.WithIndex(index),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get mapping: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, fmt.Errorf("get mapping error: %s", res.String())
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	if indexData, ok := result[index].(map[string]interface{}); ok {
+		if mappings, ok := indexData["mappings"].(map[string]interface{}); ok {
+			return mappings, nil
+		}
+	}
+
+	return nil, fmt.Errorf("mapping not found for index: %s", index)
+}
+
+// Refresh 刷新索引
+func (c *IndexClient) Refresh(ctx context.Context, index string) error {
+	res, err := c.client.es.Indices.Refresh(
+		c.client.es.Indices.Refresh.WithContext(ctx),
+		c.client.es.Indices.Refresh.WithIndex(index),
+	)
+	if err != nil {
+		return fmt.Errorf("refresh index: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("refresh index error: %s", res.String())
+	}
+
+	return nil
+}
+
+// Analyze 分词测试
+func (c *IndexClient) Analyze(ctx context.Context, index string, text string, analyzer string) ([]string, error) {
+	req := map[string]interface{}{
+		"text": text,
+	}
+	if analyzer != "" {
+		req["analyzer"] = analyzer
+	}
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(req); err != nil {
+		return nil, fmt.Errorf("encode request: %w", err)
+	}
+
+	res, err := c.client.es.Indices.Analyze(
+		&buf,
+		c.client.es.Indices.Analyze.WithContext(ctx),
+		c.client.es.Indices.Analyze.WithIndex(index),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("analyze: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, fmt.Errorf("analyze error: %s", res.String())
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	var tokens []string
+	if tokensData, ok := result["tokens"].([]interface{}); ok {
+		for _, t := range tokensData {
+			if token, ok := t.(map[string]interface{}); ok {
+				if tokenStr, ok := token["token"].(string); ok {
+					tokens = append(tokens, tokenStr)
+				}
+			}
+		}
+	}
+
+	return tokens, nil
+}
+
+// BuildMappings 构建 mappings JSON
+func BuildMappings(properties map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"properties": properties,
+	}
+}
+
+// BuildKeywordField 构建 keyword 类型字段
+func BuildKeywordField() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "keyword",
+	}
+}
+
+// BuildTextField 构建 text 类型字段
+func BuildTextField() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "text",
+	}
+}
+
+// BuildTextFieldWithAnalyzer 构建带分词器的 text 类型字段
+func BuildTextFieldWithAnalyzer(analyzer string, searchAnalyzer string) map[string]interface{} {
+	field := map[string]interface{}{
+		"type":     "text",
+		"analyzer": analyzer,
+	}
+	if searchAnalyzer != "" {
+		field["search_analyzer"] = searchAnalyzer
+	}
+	return field
+}
+
+// BuildLongField 构建 long 类型字段
+func BuildLongField() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "long",
+	}
+}
+
+// BuildDoubleField 构建 double 类型字段
+func BuildDoubleField() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "double",
+	}
+}
+
+// BuildDateField 构建 date 类型字段
+func BuildDateField(format string) map[string]interface{} {
+	field := map[string]interface{}{
+		"type": "date",
+	}
+	if format != "" {
+		field["format"] = format
+	}
+	return field
+}
+
+// BuildBoolField 构建 boolean 类型字段
+func BuildBoolField() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "boolean",
+	}
+}

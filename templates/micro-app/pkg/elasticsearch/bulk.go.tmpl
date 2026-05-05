@@ -1,0 +1,227 @@
+package elasticsearch
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+)
+
+// BulkClient 批量操作客户端
+type BulkClient struct {
+	client *Client
+}
+
+// Index 批量索引文档
+func (c *BulkClient) Index(ctx context.Context, index string, docs interface{}) (*BulkResult, error) {
+	var buf bytes.Buffer
+
+	// 将 docs 转换为 slice
+	docSlice, err := toSlice(docs)
+	if err != nil {
+		return nil, fmt.Errorf("convert docs: %w", err)
+	}
+
+	for i, doc := range docSlice {
+		// 构建 action meta line
+		meta := map[string]interface{}{
+			"index": map[string]interface{}{
+				"_index": index,
+			},
+		}
+		if id, ok := doc.(map[string]interface{})["id"].(string); ok {
+			meta["index"].(map[string]interface{})["_id"] = id
+		}
+
+		metaBytes, err := json.Marshal(meta)
+		if err != nil {
+			return nil, fmt.Errorf("marshal meta: %w", err)
+		}
+		buf.Write(metaBytes)
+		buf.WriteByte('\n')
+
+		// 构建 source line
+		sourceBytes, err := json.Marshal(doc)
+		if err != nil {
+			return nil, fmt.Errorf("marshal doc: %w", err)
+		}
+		buf.Write(sourceBytes)
+		buf.WriteByte('\n')
+
+		_ = i // avoid unused variable
+	}
+
+	res, err := c.client.es.Bulk(
+		bytes.NewReader(buf.Bytes()),
+		c.client.es.Bulk.WithContext(ctx),
+		c.client.es.Bulk.WithRefresh("true"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("bulk: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, fmt.Errorf("bulk error: %s", res.String())
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	bulkResult := &BulkResult{
+		Errors: result["errors"].(bool),
+	}
+
+	if items, ok := result["items"].([]interface{}); ok {
+		for _, item := range items {
+			bulkResult.Items = append(bulkResult.Items, item.(map[string]interface{}))
+		}
+	}
+
+	return bulkResult, nil
+}
+
+// Delete 批量删除文档
+func (c *BulkClient) Delete(ctx context.Context, index string, ids []string) (*BulkResult, error) {
+	var buf bytes.Buffer
+
+	for _, id := range ids {
+		meta := map[string]interface{}{
+			"delete": map[string]interface{}{
+				"_index": index,
+				"_id":    id,
+			},
+		}
+		metaBytes, err := json.Marshal(meta)
+		if err != nil {
+			return nil, fmt.Errorf("marshal meta: %w", err)
+		}
+		buf.Write(metaBytes)
+		buf.WriteByte('\n')
+	}
+
+	res, err := c.client.es.Bulk(
+		bytes.NewReader(buf.Bytes()),
+		c.client.es.Bulk.WithContext(ctx),
+		c.client.es.Bulk.WithRefresh("true"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("bulk delete: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, fmt.Errorf("bulk delete error: %s", res.String())
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	bulkResult := &BulkResult{
+		Errors: result["errors"].(bool),
+	}
+
+	if items, ok := result["items"].([]interface{}); ok {
+		for _, item := range items {
+			bulkResult.Items = append(bulkResult.Items, item.(map[string]interface{}))
+		}
+	}
+
+	return bulkResult, nil
+}
+
+// toSlice 将任意类型转换为 slice
+func toSlice(v interface{}) ([]map[string]interface{}, error) {
+	if v == nil {
+		return []map[string]interface{}{}, nil
+	}
+
+	// 如果已经是 slice
+	if slice, ok := v.([]map[string]interface{}); ok {
+		return slice, nil
+	}
+
+	// 如果是 slice 或 array
+	switch val := v.(type) {
+	case []interface{}:
+		result := make([]map[string]interface{}, 0, len(val))
+		for _, item := range val {
+			if m, ok := item.(map[string]interface{}); ok {
+				result = append(result, m)
+			}
+		}
+		return result, nil
+	case []string:
+		result := make([]map[string]interface{}, 0, len(val))
+		for _, id := range val {
+			result = append(result, map[string]interface{}{"id": id})
+		}
+		return result, nil
+	}
+
+	return nil, fmt.Errorf("unsupported type: %T", v)
+}
+
+// buildBulkBody 构建 bulk 请求体
+func buildBulkBody(items []BulkRequestItem) (*bytes.Buffer, error) {
+	var buf bytes.Buffer
+	for _, item := range items {
+		var meta map[string]interface{}
+		switch item.Action {
+		case "index":
+			meta = map[string]interface{}{
+				"index": map[string]interface{}{
+					"_index": item.Index,
+				},
+			}
+		case "create":
+			meta = map[string]interface{}{
+				"create": map[string]interface{}{
+					"_index": item.Index,
+				},
+			}
+		case "update":
+			meta = map[string]interface{}{
+				"update": map[string]interface{}{
+					"_index": item.Index,
+				},
+			}
+		case "delete":
+			meta = map[string]interface{}{
+				"delete": map[string]interface{}{
+					"_index": item.Index,
+					"_id":    item.ID,
+				},
+			}
+		}
+
+		if item.ID != "" {
+			if m, ok := meta["index"].(map[string]interface{}); ok {
+				m["_id"] = item.ID
+			}
+		}
+
+		metaBytes, err := json.Marshal(meta)
+		if err != nil {
+			return nil, fmt.Errorf("marshal meta: %w", err)
+		}
+		buf.Write(metaBytes)
+		buf.WriteByte('\n')
+
+		if item.Action != "delete" {
+			sourceBytes, err := json.Marshal(item.Doc)
+			if err != nil {
+				return nil, fmt.Errorf("marshal doc: %w", err)
+			}
+			buf.Write(sourceBytes)
+			buf.WriteByte('\n')
+		}
+	}
+
+	return &buf, nil
+}

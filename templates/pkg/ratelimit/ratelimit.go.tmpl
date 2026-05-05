@@ -1,0 +1,31 @@
+package ratelimit
+
+import (
+	"context"
+	"time"
+
+	"golang.org/x/time/rate"
+)
+
+type Limiter interface {
+	Allow() bool
+	AllowN(ctx context.Context, n int) bool
+}
+
+type TokenBucketLimiter struct {
+	limiter *rate.Limiter
+}
+
+func New(qps int, burst int) *TokenBucketLimiter {
+	return &TokenBucketLimiter{
+		limiter: rate.NewLimiter(rate.Limit(qps), burst),
+	}
+}
+
+func (l *TokenBucketLimiter) Allow() bool {
+	return l.limiter.Allow()
+}
+
+func (l *TokenBucketLimiter) AllowN(ctx context.Context, n int) bool {
+	return l.limiter.AllowN(time.Now(), time.Second, int64(n))
+}

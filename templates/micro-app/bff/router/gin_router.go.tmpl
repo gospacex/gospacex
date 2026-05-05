@@ -1,0 +1,15 @@
+package router
+
+import (
+	"{{.AppName}}/{{.BffDirName}}/internal/handler"
+	"github.com/gin-gonic/gin"
+)
+
+func NewRouter() *gin.Engine {
+	r := gin.Default()
+{{range .Modules}}	r.GET("/api/v1/{{.Name}}s", handler.New{{.UpperName}}Handler().List)
+	r.GET("/api/v1/{{.Name}}s/:id", handler.New{{.UpperName}}Handler().Get)
+	r.POST("/api/v1/{{.Name}}s", handler.New{{.UpperName}}Handler().Create)
+{{end}}{{range .JoinTables}}	r.GET("/api/v1/{{.Name}}s/:id/with-{{.RightName}}", handler.New{{.UpperName}}Handler().GetWith{{.RightUpper}})
+{{end}}	return r
+}

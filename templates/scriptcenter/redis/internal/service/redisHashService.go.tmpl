@@ -1,0 +1,31 @@
+package service
+
+import (
+	"context"
+
+	"{{.ModuleName}}/internal/handler"
+)
+
+type HashService struct {
+	handler *handler.HashHandler
+}
+
+func NewHashService(h *handler.HashHandler) *HashService {
+	return &HashService{handler: h}
+}
+
+func (s *HashService) HSet(ctx context.Context, key, field, value string) error {
+	return s.handler.HSet(ctx, key, field, value)
+}
+
+func (s *HashService) HGet(ctx context.Context, key, field string) (string, error) {
+	return s.handler.HGet(ctx, key, field)
+}
+
+func (s *HashService) HGetAll(ctx context.Context, key string) (map[string]string, error) {
+	return s.handler.HGetAll(ctx, key)
+}
+
+func (s *HashService) HDel(ctx context.Context, key string, fields ...string) error {
+	return s.handler.HDel(ctx, key, fields...)
+}

@@ -1,0 +1,136 @@
+// +build !gen
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"net"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
+
+	pb "{{.ProtoImportPath}}"
+)
+
+// {{.ServiceName}}Server {{.ServiceComment}} gRPC服务实现
+type {{.ServiceName}}Server struct {
+	pb.Unimplemented{{.ServiceName}}ServiceServer
+	// 注入业务服务
+	// svc {{.BusinessService}}
+}
+
+// New{{.ServiceName}}Server 创建{{.ServiceComment}}服务实例
+func New{{.ServiceName}}Server() *{{.ServiceName}}Server {
+	return &{{.ServiceName}}Server{
+		// svc: NewBusinessService(),
+	}
+}
+
+// Create 创建记录
+func (s *{{.ServiceName}}Server) Create(ctx context.Context, req *pb.{{.ServiceName}}Request) (*pb.{{.ServiceName}}Response, error) {
+	log.Printf("Create{{.ServiceName}} called: %v", req)
+
+	resp := &pb.{{.ServiceName}}Response{
+		Code:    0,
+		Message: "success",
+		Data:    &pb.{{.ServiceName}}{},
+	}
+
+	// TODO: 调用业务层创建数据
+	// if err := s.svc.Create(ctx, req); err != nil {
+	//     resp.Code = 500
+	//     resp.Message = err.Error()
+	//     return resp, nil
+	// }
+
+	return resp, nil
+}
+
+// Update 更新记录
+func (s *{{.ServiceName}}Server) Update(ctx context.Context, req *pb.{{.ServiceName}}Request) (*pb.{{.ServiceName}}Response, error) {
+	log.Printf("Update{{.ServiceName}} called: %v", req)
+
+	resp := &pb.{{.ServiceName}}Response{
+		Code:    0,
+		Message: "success",
+		Data:    &pb.{{.ServiceName}}{},
+	}
+
+	// TODO: 调用业务层更新数据
+
+	return resp, nil
+}
+
+// Delete 删除记录
+func (s *{{.ServiceName}}Server) Delete(ctx context.Context, req *pb.{{.ServiceName}}Request) (*pb.{{.ServiceName}}Response, error) {
+	log.Printf("Delete{{.ServiceName}} called: %v", req)
+
+	resp := &pb.{{.ServiceName}}Response{
+		Code:    0,
+		Message: "success",
+	}
+
+	return resp, nil
+}
+
+// GetByID 根据ID获取记录
+func (s *{{.ServiceName}}Server) GetByID(ctx context.Context, req *pb.{{.ServiceName}}Request) (*pb.{{.ServiceName}}Response, error) {
+	log.Printf("GetByID called: request_id=%s", req.RequestId)
+
+	resp := &pb.{{.ServiceName}}Response{
+		Code:    0,
+		Message: "success",
+		Data:    &pb.{{.ServiceName}}{},
+	}
+
+	// TODO: 调用业务层查询数据
+
+	return resp, nil
+}
+
+// List 获取列表
+func (s *{{.ServiceName}}Server) List(ctx context.Context, req *pb.{{.ServiceName}}Request) (*pb.{{.ServiceName}}ListResponse, error) {
+	log.Printf("List{{.ServiceName}} called: %v", req)
+
+	resp := &pb.{{.ServiceName}}ListResponse{
+		Code:    0,
+		Message: "success",
+	}
+
+	// TODO: 调用业务层查询列表
+
+	return resp, nil
+}
+
+// Page 分页获取
+func (s *{{.ServiceName}}Server) Page(ctx context.Context, req *pb.{{.ServiceName}}Request) (*pb.{{.ServiceName}}PageResponse, error) {
+	log.Printf("Page{{.ServiceName}} called: %v", req)
+
+	resp := &pb.{{.ServiceName}}PageResponse{
+		Code:    0,
+		Message: "success",
+	}
+
+	// TODO: 调用业务层分页查询
+
+	return resp, nil
+}
+
+// StartGRPCServer 启动gRPC服务
+func StartGRPCServer(port int) error {
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return fmt.Errorf("failed to listen: %v", err)
+	}
+
+	s := grpc.NewServer()
+	pb.Register{{.ServiceName}}ServiceServer(s, New{{.ServiceName}}Server())
+
+	// 注册反射服务，用于grpcurl等工具调试
+	reflection.Register(s)
+
+	log.Printf("gRPC server listening on port %d", port)
+	return s.Serve(lis)
+}

@@ -1,0 +1,214 @@
+package tracing
+
+import (
+	"context"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
+)
+
+// GRPCMetadataCarrier adapts gRPC metadata.MD to otel propagation.TextMapCarrier
+type GRPCMetadataCarrier struct {
+	md metadata.MD
+}
+
+// NewGRPCMetadataCarrier creates a carrier from existing metadata.MD
+func NewGRPCMetadataCarrier(md metadata.MD) *GRPCMetadataCarrier {
+	return &GRPCMetadataCarrier{md: md}
+}
+
+// Get returns the first value for the given key.
+func (c *GRPCMetadataCarrier) Get(key string) string {
+	vals := c.md.Get(key)
+	if len(vals) > 0 {
+		return vals[0]
+	}
+	return ""
+}
+
+// Set stores the key-value pair.
+func (c *GRPCMetadataCarrier) Set(key, value string) {
+	c.md.Set(key, value)
+}
+
+// Keys returns all keys.
+func (c *GRPCMetadataCarrier) Keys() []string {
+	out := make([]string, 0, len(c.md))
+	for k := range c.md {
+		out = append(out, k)
+	}
+	return out
+}
+
+// GRPCOutgoingMetadataCarrier adapts metadata.MD for outgoing context injection
+type GRPCOutgoingMetadataCarrier struct {
+	md *metadata.MD
+}
+
+// NewGRPCOutgoingMetadataCarrier creates a carrier backed by a pointer to metadata.MD
+func NewGRPCOutgoingMetadataCarrier(md *metadata.MD) *GRPCOutgoingMetadataCarrier {
+	return &GRPCOutgoingMetadataCarrier{md: md}
+}
+
+// Get returns the first value for the given key.
+func (c *GRPCOutgoingMetadataCarrier) Get(key string) string {
+	if c.md == nil {
+		return ""
+	}
+	vals := (*c.md).Get(key)
+	if len(vals) > 0 {
+		return vals[0]
+	}
+	return ""
+}
+
+// Set stores the key-value pair.
+func (c *GRPCOutgoingMetadataCarrier) Set(key, value string) {
+	if c.md == nil {
+		return
+	}
+	(*c.md)[key] = []string{value}
+}
+
+// Keys returns all keys.
+func (c *GRPCOutgoingMetadataCarrier) Keys() []string {
+	if c.md == nil {
+		return nil
+	}
+	out := make([]string, 0, len(*c.md))
+	for k := range *c.md {
+		out = append(out, k)
+	}
+	return out
+}
+
+// Config holds interceptor configuration
+type InterceptorConfig struct {
+	ServiceName string
+	TracerName  string
+}
+
+// NewInterceptorConfig creates config with defaults
+func NewInterceptorConfig(serviceName string) *InterceptorConfig {
+	return &InterceptorConfig{
+		ServiceName: serviceName,
+		TracerName:  serviceName,
+	}
+}
+
+// UnaryServerInterceptor returns gRPC server interceptor for tracing
+func UnaryServerInterceptor(cfg *InterceptorConfig) grpc.UnaryServerInterceptor {
+	tracer := otel.Tracer(cfg.TracerName)
+	propagator := otel.GetTextMapPropagator()
+
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		// Extract context from incoming metadata
+		md, ok := metadata.FromIncomingContext(ctx)
+		if ok {
+			ctx = propagator.Extract(ctx, NewGRPCMetadataCarrier(md))
+		}
+
+		spanName := info.FullMethod
+		ctx, span := tracer.Start(ctx, spanName, trace.WithSpanKind(trace.SpanKindServer))
+		defer span.End()
+
+		resp, err := handler(ctx, req)
+		if err != nil {
+			span.RecordError(err)
+		}
+
+		return resp, err
+	}
+}
+
+// UnaryClientInterceptor returns gRPC client interceptor for tracing
+func UnaryClientInterceptor(cfg *InterceptorConfig) grpc.UnaryClientInterceptor {
+	tracer := otel.Tracer(cfg.TracerName)
+	propagator := otel.GetTextMapPropagator()
+
+	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		// Inject context into outgoing metadata
+		md, ok := metadata.FromOutgoingContext(ctx)
+		if !ok {
+			md = metadata.New(nil)
+		}
+		carrier := NewGRPCMetadataCarrier(md)
+		propagator.Inject(ctx, carrier)
+
+		ctx, span := tracer.Start(ctx, method, trace.WithSpanKind(trace.SpanKindClient))
+		defer span.End()
+
+		err := invoker(ctx, method, req, reply, cc, opts...)
+		if err != nil {
+			span.RecordError(err)
+		}
+
+		return err
+	}
+}
+
+// StreamServerInterceptor returns gRPC stream server interceptor for tracing
+func StreamServerInterceptor(cfg *InterceptorConfig) grpc.StreamServerInterceptor {
+	tracer := otel.Tracer(cfg.TracerName)
+	propagator := otel.GetTextMapPropagator()
+
+	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		ctx := ss.Context()
+
+		md, ok := metadata.FromIncomingContext(ctx)
+		if ok {
+			ctx = propagator.Extract(ctx, NewGRPCMetadataCarrier(md))
+		}
+
+		spanName := info.FullMethod
+		ctx, span := tracer.Start(ctx, spanName, trace.WithSpanKind(trace.SpanKindServer))
+		defer span.End()
+
+		return handler(srv, &serverStream{ServerStream: ss, ctx: ctx})
+	}
+}
+
+// StreamClientInterceptor returns gRPC stream client interceptor for tracing
+func StreamClientInterceptor(cfg *InterceptorConfig) grpc.StreamClientInterceptor {
+	tracer := otel.Tracer(cfg.TracerName)
+	propagator := otel.GetTextMapPropagator()
+
+	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+		md, ok := metadata.FromOutgoingContext(ctx)
+		if !ok {
+			md = metadata.New(nil)
+		}
+		carrier := NewGRPCMetadataCarrier(md)
+		propagator.Inject(ctx, carrier)
+
+		ctx, span := tracer.Start(ctx, method, trace.WithSpanKind(trace.SpanKindClient))
+		defer span.End()
+
+		clientStream, err := streamer(ctx, desc, cc, method, opts...)
+		if err != nil {
+			span.RecordError(err)
+		}
+
+		return &clientStreamWrapper{ClientStream: clientStream, ctx: ctx}, err
+	}
+}
+
+type serverStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (s *serverStream) Context() context.Context {
+	return s.ctx
+}
+
+type clientStreamWrapper struct {
+	grpc.ClientStream
+	ctx context.Context
+}
+
+func (c *clientStreamWrapper) Context() context.Context {
+	return c.ctx
+}

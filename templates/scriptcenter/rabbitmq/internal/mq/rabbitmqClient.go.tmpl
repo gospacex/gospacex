@@ -1,0 +1,47 @@
+package mq
+
+import (
+	"fmt"
+
+	"github.com/streadway/amqp"
+)
+
+// RabbitmqClient RabbitMQ 客户端封装
+type RabbitmqClient struct {
+	url string
+	conn *amqp.Connection
+}
+
+// NewRabbitmqClient 创建客户端
+func NewRabbitmqClient(url string) (*RabbitmqClient, error) {
+	conn, err := amqp.Dial(url)
+	if err != nil {
+		return nil, fmt.Errorf("dial rabbitmq: %w", err)
+	}
+
+	return &RabbitmqClient{
+		url:  url,
+		conn: conn,
+	}, nil
+}
+
+// IsHealthy 检查连接健康
+func (c *RabbitmqClient) IsHealthy() error {
+	if c.conn == nil || c.conn.IsClosed() {
+		return fmt.Errorf("connection closed")
+	}
+	return nil
+}
+
+// Close 关闭连接
+func (c *RabbitmqClient) Close() error {
+	if c.conn != nil {
+		return c.conn.Close()
+	}
+	return nil
+}
+
+// Channel 创建通道
+func (c *RabbitmqClient) Channel() (*amqp.Channel, error) {
+	return c.conn.Channel()
+}

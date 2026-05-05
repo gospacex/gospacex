@@ -1,0 +1,17 @@
+package mq
+
+// RocketmqConfig RocketMQ 配置
+type RocketmqConfig struct {
+	NameServer   string   `yaml:"name_server"`
+	Topic       string   `yaml:"topic"`
+	ConsumerGroup string `yaml:"consumer_group"`
+}
+
+// GetDefaultConfig 获取默认配置
+func GetDefaultConfig() RocketmqConfig {
+	return RocketmqConfig{
+		NameServer:   "localhost:9876",
+		Topic:       "default-topic",
+		ConsumerGroup: "gpx-consumer-group",
+	}
+}

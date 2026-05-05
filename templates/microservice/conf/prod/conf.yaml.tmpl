@@ -1,0 +1,38 @@
+# Production Configuration
+server:
+  service_name: {{.ServiceName}}
+  address: ":8080"  # Production port
+  
+# Database - use environment variables in production
+mysql:
+  user: ${MYSQL_USER}
+  password: ${MYSQL_PASSWORD}
+  host: ${MYSQL_HOST}
+  port: 3306
+  database: {{.ServiceName}}
+  
+# Redis - production cluster
+redis:
+  addr: ${REDIS_ADDR}
+  password: ${REDIS_PASSWORD}
+  db: 0
+  pool_size: 100
+  
+# Etcd - service registry
+etcd:
+  endpoints:
+    - ${ETCD_ENDPOINT_1}
+    - ${ETCD_ENDPOINT_2}
+    - ${ETCD_ENDPOINT_3}
+  dial_timeout: 5s
+  
+# Logging - production settings
+log:
+  level: warn  # warn/error only in production
+  format: json  # JSON format for log aggregation
+  output: stdout  # Docker friendly
+  
+# Tracing - optional
+tracing:
+  enabled: ${TRACING_ENABLED:false}
+  endpoint: ${JAEGER_ENDPOINT}

@@ -1,0 +1,104 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"log"
+	"net"
+
+	"{{.AppName}}/pkg/config"
+	"{{.AppName}}/pkg/database"
+	"{{.AppName}}/pkg/logger"
+	"{{.AppName}}/{{.SrvDirName}}/internal/handler"
+	"{{.AppName}}/{{.SrvDirName}}/internal/interceptor"
+{{- range .ProtoImports}}
+	{{.}}
+{{- end}}
+{{if .Otel}}
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/jaeger"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
+{{end}}
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
+)
+
+var confPath string
+
+func init() {
+	flag.StringVar(&confPath, "config", "configs/config.yaml", "config file")
+}
+
+func main() {
+	flag.Parse()
+	cfg, err := config.Load(confPath)
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
+	if cfg == nil {
+		log.Fatal("Config is nil - check if config file exists: " + confPath)
+	}
+
+	logCfg, err := logger.LoadConfig(confPath)
+	if err != nil {
+		log.Fatalf("Failed to load log config: %v", err)
+	}
+	l, err := logger.NewLogger(logCfg)
+	if err != nil {
+		log.Fatalf("Failed to create logger: %v", err)
+	}
+	defer l.Sync()
+{{if .Otel}}
+	var tp *sdktrace.TracerProvider
+	if cfg.Tracing.Enabled {
+		exp, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(cfg.Tracing.Endpoint)))
+		if err != nil {
+			log.Fatal(err)
+		}
+		tp = sdktrace.NewTracerProvider(
+			sdktrace.WithBatcher(exp),
+			sdktrace.WithResource(resource.NewWithAttributes(
+				semconv.SchemaURL,
+				semconv.ServiceNameKey.String(cfg.Tracing.ServiceName),
+			)),
+		)
+		otel.SetTracerProvider(tp)
+		otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+			propagation.TraceContext{},
+			propagation.Baggage{},
+		))
+		defer func() {
+			if err := tp.Shutdown(nil); err != nil {
+				log.Printf("Error shutting down tracer provider: %v", err)
+			}
+		}()
+		logger.Business.Info("Tracing initialized")
+	}
+{{end}}
+	logger.Business.Infow("SRV service starting", "host", cfg.Server.Host, "port", cfg.Server.Port)
+
+	db, err := database.NewDB(&cfg.Database)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	if db == nil {
+		log.Fatal("Database connection is nil - check database config")
+	}
+	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
+	lis, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatalf("Failed to listen on %s: %v", addr, err)
+	}
+	opts := []grpc.ServerOption{
+		grpc.UnaryInterceptor(interceptor.UnaryInterceptor),
+	}
+	s := grpc.NewServer(opts...)
+{{.HandlerRegs}}	reflection.Register(s)
+
+	logger.Business.Infow("SRV listening", "addr", addr)
+
+	s.Serve(lis)
+}

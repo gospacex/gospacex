@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{.ModuleName}}
+  namespace: default
+spec:
+  replicas: {{.Replicas | default 3}}
+  selector:
+    matchLabels:
+      app: {{.ModuleName}}
+  template:
+    metadata:
+      labels:
+        app: {{.ModuleName}}
+        version: v1
+    spec:
+      containers:
+      - name: {{.ModuleName}}
+        image: {{.ModuleName}}:v1
+        ports:
+        - containerPort: 8080

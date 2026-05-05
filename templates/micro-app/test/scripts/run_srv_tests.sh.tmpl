@@ -1,0 +1,67 @@
+#!/bin/bash
+# Service gRPC Test Script
+# Usage: bash run_srv_tests.sh
+
+set -e
+
+SRV_PORT={{.SRVPort}}
+SRV_HOST=${SRV_HOST:-localhost}
+PROTO_FILE="{{.ProtoPath}}"
+
+echo "=========================================="
+echo "Service gRPC Testing"
+echo "Target: ${SRV_HOST}:${SRV_PORT}"
+echo "=========================================="
+
+# 检查 grpcurl 是否安装
+if ! command -v grpcurl &> /dev/null; then
+    echo "⚠️  grpcurl not found. Install with:"
+    echo "    go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest"
+    exit 1
+fi
+
+# 检查服务是否运行
+check_service() {
+    if ! grpcurl -plaintext "${SRV_HOST}:${SRV_PORT}" list &>/dev/null; then
+        echo "⚠️  Warning: Service may not be running at ${SRV_HOST}:${SRV_PORT}"
+        echo "   Run: cd srvProduct && go run cmd/main.go"
+    fi
+}
+
+check_service
+
+echo ""
+echo "--- List available services ---"
+grpcurl -plaintext "${SRV_HOST}:${SRV_PORT}" list
+echo ""
+
+{{range .Modules}}
+echo "--- Test: {{.ServiceName}}/Create ---"
+CREATE_RESP=$(grpcurl -plaintext -d '{}' "${SRV_HOST}:${SRV_PORT}" {{.RouteName}}.{{.ServiceName}}/Create)
+echo "$CREATE_RESP"
+CREATED_ID=$(echo "$CREATE_RESP" | grep -o '"id":"[^"]*"' | grep -o '[0-9]*' | head -1)
+if [ -z "$CREATED_ID" ]; then
+    CREATED_ID="2"
+fi
+echo ""
+
+echo "--- Test: {{.ServiceName}}/List ---"
+grpcurl -plaintext -d '{}' "${SRV_HOST}:${SRV_PORT}" {{.RouteName}}.{{.ServiceName}}/List
+echo ""
+
+echo "--- Test: {{.ServiceName}}/Get (ID=${CREATED_ID}) ---"
+grpcurl -plaintext -d "{\"id\": ${CREATED_ID}}" "${SRV_HOST}:${SRV_PORT}" {{.RouteName}}.{{.ServiceName}}/Get
+echo ""
+
+echo "--- Test: {{.ServiceName}}/Update (ID=${CREATED_ID}) ---"
+grpcurl -plaintext -d "{\"id\": ${CREATED_ID}, \"store_name\": \"Updated Product\"}" "${SRV_HOST}:${SRV_PORT}" {{.RouteName}}.{{.ServiceName}}/Update
+echo ""
+
+echo "--- Test: {{.ServiceName}}/Delete (ID=${CREATED_ID}) ---"
+grpcurl -plaintext -d "{\"id\": ${CREATED_ID}}" "${SRV_HOST}:${SRV_PORT}" {{.RouteName}}.{{.ServiceName}}/Delete
+echo ""
+{{end}}
+
+echo "=========================================="
+echo "Service Tests Complete!"
+echo "=========================================="

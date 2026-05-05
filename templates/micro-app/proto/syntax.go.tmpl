@@ -1,0 +1,14 @@
+syntax = "proto3";
+package {{.Module}};
+option go_package = "{{.AppName}}/common/kitexGen/{{.ProtoImportPath}}";
+
+service {{.UpperName}}Service {
+  rpc Create(Create{{.UpperName}}Req) returns (Create{{.UpperName}}Resp);
+  rpc Get(Get{{.UpperName}}Req) returns (Get{{.UpperName}}Resp);
+  rpc List(List{{.UpperName}}Req) returns (List{{.UpperName}}Resp);
+  rpc Update(Update{{.UpperName}}Req) returns (Update{{.UpperName}}Resp);
+  rpc Delete(Delete{{.UpperName}}Req) returns (Delete{{.UpperName}}Resp);
+}
+
+// Create 请求
+message Create{{.UpperName}}Req {

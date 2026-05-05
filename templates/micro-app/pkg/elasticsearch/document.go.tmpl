@@ -1,0 +1,130 @@
+package elasticsearch
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+)
+
+// DocumentClient 文档操作客户端
+type DocumentClient struct {
+	client *Client
+}
+
+// Add 创建或更新文档
+func (c *DocumentClient) Add(ctx context.Context, index string, doc interface{}) (string, error) {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(doc); err != nil {
+		return "", fmt.Errorf("encode doc: %w", err)
+	}
+
+	res, err := c.client.es.Index(
+		index,
+		&buf,
+		c.client.es.Index.WithContext(ctx),
+		c.client.es.Index.WithRefresh("true"),
+	)
+	if err != nil {
+		return "", fmt.Errorf("index: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return "", fmt.Errorf("index error: %s", res.String())
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decode response: %w", err)
+	}
+
+	if id, ok := result["_id"].(string); ok {
+		return id, nil
+	}
+	return "", nil
+}
+
+// Get 根据 ID 获取文档
+func (c *DocumentClient) Get(ctx context.Context, index string, id string, result interface{}) error {
+	res, err := c.client.es.Get(
+		index,
+		id,
+		c.client.es.Get.WithContext(ctx),
+		c.client.es.Get.WithRefresh("true"),
+	)
+	if err != nil {
+		return fmt.Errorf("get: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("get error: %s", res.String())
+	}
+
+	var response map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&response); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+
+	if source, ok := response["_source"].(map[string]interface{}); ok {
+		data, err := json.Marshal(source)
+		if err != nil {
+			return fmt.Errorf("marshal source: %w", err)
+		}
+		if err := json.Unmarshal(data, result); err != nil {
+			return fmt.Errorf("unmarshal result: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// Delete 根据 ID 删除文档
+func (c *DocumentClient) Delete(ctx context.Context, index string, id string) error {
+	res, err := c.client.es.Delete(
+		index,
+		id,
+		c.client.es.Delete.WithContext(ctx),
+		c.client.es.Delete.WithRefresh("true"),
+	)
+	if err != nil {
+		return fmt.Errorf("delete: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("delete error: %s", res.String())
+	}
+
+	return nil
+}
+
+// Update 更新文档
+func (c *DocumentClient) Update(ctx context.Context, index string, id string, doc interface{}) error {
+	docMap := map[string]interface{}{
+		"doc": doc,
+	}
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(docMap); err != nil {
+		return fmt.Errorf("encode doc: %w", err)
+	}
+
+	res, err := c.client.es.Update(
+		index,
+		id,
+		&buf,
+		c.client.es.Update.WithContext(ctx),
+		c.client.es.Update.WithRefresh("true"),
+	)
+	if err != nil {
+		return fmt.Errorf("update: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("update error: %s", res.String())
+	}
+
+	return nil
+}

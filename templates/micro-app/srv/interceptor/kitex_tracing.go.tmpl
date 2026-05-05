@@ -1,0 +1,29 @@
+package interceptor
+
+import (
+	"context"
+
+	"github.com/bytedance/gopkg/cloud/metainfo"
+	"github.com/cloudwego/kitex/pkg/endpoint"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+)
+
+func (i *Interceptor) tracingMiddleware() endpoint.Middleware {
+	tracer := otel.Tracer("")
+	propagator := otel.GetTextMapPropagator()
+
+	return func(ctx context.Context, req interface{}, next endpoint.Endpoint) (interface{}, error) {
+		ctx = propagator.Extract(ctx, propagation.TextMap(metainfo.GetAllValue(ctx)))
+
+		_, span := tracer.Start(ctx, "rpc")
+		defer span.End()
+
+		resp, err := next(ctx, req)
+		if err != nil {
+			span.RecordError(err)
+		}
+		return resp, err
+	}
+}

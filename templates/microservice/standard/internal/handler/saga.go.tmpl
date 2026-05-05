@@ -1,0 +1,36 @@
+package handler
+
+import (
+	"context"
+	"github.com/dtm-labs/client/dtmcli"
+	"{{ .ModuleName }}/internal/dtm"
+)
+
+// TransferRequest 跨行转账请求
+type TransferRequest struct {
+	TrxID      string  `json:"trx_id"`
+	FromUserID int64   `json:"from_user_id"`
+	ToUserID   int64   `json:"to_user_id"`
+	Amount     float64 `json:"amount"`
+}
+
+// CreateSagaTransfer 创建 SAGA 分布式事务
+func CreateSagaTransfer(req *TransferRequest) error {
+	gid := dtmcli.MustGenGid(dtm.DtmClient)
+	
+	saga := dtmcli.NewSaga(dtm.DtmClient, gid).
+		// 子事务 1: 转出
+		Add(
+			"http://{{ .ServiceName }}:8080/api/transOut",
+			"http://{{ .ServiceName }}:8080/api/transOut/rollback",
+			req,
+		).
+		// 子事务 2: 转入
+		Add(
+			"http://{{ .ServiceName }}:8080/api/transIn",
+			"http://{{ .ServiceName }}:8080/api/transIn/rollback",
+			req,
+		)
+	
+	return saga.Submit()
+}

@@ -1,0 +1,19 @@
+package domain
+
+import "context"
+
+type ArticleDomainService struct {
+	repo ArticleRepository
+}
+
+func NewArticleDomainService(repo ArticleRepository) *ArticleDomainService {
+	return &ArticleDomainService{repo: repo}
+}
+
+func (s *ArticleDomainService) CreateArticle(ctx context.Context, title, content string, authorID int64) (*ArticleAggregate, error) {
+	aggregate := NewArticleAggregate(0, title, content, authorID)
+	if err := s.repo.Save(ctx, aggregate); err != nil {
+		return nil, err
+	}
+	return aggregate, nil
+}

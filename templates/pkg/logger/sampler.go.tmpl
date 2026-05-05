@@ -1,0 +1,33 @@
+package logger
+
+import (
+	"time"
+
+	"go.uber.org/zap/zapcore"
+)
+
+type SamplerConfig struct {
+	Initial    int
+	Thereafter int
+	Tick       time.Duration
+}
+
+func NewSamplerCore(core zapcore.Core, cfg SamplerConfig) zapcore.Core {
+	if cfg.Initial == 0 {
+		cfg.Initial = 100
+	}
+	if cfg.Thereafter == 0 {
+		cfg.Thereafter = 200
+	}
+	if cfg.Tick == 0 {
+		cfg.Tick = time.Second
+	}
+
+	return zapcore.NewSampler(core, cfg.Tick, cfg.Initial, cfg.Thereafter)
+}
+
+var DefaultSamplerConfig = SamplerConfig{
+	Initial:    100,
+	Thereafter: 200,
+	Tick:       time.Second,
+}

@@ -1,0 +1,80 @@
+package middleware
+
+import (
+	"context"
+	"time"
+
+	"{{.AppName}}/pkg/logger"
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/google/uuid"
+)
+
+// Logger 请求日志中间件
+func Logger() app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		start := time.Now()
+		requestID := string(c.GetHeader("X-Request-ID"))
+		if requestID == "" {
+			requestID = uuid.New().String()
+		}
+		c.Set("requestID", requestID)
+		c.Header("X-Request-ID", requestID)
+
+		c.Next(ctx)
+
+		latency := time.Since(start)
+		statusCode := c.Response.StatusCode()
+		method := string(c.Request.Method())
+		path := string(c.Request.URI().Path())
+		clientIP := string(c.Request.URI().IP())
+
+		logger.Access.Infow("access log",
+			"method", method,
+			"path", path,
+			"status", statusCode,
+			"latency", latency.String(),
+			"clientIP", clientIP,
+			"requestID", requestID,
+		)
+
+		if statusCode >= 500 {
+			logger.Error.Infow("error request",
+				"method", method,
+				"path", path,
+				"status", statusCode,
+				"latency", latency.String(),
+				"requestID", requestID,
+			)
+		}
+	}
+}
+
+// Recovery panic恢复中间件
+func Recovery() app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		defer func() {
+			if err := recover(); err != nil {
+				c.JSON(500, map[string]interface{}{"code": 500, "message": "Internal Server Error"})
+				c.Abort()
+			}
+		}()
+		c.Next(ctx)
+	}
+}
+
+// CORS 跨域中间件
+func CORS() app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, X-Request-ID")
+		c.Header("Access-Control-Max-Age", "86400")
+
+		if string(c.Request.Method()) == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+
+		c.Next(ctx)
+	}
+}

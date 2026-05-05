@@ -1,0 +1,105 @@
+package middleware
+
+import (
+	"context"
+	"fmt"
+	"time"
+	
+	"github.com/rabbitmq/amqp091-go"
+)
+
+// RabbitMQConfig RabbitMQ 配置
+type RabbitMQConfig struct {
+	Enabled  bool   `yaml:"enabled" json:"enabled"`
+	URL      string `yaml:"url" json:"url"`
+	Queue    string `yaml:"queue" json:"queue"`
+	Exchange string `yaml:"exchange" json:"exchange"`
+}
+
+// RabbitMQClient RabbitMQ 客户端
+type RabbitMQClient struct {
+	conn    *amqp091.Connection
+	channel *amqp091.Channel
+	queue   amqp091.Queue
+}
+
+// NewRabbitMQClient 创建 RabbitMQ 客户端
+func NewRabbitMQClient(cfg RabbitMQConfig) (*RabbitMQClient, error) {
+	conn, err := amqp091.Dial(cfg.URL)
+	if err != nil {
+		return nil, fmt.Errorf("dial rabbitmq failed: %w", err)
+	}
+	
+	channel, err := conn.Channel()
+	if err != nil {
+		return nil, fmt.Errorf("create channel failed: %w", err)
+	}
+	
+	queue, err := channel.QueueDeclare(
+		cfg.Queue,
+		true,  // durable
+		false, // delete when unused
+		false, // exclusive
+		false, // no-wait
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("declare queue failed: %w", err)
+	}
+	
+	return &RabbitMQClient{
+		conn:    conn,
+		channel: channel,
+		queue:   queue,
+	}, nil
+}
+
+// Publish 发布消息
+func (c *RabbitMQClient) Publish(ctx context.Context, body []byte) error {
+	return c.channel.PublishWithContext(
+		ctx,
+		"",
+		c.queue.Name,
+		false,
+		false,
+		amqp091.Publishing{
+			ContentType: "application/json",
+			Body:        body,
+			Timestamp:   time.Now(),
+		},
+	)
+}
+
+// Consume 消费消息
+func (c *RabbitMQClient) Consume(ctx context.Context, handler func([]byte) error) error {
+	msgs, err := c.channel.Consume(
+		c.queue.Name,
+		"",
+		false, // auto-ack
+		false, // exclusive
+		false, // no-local
+		false, // no-wait
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("consume failed: %w", err)
+	}
+	
+	for msg := range msgs {
+		if err := handler(msg.Body); err != nil {
+			msg.Nack(false, true)
+			continue
+		}
+		msg.Ack(false)
+	}
+	
+	return nil
+}
+
+// Close 关闭连接
+func (c *RabbitMQClient) Close() error {
+	if err := c.channel.Close(); err != nil {
+		return err
+	}
+	return c.conn.Close()
+}

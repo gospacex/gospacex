@@ -1,0 +1,26 @@
+package handler
+
+import (
+	"context"
+	"fmt"
+
+	"{{.ProjectName}}/internal/model"
+	"{{.ProjectName}}/internal/search"
+)
+
+// EsSearchHandler Elasticsearch 搜索处理器
+type EsSearchHandler struct {
+	client *search.EsClient
+}
+
+// NewEsSearchHandler 创建处理器
+func NewEsSearchHandler(client *search.EsClient) *EsSearchHandler {
+	return &EsSearchHandler{
+		client: client,
+	}
+}
+
+// Search 搜索文档
+func (h *EsSearchHandler) Search(ctx context.Context, keyword string) ([]*model.EbArticle, int64, error) {
+	return h.client.Search(ctx, keyword)
+}

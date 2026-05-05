@@ -1,0 +1,53 @@
+package middleware
+
+import (
+	"context"
+	"fmt"
+	
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/jaeger"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
+)
+
+// JaegerConfig Jaeger 配置
+type JaegerConfig struct {
+	Enabled     bool   `yaml:"enabled" json:"enabled"`
+	Endpoint    string `yaml:"endpoint" json:"endpoint"`
+	ServiceName string `yaml:"service_name" json:"service_name"`
+}
+
+// InitJaeger 初始化 Jaeger 追踪
+func InitJaeger(cfg JaegerConfig) (*sdktrace.TracerProvider, error) {
+	// 创建 Jaeger exporter
+	exporter, err := jaeger.New(jaeger.WithCollectorEndpoint(
+		jaeger.WithEndpoint(cfg.Endpoint),
+	))
+	if err != nil {
+		return nil, fmt.Errorf("create jaeger exporter failed: %w", err)
+	}
+	
+	// 创建 TracerProvider
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceNameKey.String(cfg.ServiceName),
+		)),
+	)
+	
+	otel.SetTracerProvider(tp)
+	
+	return tp, nil
+}
+
+// GetTracer 获取 Tracer
+func GetTracer(name string) Tracer {
+	return otel.Tracer(name)
+}
+
+// Tracer 追踪器接口
+type Tracer interface {
+	Start(ctx context.Context, spanName string, opts ...trace.SpanStartOption) (context.Context, trace.Span)
+}

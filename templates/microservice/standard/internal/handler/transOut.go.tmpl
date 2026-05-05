@@ -1,0 +1,68 @@
+package handler
+
+import (
+	"github.com/gin-gonic/gin"
+	"github.com/dtm-labs/client/dtmcli/barrier"
+	"{{ .ModuleName }}/internal/dtm"
+	"gorm.io/gorm"
+)
+
+// TransOut 转出子事务（正向操作）
+func TransOut(c *gin.Context) error {
+	var req TransferRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		return err
+	}
+	
+	return dtm.CallWithBarrier(dtm.BarrierDB, func(tx *gorm.DB, bb *barrier.Barrier) error {
+		// 业务逻辑：扣减余额
+		return tx.Model(&Account{}).
+			Where("user_id = ?", req.FromUserID).
+			Update("balance", gorm.Expr("balance - ?", req.Amount)).Error
+	})
+}
+
+// TransOutRollback 转出子事务（回滚操作）
+func TransOutRollback(c *gin.Context) error {
+	var req TransferRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		return err
+	}
+	
+	return dtm.CallWithBarrier(dtm.BarrierDB, func(tx *gorm.DB, bb *barrier.Barrier) error {
+		// 回滚逻辑：恢复余额
+		return tx.Model(&Account{}).
+			Where("user_id = ?", req.FromUserID).
+			Update("balance", gorm.Expr("balance + ?", req.Amount)).Error
+	})
+}
+
+// TransIn 转入子事务（正向操作）
+func TransIn(c *gin.Context) error {
+	var req TransferRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		return err
+	}
+	
+	return dtm.CallWithBarrier(dtm.BarrierDB, func(tx *gorm.DB, bb *barrier.Barrier) error {
+		// 业务逻辑：增加余额
+		return tx.Model(&Account{}).
+			Where("user_id = ?", req.ToUserID).
+			Update("balance", gorm.Expr("balance + ?", req.Amount)).Error
+	})
+}
+
+// TransInRollback 转入子事务（回滚操作）
+func TransInRollback(c *gin.Context) error {
+	var req TransferRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		return err
+	}
+	
+	return dtm.CallWithBarrier(dtm.BarrierDB, func(tx *gorm.DB, bb *barrier.Barrier) error {
+		// 回滚逻辑：扣减余额
+		return tx.Model(&Account{}).
+			Where("user_id = ?", req.ToUserID).
+			Update("balance", gorm.Expr("balance - ?", req.Amount)).Error
+	})
+}

@@ -1,0 +1,245 @@
+package config
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/nacos-group/nacos-sdk-go/v2/clients"
+	"github.com/nacos-group/nacos-sdk-go/v2/clients/config_client"
+	"github.com/nacos-group/nacos-sdk-go/v2/common/constant"
+	"github.com/nacos-group/nacos-sdk-go/v2/vo"
+	"gopkg.in/yaml.v3"
+)
+
+// HotReloadConfig 配置热更新配置
+type HotReloadConfig struct {
+	Enabled       bool          `yaml:"enabled"`
+	NacosDataID   string        `yaml:"nacos_data_id"`
+	NacosGroup    string        `yaml:"nacos_group"`
+	Timeout       time.Duration `yaml:"timeout"`
+	RetryInterval time.Duration `yaml:"retry_interval"`
+	MaxRetries    int           `yaml:"max_retries"`
+}
+
+// ConfigChangeListener 配置变更监听器
+type ConfigChangeListener interface {
+	OnConfigChange(config *Config)
+}
+
+// HotReloader 配置热更新管理器
+type HotReloader struct {
+	mu           sync.RWMutex
+	config       *Config
+	listeners    []ConfigChangeListener
+	client       config_client.IConfigClient
+	nacosCfg     *NacosConfig
+	hotReloadCfg *HotReloadConfig
+	ctx          context.Context
+	cancel       context.CancelFunc
+	running      bool
+}
+
+// NewHotReloader creates a new HotReloader
+func NewHotReloader(cfg *Config, hotReloadCfg *HotReloadConfig) (*HotReloader, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	hr := &HotReloader{
+		config:       cfg,
+		hotReloadCfg: hotReloadCfg,
+		nacosCfg:     &cfg.Nacos,
+		ctx:          ctx,
+		cancel:       cancel,
+	}
+
+	if !hotReloadCfg.Enabled {
+		return hr, nil
+	}
+
+	if err := hr.initNacosClient(); err != nil {
+		cancel()
+		return nil, fmt.Errorf("init nacos client: %w", err)
+	}
+
+	return hr, nil
+}
+
+// initNacosClient initializes Nacos config client
+func (hr *HotReloader) initNacosClient() error {
+	if hr.nacosCfg.ServerAddr == "" {
+		return errors.New("nacos server_addr is required")
+	}
+
+	sc := []constant.ServerConfig{
+		*constant.NewServerConfig(
+			hr.nacosCfg.ServerAddr,
+			6000, // default port
+			constant.WithScheme("http"),
+		),
+	}
+
+	cc := *constant.NewClientConfig(
+		constant.WithTimeoutMs(5000),
+		constant.WithBeatInterval(5000),
+		constant.WithNotLoadCacheAtStart(true),
+		constant.WithLogDir(hr.nacosCfg.LogDir),
+		constant.WithCacheDir(hr.nacosCfg.CacheDir),
+		constant.WithLogLevel(hr.nacosCfg.LogLevel),
+	)
+
+	var err error
+	hr.client, err = clients.NewConfigClient(
+		vo.NacosClientParam{
+			ClientConfig:  &cc,
+			ServerConfigs: sc,
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Start starts the hot reload listener
+func (hr *HotReloader) Start() error {
+	hr.mu.Lock()
+	defer hr.mu.Unlock()
+
+	if !hr.hotReloadCfg.Enabled {
+		return nil
+	}
+
+	if hr.running {
+		return fmt.Errorf("hot reloader already running")
+	}
+
+	// Listen to Nacos config changes
+	err := hr.client.ListenConfig(vo.ConfigParam{
+		DataId: hr.hotReloadCfg.NacosDataID,
+		Group:  hr.hotReloadCfg.NacosGroup,
+		OnChange: func(namespace, group, dataId, data string) {
+			hr.onNacosConfigChange(data)
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("listen nacos config: %w", err)
+	}
+
+	hr.running = true
+	return nil
+}
+
+// Stop stops the hot reload listener
+func (hr *HotReloader) Stop() {
+	hr.mu.Lock()
+	defer hr.mu.Unlock()
+
+	if !hr.running {
+		return
+	}
+
+	hr.cancel()
+	hr.running = false
+}
+
+// onNacosConfigChange handles Nacos config change events
+func (hr *HotReloader) onNacosConfigChange(data string) {
+	// Parse new config
+	newConfig, err := parseConfig(data)
+	if err != nil {
+		fmt.Printf("Error parsing config change: %v\n", err)
+		return
+	}
+
+	// Validate new config
+	if err := newConfig.Validate(); err != nil {
+		fmt.Printf("Invalid config change: %v\n", err)
+		return
+	}
+
+	// Update config atomically
+	hr.mu.Lock()
+	hr.config = newConfig
+	hr.mu.Unlock()
+
+	// Notify listeners
+	hr.notifyListeners(newConfig)
+
+	fmt.Println("Config reloaded from Nacos")
+}
+
+// parseConfig parses config from YAML string
+func parseConfig(data string) (*Config, error) {
+	cfg := &Config{}
+	if err := yaml.Unmarshal([]byte(data), cfg); err != nil {
+		return nil, fmt.Errorf("unmarshal config: %w", err)
+	}
+	return cfg, nil
+}
+
+// AddListener adds a config change listener
+func (hr *HotReloader) AddListener(listener ConfigChangeListener) {
+	hr.mu.Lock()
+	defer hr.mu.Unlock()
+	hr.listeners = append(hr.listeners, listener)
+}
+
+// RemoveListener removes a config change listener
+func (hr *HotReloader) RemoveListener(listener ConfigChangeListener) {
+	hr.mu.Lock()
+	defer hr.mu.Unlock()
+	for i, l := range hr.listeners {
+		if l == listener {
+			hr.listeners = append(hr.listeners[:i], hr.listeners[i+1:]...)
+			break
+		}
+	}
+}
+
+// notifyListeners notifies all listeners of config change
+func (hr *HotReloader) notifyListeners(config *Config) {
+	hr.mu.RLock()
+	listeners := make([]ConfigChangeListener, len(hr.listeners))
+	copy(listeners, hr.listeners)
+	hr.mu.RUnlock()
+
+	for _, listener := range listeners {
+		listener.OnConfigChange(config)
+	}
+}
+
+// GetConfig gets the current config (thread-safe)
+func (hr *HotReloader) GetConfig() *Config {
+	hr.mu.RLock()
+	defer hr.mu.RUnlock()
+	return hr.config
+}
+
+// Reload manually reloads config from Nacos
+func (hr *HotReloader) Reload() error {
+	if hr.client == nil {
+		return fmt.Errorf("nacos client not initialized")
+	}
+
+	content, err := hr.client.GetConfig(vo.ConfigParam{
+		DataId: hr.hotReloadCfg.NacosDataID,
+		Group:  hr.hotReloadCfg.NacosGroup,
+	})
+	if err != nil {
+		return fmt.Errorf("get config from nacos: %w", err)
+	}
+
+	hr.onNacosConfigChange(content)
+	return nil
+}
+
+// ConfigChangeFunc is a function-based config change listener
+type ConfigChangeFunc func(config *Config)
+
+// OnConfigChange implements ConfigChangeListener interface
+func (f ConfigChangeFunc) OnConfigChange(config *Config) {
+	f(config)
+}

@@ -1,0 +1,30 @@
+package mq
+
+import (
+	"encoding/json"
+	"fmt"
+
+	"{{.ProjectName}}/internal/model"
+)
+
+// KafkaSerializer JSON 序列化器
+type KafkaSerializer struct{}
+
+// Serialize 序列化文章模型
+func (s *KafkaSerializer) Serialize(article *model.EbArticle) ([]byte, error) {
+	data, err := json.Marshal(article)
+	if err != nil {
+		return nil, fmt.Errorf("serialize article: %w", err)
+	}
+	return data, nil
+}
+
+// Deserialize 反序列化文章模型
+func (s *KafkaSerializer) Deserialize(data []byte) (*model.EbArticle, error) {
+	var article model.EbArticle
+	err := json.Unmarshal(data, &article)
+	if err != nil {
+		return nil, fmt.Errorf("deserialize article: %w", err)
+	}
+	return &article, nil
+}

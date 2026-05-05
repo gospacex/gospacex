@@ -1,0 +1,23 @@
+package main
+
+import (
+	"context"
+	"{{.ModuleName}}/app/{{.ModuleName}}/internal/application/service"
+	"{{.ModuleName}}/app/{{.ModuleName}}/internal/interfaces/handler"
+)
+
+type Handler struct {
+	svc service.ArticleAppService
+}
+
+func NewHandler(svc service.ArticleAppService) *Handler {
+	return &Handler{svc: svc}
+}
+
+func (h *Handler) CreateArticle(ctx context.Context, req interface{}) (interface{}, error) {
+	return h.svc.CreateArticle(ctx, req)
+}
+
+func (h *Handler) GetArticle(ctx context.Context, req interface{}) (interface{}, error) {
+	return h.svc.GetArticle(ctx, req)
+}

@@ -1,0 +1,29 @@
+package repository
+
+import (
+	"context"
+	"time"
+
+	"{{.OutputDir}}/internal/model"
+)
+
+// {{.StructName}}Repository {{.StructName}} Redis 仓储接口
+type {{.StructName}}Repository interface {
+	// Set 设置
+	Set(ctx context.Context, entity *model.{{.StructName}}, ttl time.Duration) error
+	
+	// Get 根据 ID 查询
+	Get(ctx context.Context, id string) (*model.{{.StructName}}, error)
+	
+	// Del 删除
+	Del(ctx context.Context, id string) error
+	
+	// Exists 检查是否存在
+	Exists(ctx context.Context, id string) (bool, error)
+	
+	// TTL 获取剩余时间
+	TTL(ctx context.Context, id string) (time.Duration, error)
+	
+	// Keys 获取匹配的键
+	Keys(ctx context.Context, pattern string) ([]string, error)
+}

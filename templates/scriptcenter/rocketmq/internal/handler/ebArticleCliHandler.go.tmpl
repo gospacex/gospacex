@@ -1,0 +1,35 @@
+package handler
+
+import (
+	"context"
+	"fmt"
+
+	"{{.ProjectName}}/internal/model"
+	"{{.ProjectName}}/internal/service"
+)
+
+// EbArticleCliHandler 文章事件 CLI 处理器
+type EbArticleCliHandler struct {
+	service service.EbArticleService
+}
+
+// NewEbArticleCliHandler 创建处理器
+func NewEbArticleCliHandler(svc service.EbArticleService) *EbArticleCliHandler {
+	return &EbArticleCliHandler{
+		service: svc,
+	}
+}
+
+// Create 创建文章
+func (h *EbArticleCliHandler) Create(ctx context.Context, name, data string) error {
+	entity := &model.EbArticle{
+		Name: name,
+		Data: data,
+	}
+	return h.service.Create(ctx, entity)
+}
+
+// GetByID 获取文章
+func (h *EbArticleCliHandler) GetByID(ctx context.Context, id int64) (*model.EbArticle, error) {
+	return h.service.GetByID(ctx, id)
+}

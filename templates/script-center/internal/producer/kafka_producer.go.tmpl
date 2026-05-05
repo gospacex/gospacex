@@ -1,0 +1,43 @@
+package producer
+
+import (
+	"context"
+	"log"
+
+	"{{.ProjectName}}/pkg/middleware"
+)
+
+// KafkaOrderProducer Kafka 订单消息生产者
+type KafkaOrderProducer struct {
+	producer *middleware.KafkaProducer
+	topic    string
+}
+
+// NewKafkaOrderProducer 创建订单生产者
+func NewKafkaOrderProducer(producer *middleware.KafkaProducer, topic string) *KafkaOrderProducer {
+	return &KafkaOrderProducer{
+		producer: producer,
+		topic:    topic,
+	}
+}
+
+// SendOrderCreated 发送订单创建消息
+func (p *KafkaOrderProducer) SendOrderCreated(ctx context.Context, orderID int64, data string) error {
+	key := string(rune(orderID))
+	log.Printf("Sending order.created message: key=%s", key)
+	return p.producer.SendMessage(ctx, key, data)
+}
+
+// SendOrderUpdated 发送订单更新消息
+func (p *KafkaOrderProducer) SendOrderUpdated(ctx context.Context, orderID int64, data string) error {
+	key := string(rune(orderID))
+	log.Printf("Sending order.updated message: key=%s", key)
+	return p.producer.SendMessage(ctx, key, data)
+}
+
+// SendOrderDeleted 发送订单删除消息
+func (p *KafkaOrderProducer) SendOrderDeleted(ctx context.Context, orderID int64) error {
+	key := string(rune(orderID))
+	log.Printf("Sending order.deleted message: key=%s", key)
+	return p.producer.SendMessage(ctx, key, `{"event":"order.deleted","order_id":`+key+`}`)
+}

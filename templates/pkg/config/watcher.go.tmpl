@@ -1,0 +1,69 @@
+package config
+
+import (
+	"sync"
+)
+
+// Watcher 配置变更监听器管理
+type Watcher struct {
+	watches map[string][]chan *ConfigChange
+	mu      sync.RWMutex
+}
+
+// NewWatcher 创建新监听器
+func NewWatcher() *Watcher {
+	return &Watcher{
+		watches: make(map[string][]chan *ConfigChange),
+	}
+}
+
+// AddWatch 添加监听
+func (w *Watcher) AddWatch(key string) <-chan *ConfigChange {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	ch := make(chan *ConfigChange, 1)
+	if _, ok := w.watches[key]; !ok {
+		w.watches[key] = make([]chan *ConfigChange, 0)
+	}
+	w.watches[key] = append(w.watches[key], ch)
+
+	return ch
+}
+
+// Notify 通知变更
+func (w *Watcher) Notify(key string, oldVal, newVal interface{}, src Source) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	if listeners, ok := w.watches[key]; ok {
+		event := &ConfigChange{
+			Key:      key,
+			OldValue: oldVal,
+			NewValue: newVal,
+			Source:   src,
+		}
+		for _, ch := range listeners {
+			select {
+			case ch <- event:
+			default:
+			}
+		}
+	}
+}
+
+// RemoveWatch 移除监听
+func (w *Watcher) RemoveWatch(key string, ch <-chan *ConfigChange) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if listeners, ok := w.watches[key]; ok {
+		newListeners := make([]chan *ConfigChange, 0, len(listeners)-1)
+		for _, existing := range listeners {
+			if existing != ch {
+				newListeners = append(newListeners, existing)
+			}
+		}
+		w.watches[key] = newListeners
+	}
+}

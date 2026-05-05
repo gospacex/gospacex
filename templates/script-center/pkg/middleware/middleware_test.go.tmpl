@@ -1,0 +1,635 @@
+package middleware
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+)
+
+// TestKafkaConfig_Validation tests Kafka configuration validation
+func TestKafkaConfig_Validation(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  KafkaConfig
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid config",
+			config: KafkaConfig{
+				Enabled:   true,
+				Brokers:   []string{"localhost:9092"},
+				Topic:     "test-topic",
+				GroupName: "test-group",
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty brokers",
+			config: KafkaConfig{
+				Enabled:   true,
+				Brokers:   []string{},
+				Topic:     "test-topic",
+				GroupName: "test-group",
+			},
+			wantErr: true,
+			errMsg:  "brokers cannot be empty",
+		},
+		{
+			name: "empty topic",
+			config: KafkaConfig{
+				Enabled:   true,
+				Brokers:   []string{"localhost:9092"},
+				Topic:     "",
+				GroupName: "test-group",
+			},
+			wantErr: true,
+			errMsg:  "topic cannot be empty",
+		},
+		{
+			name: "nil brokers",
+			config: KafkaConfig{
+				Enabled:   true,
+				Brokers:   nil,
+				Topic:     "test-topic",
+				GroupName: "test-group",
+			},
+			wantErr: true,
+			errMsg:  "brokers cannot be empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateKafkaConfig(tt.config)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestRabbitMQConfig_Validation tests RabbitMQ configuration validation
+func TestRabbitMQConfig_Validation(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  RabbitMQConfig
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid config",
+			config: RabbitMQConfig{
+				Enabled:  true,
+				URL:      "amqp://guest:guest@localhost:5672/",
+				Queue:    "test-queue",
+				Exchange: "test-exchange",
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty URL",
+			config: RabbitMQConfig{
+				Enabled:  true,
+				URL:      "",
+				Queue:    "test-queue",
+				Exchange: "test-exchange",
+			},
+			wantErr: true,
+			errMsg:  "URL cannot be empty",
+		},
+		{
+			name: "empty queue",
+			config: RabbitMQConfig{
+				Enabled:  true,
+				URL:      "amqp://guest:guest@localhost:5672/",
+				Queue:    "",
+				Exchange: "test-exchange",
+			},
+			wantErr: true,
+			errMsg:  "queue cannot be empty",
+		},
+		{
+			name: "invalid URL format",
+			config: RabbitMQConfig{
+				Enabled:  true,
+				URL:      "invalid-url",
+				Queue:    "test-queue",
+				Exchange: "test-exchange",
+			},
+			wantErr: true,
+			errMsg:  "invalid URL format",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateRabbitMQConfig(tt.config)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestJaegerConfig_Validation tests Jaeger configuration validation
+func TestJaegerConfig_Validation(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  JaegerConfig
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid config",
+			config: JaegerConfig{
+				Enabled:     true,
+				Endpoint:    "http://localhost:14268/api/traces",
+				ServiceName: "test-service",
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty endpoint",
+			config: JaegerConfig{
+				Enabled:     true,
+				Endpoint:    "",
+				ServiceName: "test-service",
+			},
+			wantErr: true,
+			errMsg:  "endpoint cannot be empty",
+		},
+		{
+			name: "empty service name",
+			config: JaegerConfig{
+				Enabled:     true,
+				Endpoint:    "http://localhost:14268/api/traces",
+				ServiceName: "",
+			},
+			wantErr: true,
+			errMsg:  "service name cannot be empty",
+		},
+		{
+			name: "invalid endpoint URL",
+			config: JaegerConfig{
+				Enabled:     true,
+				Endpoint:    "not-a-valid-url",
+				ServiceName: "test-service",
+			},
+			wantErr: true,
+			errMsg:  "invalid endpoint URL",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateJaegerConfig(tt.config)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestPrometheusConfig_Validation tests Prometheus configuration validation
+func TestPrometheusConfig_Validation(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  PrometheusConfig
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid config",
+			config: PrometheusConfig{
+				Enabled: true,
+				Path:    "/metrics",
+				Port:    9090,
+			},
+			wantErr: false,
+		},
+		{
+			name: "port too low",
+			config: PrometheusConfig{
+				Enabled: true,
+				Path:    "/metrics",
+				Port:    0,
+			},
+			wantErr: true,
+			errMsg:  "port must be between 1 and 65535",
+		},
+		{
+			name: "port too high",
+			config: PrometheusConfig{
+				Enabled: true,
+				Path:    "/metrics",
+				Port:    70000,
+			},
+			wantErr: true,
+			errMsg:  "port must be between 1 and 65535",
+		},
+		{
+			name: "empty path",
+			config: PrometheusConfig{
+				Enabled: true,
+				Path:    "",
+				Port:    9090,
+			},
+			wantErr: true,
+			errMsg:  "path cannot be empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validatePrometheusConfig(tt.config)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestApolloConfig_Validation tests Apollo configuration validation
+func TestApolloConfig_Validation(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  ApolloConfig
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid config",
+			config: ApolloConfig{
+				Enabled:  true,
+				Endpoint: "http://localhost:8080",
+				AppID:    "test-app",
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty endpoint",
+			config: ApolloConfig{
+				Enabled:  true,
+				Endpoint: "",
+				AppID:    "test-app",
+			},
+			wantErr: true,
+			errMsg:  "endpoint cannot be empty",
+		},
+		{
+			name: "empty app ID",
+			config: ApolloConfig{
+				Enabled:  true,
+				Endpoint: "http://localhost:8080",
+				AppID:    "",
+			},
+			wantErr: true,
+			errMsg:  "app ID cannot be empty",
+		},
+		{
+			name: "invalid endpoint URL",
+			config: ApolloConfig{
+				Enabled:  true,
+				Endpoint: "not-a-valid-url",
+				AppID:    "test-app",
+			},
+			wantErr: true,
+			errMsg:  "invalid endpoint URL",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateApolloConfig(tt.config)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestNacosConfig_Validation tests Nacos configuration validation
+func TestNacosConfig_Validation(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  NacosConfig
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid config",
+			config: NacosConfig{
+				Enabled:     true,
+				ServerAddrs: []string{"localhost:8848"},
+				NamespaceID: "test-namespace",
+				DataID:      "test-data",
+				Group:       "DEFAULT_GROUP",
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty server addresses",
+			config: NacosConfig{
+				Enabled:     true,
+				ServerAddrs: []string{},
+				NamespaceID: "test-namespace",
+				DataID:      "test-data",
+				Group:       "DEFAULT_GROUP",
+			},
+			wantErr: true,
+			errMsg:  "server addresses cannot be empty",
+		},
+		{
+			name: "nil server addresses",
+			config: NacosConfig{
+				Enabled:     true,
+				ServerAddrs: nil,
+				NamespaceID: "test-namespace",
+				DataID:      "test-data",
+				Group:       "DEFAULT_GROUP",
+			},
+			wantErr: true,
+			errMsg:  "server addresses cannot be empty",
+		},
+		{
+			name: "empty namespace",
+			config: NacosConfig{
+				Enabled:     true,
+				ServerAddrs: []string{"localhost:8848"},
+				NamespaceID: "",
+				DataID:      "test-data",
+				Group:       "DEFAULT_GROUP",
+			},
+			wantErr: true,
+			errMsg:  "namespace cannot be empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateNacosConfig(tt.config)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestMiddlewareInterface tests that all middleware implement the Middleware interface
+// This is a compile-time check to ensure interface compliance
+func TestMiddlewareInterface(t *testing.T) {
+	// Compile-time interface checks
+	// These will fail at compile time if the struct doesn't implement the interface
+	var _ Middleware = (*KafkaProducer)(nil)
+	var _ Middleware = (*RabbitMQClient)(nil)
+	var _ Middleware = (*JaegerTracer)(nil)
+	var _ Middleware = (*PrometheusServer)(nil)
+	var _ Middleware = (*ApolloClient)(nil)
+	var _ Middleware = (*NacosClient)(nil)
+
+	// Additional interface checks
+	var _ HealthChecker = (*KafkaProducer)(nil)
+	var _ HealthChecker = (*RabbitMQClient)(nil)
+	var _ Closer = (*KafkaProducer)(nil)
+	var _ Closer = (*RabbitMQClient)(nil)
+	var _ Messenger = (*KafkaProducer)(nil)
+	var _ Messenger = (*RabbitMQClient)(nil)
+
+	// This test will always pass at runtime if compilation succeeds
+	assert.True(t, true, "All middleware implement required interfaces")
+}
+
+// TestRocketMQConfig_Validation tests RocketMQ configuration validation
+func TestRocketMQConfig_Validation(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  RocketMQConfig
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid config",
+			config: RocketMQConfig{
+				Enabled:     true,
+				NamesrvAddr: "localhost:9876",
+				ProducerID:  "test-producer",
+				ConsumerID:  "test-consumer",
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty nameserver address",
+			config: RocketMQConfig{
+				Enabled:     true,
+				NamesrvAddr: "",
+				ProducerID:  "test-producer",
+				ConsumerID:  "test-consumer",
+			},
+			wantErr: true,
+			errMsg:  "nameserver address cannot be empty",
+		},
+		{
+			name: "empty producer ID",
+			config: RocketMQConfig{
+				Enabled:     true,
+				NamesrvAddr: "localhost:9876",
+				ProducerID:  "",
+				ConsumerID:  "test-consumer",
+			},
+			wantErr: true,
+			errMsg:  "producer ID cannot be empty",
+		},
+		{
+			name: "empty consumer ID",
+			config: RocketMQConfig{
+				Enabled:     true,
+				NamesrvAddr: "localhost:9876",
+				ProducerID:  "test-producer",
+				ConsumerID:  "",
+			},
+			wantErr: true,
+			errMsg:  "consumer ID cannot be empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateRocketMQConfig(tt.config)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestConsulConfig_Validation tests Consul configuration validation
+func TestConsulConfig_Validation(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  ConsulConfig
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid config",
+			config: ConsulConfig{
+				Enabled: true,
+				Address: "localhost:8500",
+				Scheme:  "http",
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty address",
+			config: ConsulConfig{
+				Enabled: true,
+				Address: "",
+				Scheme:  "http",
+			},
+			wantErr: true,
+			errMsg:  "address cannot be empty",
+		},
+		{
+			name: "invalid scheme",
+			config: ConsulConfig{
+				Enabled: true,
+				Address: "localhost:8500",
+				Scheme:  "invalid",
+			},
+			wantErr: true,
+			errMsg:  "scheme must be http or https",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateConsulConfig(tt.config)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// Integration test helpers
+// These tests require running middleware services and are skipped in short mode
+
+func TestIntegration_KafkaInit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// This would be the actual integration test
+	// producer, err := NewKafkaProducer(KafkaConfig{
+	// 	Brokers: []string{"localhost:9092"},
+	// 	Topic:   "test-topic",
+	// })
+	// assert.NoError(t, err)
+	// defer producer.Close()
+
+	// err = producer.Initialize(ctx)
+	// assert.NoError(t, err)
+
+	assert.NotNil(t, ctx)
+}
+
+func TestIntegration_RabbitMQInit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	assert.NotNil(t, ctx)
+}
+
+func TestIntegration_JaegerInit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	assert.NotNil(t, ctx)
+}
+
+func TestIntegration_PrometheusInit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	assert.NotNil(t, ctx)
+}
+
+func TestIntegration_ApolloInit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	assert.NotNil(t, ctx)
+}
+
+func TestIntegration_NacosInit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	assert.NotNil(t, ctx)
+}

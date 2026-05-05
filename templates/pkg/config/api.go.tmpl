@@ -1,0 +1,84 @@
+package config
+
+import (
+	"strconv"
+)
+
+// Get 获取配置值
+func Get(key string) interface{} {
+	return defaultManager.Get(key)
+}
+
+// GetString 获取字符串配置
+func GetString(key string) string {
+	v := Get(key)
+	if v == nil {
+		return ""
+	}
+	return v.(string)
+}
+
+// GetInt 获取整数配置
+func GetInt(key string) int {
+	v := Get(key)
+	if v == nil {
+		return 0
+	}
+	switch val := v.(type) {
+	case int:
+		return val
+	case float64:
+		return int(val)
+	case string:
+		i, _ := strconv.Atoi(val)
+		return i
+	default:
+		return 0
+	}
+}
+
+// GetBool 获取布尔配置
+func GetBool(key string) bool {
+	v := Get(key)
+	if v == nil {
+		return false
+	}
+	switch val := v.(type) {
+	case bool:
+		return val
+	case string:
+		b, _ := strconv.ParseBool(val)
+		return b
+	default:
+		return false
+	}
+}
+
+// GetFloat64 获取浮点数配置
+func GetFloat64(key string) float64 {
+	v := Get(key)
+	if v == nil {
+		return 0
+	}
+	switch val := v.(type) {
+	case float64:
+		return val
+	case int:
+		return float64(val)
+	case string:
+		f, _ := strconv.ParseFloat(val, 64)
+		return f
+	default:
+		return 0
+	}
+}
+
+// GetSource 获取配置来源
+func GetSource(key string) *Source {
+	return defaultManager.GetSource(key)
+}
+
+// Watch 监听配置变更
+func Watch(key string) <-chan *ConfigChange {
+	return defaultManager.Watch(key)
+}

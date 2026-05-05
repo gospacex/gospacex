@@ -1,0 +1,28 @@
+# {{ .ProjectName }}
+
+Script Center 项目 - 基于 Redis 的文章管理服务
+
+## 功能特性
+
+- String/Hash/List/Set/ZSet 操作
+- 分布式锁
+- 缓存
+
+## 快速开始
+
+### 1. 启动 Redis
+
+```bash
+cd deploy
+docker-compose up -d
+```
+
+### 2. 运行服务
+
+```bash
+go run cmd/main.go start
+```
+
+## 配置
+
+配置文件: `configs/config.yaml`

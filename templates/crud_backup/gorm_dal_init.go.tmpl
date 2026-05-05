@@ -1,0 +1,48 @@
+package mysql
+
+import (
+	"fmt"
+	"os"
+
+	"{{.OutputDir}}/internal/model"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+)
+
+var (
+	DB  *gorm.DB
+	err error
+)
+
+// Init initializes MySQL connection
+func Init() {
+	dsn := os.Getenv("MYSQL_DSN")
+	if dsn == "" {
+		dsn = fmt.Sprintf("%s:%s@tcp(%s:3306)/%s?parseTime=true",
+			getEnv("MYSQL_USER", "root"),
+			getEnv("MYSQL_PASSWORD", "password"),
+			getEnv("MYSQL_HOST", "localhost"),
+			getEnv("MYSQL_DATABASE", "{{.TableName}}"),
+		)
+	}
+
+	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{
+		PrepareStmt:            true,
+		SkipDefaultTransaction: true,
+	})
+	if err != nil {
+		panic(fmt.Sprintf("Failed to connect to MySQL: %v", err))
+	}
+
+	// Auto migrate models
+	if os.Getenv("GO_ENV") != "online" {
+		DB.AutoMigrate(&model.{{.StructName}}{})
+	}
+}
+
+func getEnv(key, defaultVal string) string {
+	if val := os.Getenv(key); val != "" {
+		return val
+	}
+	return defaultVal
+}

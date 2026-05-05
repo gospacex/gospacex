@@ -1,0 +1,260 @@
+package config
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"sync"
+	"time"
+
+	"github.com/nacos-group/nacos-sdk-go/v2/clients"
+	"github.com/nacos-group/nacos-sdk-go/v2/clients/config_client"
+	"github.com/nacos-group/nacos-sdk-go/v2/common/constant"
+	"github.com/nacos-group/nacos-sdk-go/v2/vo"
+)
+
+// NacosListener Nacos 配置监听器
+type NacosListener struct {
+	mu        sync.RWMutex
+	client    config_client.IConfigClient
+	config    *NacosConfig
+	listeners []func(namespace, group, dataId, data string)
+	logger    *slog.Logger
+	running   bool
+	ctx       context.Context
+	cancel    context.CancelFunc
+}
+
+// NacosListenerConfig Nacos 监听器配置
+type NacosListenerConfig struct {
+	ServerAddr string        `yaml:"server_addr"`
+	Port       uint64        `yaml:"port"`
+	Namespace  string        `yaml:"namespace"`
+	Username   string        `yaml:"username"`
+	Password   string        `yaml:"password"`
+	LogLevel   string        `yaml:"log_level"`
+	CacheDir   string        `yaml:"cache_dir"`
+	LogDir     string        `yaml:"log_dir"`
+	DataID     string        `yaml:"data_id"`
+	Group      string        `yaml:"group"`
+	Timeout    time.Duration `yaml:"timeout"`
+}
+
+// NewNacosListener creates a new NacosListener
+func NewNacosListener(cfg *NacosListenerConfig, logger *slog.Logger) (*NacosListener, error) {
+	if cfg.ServerAddr == "" {
+		return nil, fmt.Errorf("nacos server_addr is required")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	listener := &NacosListener{
+		config: &NacosConfig{
+			ServerAddr: cfg.ServerAddr,
+			Port:       cfg.Port,
+			Namespace:  cfg.Namespace,
+			Username:   cfg.Username,
+			Password:   cfg.Password,
+			LogLevel:   cfg.LogLevel,
+			CacheDir:   cfg.CacheDir,
+			LogDir:     cfg.LogDir,
+			DataID:     cfg.DataID,
+			Group:      cfg.Group,
+			Timeout:    cfg.Timeout,
+		},
+		logger:  logger,
+		ctx:     ctx,
+		cancel:  cancel,
+		running: false,
+	}
+
+	if err := listener.initClient(); err != nil {
+		cancel()
+		return nil, fmt.Errorf("init nacos client: %w", err)
+	}
+
+	return listener, nil
+}
+
+// initClient initializes Nacos config client
+func (l *NacosListener) initClient() error {
+	port := l.config.Port
+	if port == 0 {
+		port = 8848 // default Nacos port
+	}
+
+	sc := []constant.ServerConfig{
+		*constant.NewServerConfig(
+			l.config.ServerAddr,
+			port,
+			constant.WithScheme("http"),
+		),
+	}
+
+	cc := constant.ClientConfig{
+		TimeoutMs:            uint64(l.config.Timeout.Milliseconds()),
+		BeatInterval:         5000,
+		NotLoadCacheAtStart:  true,
+		UpdateCacheWhenEmpty: true,
+		LogLevel:             l.config.LogLevel,
+		CacheDir:             l.config.CacheDir,
+		LogDir:               l.config.LogDir,
+	}
+
+	if l.config.Username != "" {
+		cc.Username = l.config.Username
+	}
+	if l.config.Password != "" {
+		cc.Password = l.config.Password
+	}
+	if l.config.Namespace != "" {
+		cc.NamespaceId = l.config.Namespace
+	}
+
+	var err error
+	l.client, err = clients.NewConfigClient(
+		vo.NacosClientParam{
+			ClientConfig:  &cc,
+			ServerConfigs: sc,
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Start starts the Nacos listener
+func (l *NacosListener) Start() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.running {
+		return fmt.Errorf("listener already running")
+	}
+
+	if l.config.DataID == "" || l.config.Group == "" {
+		return fmt.Errorf("data_id and group are required")
+	}
+
+	err := l.client.ListenConfig(vo.ConfigParam{
+		DataId: l.config.DataID,
+		Group:  l.config.Group,
+		OnChange: func(namespace, group, dataId, data string) {
+			l.logger.Info("Nacos config changed",
+				"namespace", namespace,
+				"group", group,
+				"dataId", dataId,
+			)
+			l.notifyListeners(namespace, group, dataId, data)
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("listen config: %w", err)
+	}
+
+	l.running = true
+	l.logger.Info("Nacos listener started",
+		"dataId", l.config.DataID,
+		"group", l.config.Group,
+	)
+
+	return nil
+}
+
+// Stop stops the Nacos listener
+func (l *NacosListener) Stop() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if !l.running {
+		return
+	}
+
+	l.cancel()
+	l.running = false
+	l.logger.Info("Nacos listener stopped")
+}
+
+// AddListener adds a config change listener
+func (l *NacosListener) AddListener(fn func(namespace, group, dataId, data string)) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.listeners = append(l.listeners, fn)
+}
+
+// RemoveListener removes a listener
+func (l *NacosListener) RemoveListener(fn func(namespace, group, dataId, data string)) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for i, listener := range l.listeners {
+		if fmt.Sprintf("%p", listener) == fmt.Sprintf("%p", fn) {
+			l.listeners = append(l.listeners[:i], l.listeners[i+1:]...)
+			break
+		}
+	}
+}
+
+// notifyListeners notifies all listeners
+func (l *NacosListener) notifyListeners(namespace, group, dataId, data string) {
+	l.mu.RLock()
+	listeners := make([]func(namespace, group, dataId, data string), len(l.listeners))
+	copy(listeners, l.listeners)
+	l.mu.RUnlock()
+
+	for _, listener := range listeners {
+		listener(namespace, group, dataId, data)
+	}
+}
+
+// GetConfig gets config from Nacos
+func (l *NacosListener) GetConfig() (string, error) {
+	if l.client == nil {
+		return "", fmt.Errorf("client not initialized")
+	}
+
+	content, err := l.client.GetConfig(vo.ConfigParam{
+		DataId: l.config.DataID,
+		Group:  l.config.Group,
+	})
+	if err != nil {
+		return "", fmt.Errorf("get config: %w", err)
+	}
+
+	return content, nil
+}
+
+// PublishConfig publishes config to Nacos
+func (l *NacosListener) PublishConfig(content string) error {
+	if l.client == nil {
+		return fmt.Errorf("client not initialized")
+	}
+
+	success, err := l.client.PublishConfig(vo.ConfigParam{
+		DataId:  l.config.DataID,
+		Group:   l.config.Group,
+		Content: content,
+	})
+	if err != nil {
+		return fmt.Errorf("publish config: %w", err)
+	}
+
+	if !success {
+		return fmt.Errorf("publish config failed")
+	}
+
+	l.logger.Info("Config published to Nacos",
+		"dataId", l.config.DataID,
+		"group", l.config.Group,
+	)
+
+	return nil
+}
+
+// IsRunning returns whether the listener is running
+func (l *NacosListener) IsRunning() bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.running
+}

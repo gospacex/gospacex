@@ -1,0 +1,115 @@
+package service
+
+import (
+	"context"
+	"fmt"
+
+	"{{.ProjectName}}/internal/repository"
+)
+
+// ESService Elasticsearch service layer wrapping ESRepository
+type ESService struct {
+	repo *repository.ESRepository
+}
+
+// NewESService creates a new ES service instance
+func NewESService(repo *repository.ESRepository) *ESService {
+	return &ESService{repo: repo}
+}
+
+// Create creates a new document in Elasticsearch
+func (s *ESService) Create(ctx context.Context, entity interface{}) (string, error) {
+	if err := s.repo.Create(ctx, entity); err != nil {
+		return "", fmt.Errorf("service create failed: %w", err)
+	}
+
+	// In a real implementation, we would return the generated ID
+	// For now, return empty - ID generation happens in repository
+	return "", nil
+}
+
+// GetByID retrieves a document by ID from Elasticsearch
+func (s *ESService) GetByID(ctx context.Context, id string) (interface{}, error) {
+	entity, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("service get by ID failed: %w", err)
+	}
+
+	return entity, nil
+}
+
+// Update updates a document in Elasticsearch
+func (s *ESService) Update(ctx context.Context, id string, entity interface{}) error {
+	// Validate entity (add business logic here)
+	if entity == nil {
+		return fmt.Errorf("entity cannot be nil")
+	}
+
+	if err := s.repo.Update(ctx, id, entity); err != nil {
+		return fmt.Errorf("service update failed: %w", err)
+	}
+
+	return nil
+}
+
+// Delete deletes a document by ID from Elasticsearch
+func (s *ESService) Delete(ctx context.Context, id string) error {
+	if err := s.repo.Delete(ctx, id); err != nil {
+		return fmt.Errorf("service delete failed: %w", err)
+	}
+
+	return nil
+}
+
+// List retrieves all documents from Elasticsearch with pagination
+func (s *ESService) List(ctx context.Context, limit, offset int) ([]interface{}, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	entities, err := s.repo.List(ctx, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("service list failed: %w", err)
+	}
+
+	return entities, nil
+}
+
+// Search searches documents in Elasticsearch with full-text query
+func (s *ESService) Search(ctx context.Context, query string, limit, offset int) ([]interface{}, error) {
+	// Validate query
+	if query == "" {
+		return nil, fmt.Errorf("search query cannot be empty")
+	}
+
+	// Apply default pagination
+	if limit <= 0 {
+		limit = 10
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	entities, err := s.repo.Search(ctx, query, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("service search failed: %w", err)
+	}
+
+	return entities, nil
+}
+
+// BulkIndex performs bulk indexing of documents
+func (s *ESService) BulkIndex(ctx context.Context, docs []repository.BulkDoc) error {
+	if len(docs) == 0 {
+		return nil
+	}
+
+	if err := s.repo.BulkIndex(docs); err != nil {
+		return fmt.Errorf("service bulk index failed: %w", err)
+	}
+
+	return nil
+}

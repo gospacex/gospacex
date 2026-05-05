@@ -1,0 +1,21 @@
+package commands
+
+import (
+	"github.com/spf13/cobra"
+)
+
+// rootCmd represents the base command
+var rootCmd = &cobra.Command{
+	Use:   "{{.ProjectName}}",
+	Short: "{{.ProjectName}} - Application",
+	Long:  `{{.ProjectName}} application with Cobra CLI`,
+}
+
+// Execute executes root command
+func Execute() error {
+	return rootCmd.Execute()
+}
+
+func init() {
+	// Add subcommands here
+}

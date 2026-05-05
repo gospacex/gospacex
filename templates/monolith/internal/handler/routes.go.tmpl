@@ -1,0 +1,26 @@
+package handler
+
+import (
+	"github.com/gin-gonic/gin"
+)
+
+// RegisterRoutes 注册所有路由
+func RegisterRoutes(r *gin.Engine) {
+	// 健康检查
+	r.GET("/healthz", HealthCheck)
+	
+	// API v1
+	v1 := r.Group("/api/v1")
+	{
+		// 在此添加业务路由
+		// v1.GET("/users", GetUsers)
+		// v1.POST("/users", CreateUser)
+	}
+}
+
+// HealthCheck 健康检查
+func HealthCheck(c *gin.Context) {
+	c.JSON(200, gin.H{
+		"status": "ok",
+	})
+}

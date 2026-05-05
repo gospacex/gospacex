@@ -1,0 +1,107 @@
+package elasticsearch
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"fmt"
+	"net"
+	"net/http"
+	"time"
+
+	"github.com/elastic/go-elasticsearch/v8"
+)
+
+// Config ES 客户端配置
+type Config struct {
+	Addresses           []string // ES 地址列表
+	Username           string   // 用户名
+	Password           string   // 密码
+	InsecureSkipVerify bool     // 是否跳过证书验证
+	Sniff              bool     // 是否启用 sniffing
+	Retry              int      // 重试次数
+	Timeout            int      // 超时时间(秒)
+	MaxRetries         int      // 最大重试次数
+	EnableDebugLog     bool     // 是否开启调试日志
+}
+
+// Client ES 客户端
+type Client struct {
+	es *elasticsearch.Client
+	cfg *Config
+}
+
+// NewClient 创建 ES 客户端
+func NewClient(cfg *Config) (*Client, error) {
+	transport := http.DefaultTransport
+	if cfg.InsecureSkipVerify {
+		transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			DialContext: (&net.Dialer{
+				Timeout:   30 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+		}
+	}
+
+	esCfg := elasticsearch.Config{
+		Addresses: cfg.Addresses,
+		Transport: transport,
+	}
+	if cfg.Username != "" && cfg.Password != "" {
+		esCfg.Username = cfg.Username
+		esCfg.Password = cfg.Password
+	}
+
+	es, err := elasticsearch.NewClient(esCfg)
+	if err != nil {
+		return nil, fmt.Errorf("create elasticsearch client: %w", err)
+	}
+
+	return &Client{es: es, cfg: cfg}, nil
+}
+
+// Ping 检查连接
+func (c *Client) Ping(ctx context.Context) error {
+	res, err := c.es.Ping(c.es.Ping.WithContext(ctx))
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("ping error: %s", res.String())
+	}
+	return nil
+}
+
+// Document 文档操作客户端
+func (c *Client) Document() *DocumentClient {
+	return &DocumentClient{client: c}
+}
+
+// Search 搜索客户端
+func (c *Client) Search() *SearchClient {
+	return &SearchClient{client: c}
+}
+
+// Bulk 批量操作客户端
+func (c *Client) Bulk() *BulkClient {
+	return &BulkClient{client: c}
+}
+
+// Index 索引管理客户端
+func (c *Client) Index() *IndexClient {
+	return &IndexClient{client: c}
+}
+
+// Aggregate 聚合查询客户端
+func (c *Client) Aggregate() *AggregateClient {
+	return &AggregateClient{client: c}
+}
+
+// GetClient 返回底层 ES 客户端
+func (c *Client) GetClient() *elasticsearch.Client {
+	return c.es
+}

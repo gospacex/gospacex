@@ -1,0 +1,37 @@
+package service
+
+import (
+	"context"
+
+	"{{.ProjectName}}/internal/mq"
+	"{{.ProjectName}}/internal/handler"
+)
+
+// KafkaConsumerService Kafka 消费者服务
+type KafkaConsumerService interface {
+	Start(ctx context.Context) error
+	CheckHealth() error
+}
+
+type kafkaConsumerService struct {
+	consumer *mq.KafkaConsumer
+	handler *handler.KafkaConsumerHandler
+}
+
+// NewKafkaConsumerService 创建服务
+func NewKafkaConsumerService(consumer *mq.KafkaConsumer, handler *handler.KafkaConsumerHandler) KafkaConsumerService {
+	return &kafkaConsumerService{
+		consumer: consumer,
+		handler: handler,
+	}
+}
+
+// Start 开始消费
+func (s *kafkaConsumerService) Start(ctx context.Context) error {
+	return s.consumer.Start(ctx)
+}
+
+// CheckHealth 检查健康
+func (s *kafkaConsumerService) CheckHealth() error {
+	return s.consumer.IsHealthy()
+}

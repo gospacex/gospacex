@@ -1,0 +1,224 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
+)
+
+// Config 微服务配置结构
+type Config struct {
+	App      AppConfig       `yaml:"app"`
+	Server   ServerConfig    `yaml:"server"`
+	Registry RegistryConfig  `yaml:"registry"`
+	Database DatabaseConfig  `yaml:"database"`
+	Log      LogConfig       `yaml:"log"`
+}
+
+// AppConfig 应用配置
+type AppConfig struct {
+	Name        string `yaml:"name"`
+	Environment string `yaml:"environment"`
+	Version     string `yaml:"version"`
+}
+
+// ServerConfig 服务器配置
+type ServerConfig struct {
+	Name         string `yaml:"name"`
+	Address      string `yaml:"address"`
+	ReadTimeout  string `yaml:"read_timeout"`
+	WriteTimeout string `yaml:"write_timeout"`
+	IdleTimeout  string `yaml:"idle_timeout"`
+}
+
+// RegistryConfig 服务注册配置
+type RegistryConfig struct {
+	Type      string   `yaml:"type"`
+	Endpoints []string `yaml:"endpoints"`
+}
+
+// DatabaseConfig 数据库配置
+type DatabaseConfig struct {
+	MySQL MySQLConfig `yaml:"mysql"`
+}
+
+// MySQLConfig MySQL 配置
+type MySQLConfig struct {
+	Host     string `yaml:"host"`
+	Port     int    `yaml:"port"`
+	User     string `yaml:"user"`
+	Password string `yaml:"password"`
+	Database string `yaml:"database"`
+}
+
+// LogConfig 日志配置
+type LogConfig struct {
+	Level  string `yaml:"level"`
+	Format string `yaml:"format"`
+}
+
+var (
+	globalConfig *Config
+	configMu     sync.RWMutex
+)
+
+// Load 从文件加载配置
+func Load(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("error reading config file: %w", err)
+	}
+
+	return LoadFromString(string(data))
+}
+
+// LoadFromString 从 YAML 字符串加载配置
+func LoadFromString(content string) (*Config, error) {
+	cfg := &Config{}
+	if err := yaml.Unmarshal([]byte(content), cfg); err != nil {
+		return nil, fmt.Errorf("error unmarshaling config: %w", err)
+	}
+
+	// Apply defaults
+	applyDefaults(cfg)
+
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("config validation failed: %w", err)
+	}
+
+	configMu.Lock()
+	globalConfig = cfg
+	configMu.Unlock()
+
+	return cfg, nil
+}
+
+// Get 获取全局配置
+func Get() *Config {
+	configMu.RLock()
+	defer configMu.RUnlock()
+
+	if globalConfig == nil {
+		cfg, err := Load("configs/config.yaml")
+		if err != nil {
+			globalConfig = defaultConfig()
+		} else {
+			globalConfig = cfg
+		}
+	}
+	return globalConfig
+}
+
+// Set 设置全局配置（测试用）
+func Set(cfg *Config) {
+	configMu.Lock()
+	defer configMu.Unlock()
+	globalConfig = cfg
+}
+
+// Validate validates the configuration
+func (c *Config) Validate() error {
+	if c.App.Name == "" {
+		return fmt.Errorf("app.name is required")
+	}
+	if c.Server.Address == "" {
+		return fmt.Errorf("server.address is required")
+	}
+	if c.Registry.Type != "" && len(c.Registry.Endpoints) == 0 {
+		return fmt.Errorf("registry.endpoints is required when registry.type is set")
+	}
+	return nil
+}
+
+// applyDefaults applies default values
+func applyDefaults(cfg *Config) {
+	if cfg.Log.Level == "" {
+		cfg.Log.Level = "info"
+	}
+	if cfg.Log.Format == "" {
+		cfg.Log.Format = "json"
+	}
+	if cfg.Server.ReadTimeout == "" {
+		cfg.Server.ReadTimeout = "30s"
+	}
+	if cfg.Server.WriteTimeout == "" {
+		cfg.Server.WriteTimeout = "30s"
+	}
+}
+
+// defaultConfig returns default microservice configuration
+func defaultConfig() *Config {
+	return &Config{
+		App: AppConfig{
+			Name:        "microservice",
+			Environment: "development",
+		},
+		Server: ServerConfig{
+			Name:         "api",
+			Address:      ":8080",
+			ReadTimeout:  "30s",
+			WriteTimeout: "30s",
+			IdleTimeout:  "60s",
+		},
+		Log: LogConfig{
+			Level:  "info",
+			Format: "json",
+		},
+	}
+}
+
+// LoadWithViper loads config using Viper
+func LoadWithViper(path string) (*Config, error) {
+	v := viper.New()
+	v.SetConfigFile(path)
+	v.SetConfigType("yaml")
+
+	// 设置默认值
+	v.SetDefault("app.name", "microservice")
+	v.SetDefault("app.environment", "development")
+	v.SetDefault("server.name", "api")
+	v.SetDefault("server.address", ":8080")
+	v.SetDefault("server.read_timeout", "30s")
+	v.SetDefault("server.write_timeout", "30s")
+	v.SetDefault("log.level", "info")
+	v.SetDefault("log.format", "json")
+
+	v.AutomaticEnv()
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+
+	if err := v.ReadInConfig(); err != nil {
+		return nil, fmt.Errorf("error reading config: %w", err)
+	}
+
+	var cfg Config
+	if err := v.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("error unmarshaling config: %w", err)
+	}
+
+	return &cfg, nil
+}
+
+// GetDSN returns MySQL DSN connection string
+func (c *MySQLConfig) GetDSN() string {
+	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+		c.User, c.Password, c.Host, c.Port, c.Database)
+}
+
+// RegistryEnabled returns true if service registry is configured
+func (c *Config) RegistryEnabled() bool {
+	return c.Registry.Type != "" && len(c.Registry.Endpoints) > 0
+}
+
+// GetRegistryEndpoints returns registry endpoints with timeout handling
+func (c *RegistryConfig) GetEndpointsWithTimeout(timeout time.Duration) ([]string, error) {
+	if len(c.Endpoints) == 0 {
+		return nil, fmt.Errorf("no endpoints configured")
+	}
+	// In production, you would add health check logic here
+	return c.Endpoints, nil
+}

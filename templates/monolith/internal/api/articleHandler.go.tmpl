@@ -1,0 +1,16 @@
+package api
+
+import (
+	"context"
+	"github.com/cloudwego/hertz/pkg/app"
+	"{{.ModuleName}}/internal/shared"
+)
+
+func CreateArticle(c context.Context, ctx *app.RequestContext) {
+	var req struct {
+		Title   string `json:"title"`
+		Content string `json:"content"`
+	}
+	ctx.Bind(&req)
+	ctx.JSON(200, req)
+}

@@ -1,0 +1,21 @@
+package config
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
+
+func TestPriorityOrder(t *testing.T) {
+	// 验证优先级数值正确（越小优先级越高）
+	assert.True(t, PriorityRemote < PriorityEnv)
+	assert.True(t, PriorityEnv < PriorityLocalFile)
+	assert.True(t, PriorityLocalFile < PriorityDefault)
+}
+
+func TestSourceNames(t *testing.T) {
+	assert.Equal(t, "remote", SourceRemote.Name)
+	assert.Equal(t, "env", SourceEnv.Name)
+	assert.Equal(t, "local_file", SourceLocalFile.Name)
+	assert.Equal(t, "default", SourceDefault.Name)
+}

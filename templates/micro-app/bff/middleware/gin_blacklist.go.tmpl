@@ -1,0 +1,23 @@
+package middleware
+
+import (
+	"{{.AppName}}/{{.BFFName}}/internal/middleware/blacklist"
+	"github.com/gin-gonic/gin"
+)
+
+func BlacklistMiddleware(bl *blacklist.IPBlacklist) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if bl == nil {
+			c.Next()
+			return
+		}
+
+		clientIP := c.ClientIP()
+		if bl.IsBlocked(clientIP) {
+			c.JSON(403, gin.H{"code": 403, "message": "ip blocked"})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}

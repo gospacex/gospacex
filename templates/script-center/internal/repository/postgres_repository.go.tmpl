@@ -1,0 +1,57 @@
+package repository
+
+import (
+	"context"
+	"fmt"
+
+	"{{.ProjectName}}/pkg/database"
+	"gorm.io/gorm"
+)
+
+// PostgresRepository PostgreSQL repository implementation
+type PostgresRepository struct {
+	db *gorm.DB
+}
+
+// NewPostgresRepository creates a new PostgreSQL repository instance
+func NewPostgresRepository() *PostgresRepository {
+	return &PostgresRepository{db: database.PostgresDB}
+}
+
+// Create creates a new entity in PostgreSQL
+func (r *PostgresRepository) Create(ctx context.Context, entity interface{}) error {
+	return r.db.WithContext(ctx).Create(entity).Error
+}
+
+// GetByID retrieves an entity by ID from PostgreSQL
+func (r *PostgresRepository) GetByID(ctx context.Context, id int64) (interface{}, error) {
+	var entity interface{}
+	err := r.db.WithContext(ctx).First(&entity, id).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, fmt.Errorf("record not found: %w", err)
+		}
+		return nil, fmt.Errorf("failed to get entity: %w", err)
+	}
+	return entity, nil
+}
+
+// Update updates an entity in PostgreSQL
+func (r *PostgresRepository) Update(ctx context.Context, entity interface{}) error {
+	return r.db.WithContext(ctx).Save(entity).Error
+}
+
+// Delete deletes an entity by ID from PostgreSQL
+func (r *PostgresRepository) Delete(ctx context.Context, id int64) error {
+	return r.db.WithContext(ctx).Delete(&gorm.Model{ID: uint(id)}).Error
+}
+
+// List retrieves a list of entities from PostgreSQL with pagination
+func (r *PostgresRepository) List(ctx context.Context, limit, offset int) ([]interface{}, error) {
+	var entities []interface{}
+	err := r.db.WithContext(ctx).Limit(limit).Offset(offset).Find(&entities).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to list entities: %w", err)
+	}
+	return entities, nil
+}

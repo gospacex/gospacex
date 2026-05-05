@@ -1,0 +1,4 @@
+// JoinGet{{.LeftUpper}}{{.RightUpper}} 获取一对一联表数据
+func (s *{{.LeftUpper}}Service) JoinGet{{.LeftUpper}}{{.RightUpper}}(ctx context.Context, id int64) (*model.Join{{.LeftUpper}}{{.RightUpper}}, error) {
+	return s.repo.FindJoin{{.LeftUpper}}2{{.RightUpper}}(ctx, id)
+}

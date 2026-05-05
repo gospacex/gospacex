@@ -1,0 +1,80 @@
+package repository
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"{{.OutputDir}}/internal/model"
+	"github.com/redis/go-redis/v9"
+)
+
+// {{.StructName}}RepositoryImpl {{.StructName}} Redis 仓储实现
+type {{.StructName}}RepositoryImpl struct {
+	client *redis.Client
+	prefix string
+}
+
+// New{{.StructName}}Repository creates new repository
+func New{{.StructName}}Repository(client *redis.Client) {{.StructName}}Repository {
+	return &{{.StructName}}RepositoryImpl{
+		client: client,
+		prefix: "{{.LowerName}}:",
+	}
+}
+
+// Set sets entity to Redis
+func (r *{{.StructName}}RepositoryImpl) Set(ctx context.Context, entity *model.{{.StructName}}, ttl time.Duration) error {
+	key := r.prefix + entity.ID
+	data, err := entity.Marshal()
+	if err != nil {
+		return err
+	}
+	return r.client.Set(ctx, key, data, ttl).Err()
+}
+
+// Get gets entity from Redis by ID
+func (r *{{.StructName}}RepositoryImpl) Get(ctx context.Context, id string) (*model.{{.StructName}}, error) {
+	key := r.prefix + id
+	data, err := r.client.Get(ctx, key).Bytes()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, fmt.Errorf("{{.LowerName}} not found")
+		}
+		return nil, err
+	}
+
+	var entity model.{{.StructName}}
+	if err := entity.Unmarshal(data); err != nil {
+		return nil, err
+	}
+	return &entity, nil
+}
+
+// Del deletes entity from Redis
+func (r *{{.StructName}}RepositoryImpl) Del(ctx context.Context, id string) error {
+	key := r.prefix + id
+	return r.client.Del(ctx, key).Err()
+}
+
+// Exists checks if entity exists in Redis
+func (r *{{.StructName}}RepositoryImpl) Exists(ctx context.Context, id string) (bool, error) {
+	key := r.prefix + id
+	n, err := r.client.Exists(ctx, key).Result()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+// TTL gets TTL of entity from Redis
+func (r *{{.StructName}}RepositoryImpl) TTL(ctx context.Context, id string) (time.Duration, error) {
+	key := r.prefix + id
+	return r.client.TTL(ctx, key).Result()
+}
+
+// Keys gets keys matching pattern
+func (r *{{.StructName}}RepositoryImpl) Keys(ctx context.Context, pattern string) ([]string, error) {
+	pattern = r.prefix + pattern
+	return r.client.Keys(ctx, pattern).Result()
+}

@@ -1,0 +1,96 @@
+package object
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+)
+
+// RustFSConfig RustFS 配置
+type RustFSConfig struct {
+	BasePath string
+}
+
+// RustFSStorage RustFS 本地文件系统存储
+type RustFSStorage struct {
+	basePath string
+}
+
+// NewRustFSStorage 创建 RustFS 存储
+func NewRustFSStorage(cfg *RustFSConfig) (*RustFSStorage, error) {
+	if cfg.BasePath == "" {
+		cfg.BasePath = "/data/rustfs"
+	}
+
+	// 确保目录存在
+	if err := os.MkdirAll(cfg.BasePath, 0755); err != nil {
+		return nil, fmt.Errorf("create base path: %w", err)
+	}
+
+	return &RustFSStorage{
+		basePath: cfg.BasePath,
+	}, nil
+}
+
+// getFilePath 获取完整文件路径
+func (s *RustFSStorage) getFilePath(key string) string {
+	return filepath.Join(s.basePath, key)
+}
+
+// Upload 上传文件
+func (s *RustFSStorage) Upload(ctx context.Context, key string, data []byte) error {
+	filePath := s.getFilePath(key)
+
+	// 确保目录存在
+	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create directory: %w", err)
+	}
+
+	return os.WriteFile(filePath, data, 0644)
+}
+
+// Download 下载文件
+func (s *RustFSStorage) Download(ctx context.Context, key string) ([]byte, error) {
+	return os.ReadFile(s.getFilePath(key))
+}
+
+// Delete 删除文件
+func (s *RustFSStorage) Delete(ctx context.Context, key string) error {
+	err := os.Remove(s.getFilePath(key))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
+}
+
+// GetURL 获取文件访问 URL
+// RustFS 作为本地存储，返回文件路径
+func (s *RustFSStorage) GetURL(ctx context.Context, key string) (string, error) {
+	return s.getFilePath(key), nil
+}
+
+// Exist 检查文件是否存在
+func (s *RustFSStorage) Exist(ctx context.Context, key string) (bool, error) {
+	_, err := os.Stat(s.getFilePath(key))
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// NewRustFSStorage 兼容旧接口
+func NewRustFSStorage(config interface{}) (ObjectStorage, error) {
+	cfg, ok := config.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid rustfs config")
+	}
+
+	return NewRustFSStorage(&RustFSConfig{
+		BasePath: getString(cfg, "path"),
+	})
+}

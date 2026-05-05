@@ -1,0 +1,70 @@
+package mq
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/segmentio/kafka-go"
+	"{{.ProjectName}}/internal/model"
+)
+
+// MessageHandler 消息处理函数类型
+type MessageHandler func(*model.EbArticle) error
+
+// KafkaConsumer Kafka 消费者
+type KafkaConsumer struct {
+	reader  *kafka.Reader
+	topic   string
+	groupID string
+}
+
+// NewKafkaConsumer 创建消费者
+func NewKafkaConsumer(brokers []string, topic, groupID string) *kafka.Reader {
+	r := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:  brokers,
+		GroupID:  groupID,
+		Topic:    topic,
+		MinBytes: 10,
+		MaxBytes: 10e6,
+	})
+	return r
+}
+
+// Consume 开始消费
+func (c *KafkaConsumer) Consume(ctx context.Context, handler MessageHandler) error {
+	for {
+		msg, err := c.ReadMessage(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil // Context canceled - normal exit
+			}
+			return fmt.Errorf("read message: %w", err)
+		}
+
+		var article model.EbArticle
+		if err := json.Unmarshal(msg.Value, &article); err != nil {
+			fmt.Printf("Failed to unmarshal message: %v, skipping\n", err)
+			continue
+		}
+
+		if err := handler(&article); err != nil {
+			fmt.Printf("Failed to handle message: %v\n", err)
+			continue
+		}
+	}
+}
+
+// IsHealthy 检查健康
+func (c *KafkaConsumer) IsHealthy() error {
+	// Check that reader is initialized
+	if c.reader == nil {
+		return fmt.Errorf("reader not initialized")
+	}
+	return nil
+}
+
+// Close 关闭消费者
+func (c *KafkaConsumer) Close() error {
+	return c.reader.Close()
+}

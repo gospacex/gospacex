@@ -1,0 +1,39 @@
+package domain
+
+import "time"
+
+type ArticleAggregate struct {
+	id        int64
+	title     string
+	content   string
+	authorID  int64
+	status    string
+	createdAt time.Time
+	updatedAt time.Time
+}
+
+func NewArticleAggregate(id int64, title, content string, authorID int64) *ArticleAggregate {
+	return &ArticleAggregate{
+		id:        id,
+		title:     title,
+		content:   content,
+		authorID:  authorID,
+		status:    "draft",
+		createdAt: time.Now(),
+	}
+}
+
+func (a *ArticleAggregate) ID() int64        { return a.id }
+func (a *ArticleAggregate) Title() string     { return a.title }
+func (a *ArticleAggregate) Content() string { return a.content }
+func (a *ArticleAggregate) AuthorID() int64 { return a.authorID }
+func (a *ArticleAggregate) Status() string  { return a.status }
+
+func (a *ArticleAggregate) Publish() error {
+	if a.status == "published" {
+		return ErrAlreadyPublished
+	}
+	a.status = "published"
+	a.updatedAt = time.Now()
+	return nil
+}

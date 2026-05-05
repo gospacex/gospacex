@@ -1,0 +1,34 @@
+package jwt
+
+import "github.com/golang-jwt/jwt/v5"
+
+// Option 配置选项
+type Option func(*Config)
+
+// WithSigningMethod 设置签名方法
+func WithSigningMethod(method jwt.SigningMethod) Option {
+	return func(c *Config) {
+		c.SigningMethod = method
+	}
+}
+
+// WithIssuer 设置签发者
+func WithIssuer(issuer string) Option {
+	return func(c *Config) {
+		c.Issuer = issuer
+	}
+}
+
+// WithExpiration 设置过期时间(秒)
+func WithExpiration(seconds int) Option {
+	return func(c *Config) {
+		c.Expiration = seconds
+	}
+}
+
+// WithRefreshWindow 设置刷新窗口(秒)
+func WithRefreshWindow(seconds int) Option {
+	return func(c *Config) {
+		c.RefreshWindow = seconds
+	}
+}

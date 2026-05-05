@@ -1,0 +1,98 @@
+package middleware
+
+import (
+	"context"
+	"fmt"
+	
+	"github.com/apache/rocketmq-client-go/v2"
+	"github.com/apache/rocketmq-client-go/v2/consumer"
+	"github.com/apache/rocketmq-client-go/v2/primitive"
+)
+
+// RocketMQConfig RocketMQ 配置
+type RocketMQConfig struct {
+	Enabled     bool     `yaml:"enabled" json:"enabled"`
+	NameServer  string   `yaml:"name_server" json:"name_server"`
+	Topic       string   `yaml:"topic" json:"topic"`
+	GroupName   string   `yaml:"group_name" json:"group_name"`
+	ConsumerTag string   `yaml:"consumer_tag" json:"consumer_tag"`
+}
+
+// RocketMQProducer RocketMQ 生产者
+type RocketMQProducer struct {
+	producer rocketmq.Producer
+}
+
+// NewRocketMQProducer 创建 RocketMQ 生产者
+func NewRocketMQProducer(cfg RocketMQConfig) (*RocketMQProducer, error) {
+	producer, err := rocketmq.NewProducer(
+		&producer.Config{
+			ConsumerGroup: cfg.GroupName,
+			NameServer:    cfg.NameServer,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create producer failed: %w", err)
+	}
+	
+	if err := producer.Start(); err != nil {
+		return nil, fmt.Errorf("start producer failed: %w", err)
+	}
+	
+	return &RocketMQProducer{
+		producer: producer,
+	}, nil
+}
+
+// SendMessage 发送消息
+func (p *RocketMQProducer) SendMessage(ctx context.Context, body []byte) error {
+	msg := &primitive.Message{
+		Topic: cfg.Topic,
+		Body:  body,
+	}
+	
+	result, err := p.producer.SendSync(ctx, msg)
+	if err != nil {
+		return fmt.Errorf("send message failed: %w", err)
+	}
+	
+	if result.Status != primitive.SendOK {
+		return fmt.Errorf("send failed: %v", result.Status)
+	}
+	
+	return nil
+}
+
+// RocketMQConsumer RocketMQ 消费者
+type RocketMQConsumer struct {
+	consumer rocketmq.PushConsumer
+}
+
+// NewRocketMQConsumer 创建 RocketMQ 消费者
+func NewRocketMQConsumer(cfg RocketMQConfig, handler func(context.Context, ...primitive.MessageExt) (consumer.ConsumeResult, error)) (*RocketMQConsumer, error) {
+	c, err := rocketmq.NewPushConsumer(
+		consumer.WithGroupName(cfg.GroupName),
+		consumer.WithNsResolver(primitive.NewPassthroughResolver([]string{cfg.NameServer})),
+		consumer.WithConsumerModel(consumer.Clustering),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create consumer failed: %w", err)
+	}
+	
+	if err := c.Subscribe(cfg.Topic, consumer.MessageSelector{}, handler); err != nil {
+		return nil, fmt.Errorf("subscribe failed: %w", err)
+	}
+	
+	if err := c.Start(); err != nil {
+		return nil, fmt.Errorf("start consumer failed: %w", err)
+	}
+	
+	return &RocketMQConsumer{
+		consumer: c,
+	}, nil
+}
+
+// Close 关闭消费者
+func (c *RocketMQConsumer) Close() error {
+	return c.consumer.Shutdown()
+}

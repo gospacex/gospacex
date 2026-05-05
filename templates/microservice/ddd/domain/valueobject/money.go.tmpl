@@ -1,0 +1,68 @@
+package valueobject
+
+import "errors"
+
+// Money 值对象（货币）
+type Money struct {
+	amount   int64
+	currency string
+}
+
+// NewMoney 创建 Money
+func NewMoney(amount int64, currency string) (*Money, error) {
+	if amount < 0 {
+		return nil, errors.New("amount cannot be negative")
+	}
+	if currency == "" {
+		return nil, errors.New("currency is required")
+	}
+	return &Money{
+		amount:   amount,
+		currency: currency,
+	}, nil
+}
+
+// Amount 获取金额
+func (m *Money) Amount() int64 { return m.amount }
+
+// Currency 获取货币
+func (m *Money) Currency() string { return m.currency }
+
+// Add 相加
+func (m *Money) Add(other *Money) (*Money, error) {
+	if m.currency != other.currency {
+		return nil, errors.New("currency mismatch")
+	}
+	return &Money{
+		amount:   m.amount + other.amount,
+		currency: m.currency,
+	}, nil
+}
+
+// Subtract 相减
+func (m *Money) Subtract(other *Money) (*Money, error) {
+	if m.currency != other.currency {
+		return nil, errors.New("currency mismatch")
+	}
+	result := m.amount - other.amount
+	if result < 0 {
+		return nil, errors.New("result cannot be negative")
+	}
+	return &Money{
+		amount:   result,
+		currency: m.currency,
+	}, nil
+}
+
+// Equals 判断相等
+func (m *Money) Equals(other *Money) bool {
+	return m.amount == other.amount && m.currency == other.currency
+}
+
+// GreaterThan 判断是否大于
+func (m *Money) GreaterThan(other *Money) (bool, error) {
+	if m.currency != other.currency {
+		return false, errors.New("currency mismatch")
+	}
+	return m.amount > other.amount, nil
+}

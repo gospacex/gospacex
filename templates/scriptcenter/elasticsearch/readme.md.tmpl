@@ -1,0 +1,49 @@
+# {{ .ProjectName }}
+
+Script Center 项目 - 基于 Elasticsearch 的文章管理服务
+
+## 功能特性
+
+- 全文检索
+- 索引管理
+- 文档操作
+- 聚合分析
+- 批量操作
+
+## 快速开始
+
+### 1. 启动 Elasticsearch
+
+```bash
+cd deploy
+docker-compose up -d
+```
+
+### 2. 运行服务
+
+```bash
+go run cmd/main.go start
+```
+
+### 3. 使用示例
+
+```bash
+# 创建索引
+./{{ .ProjectName }} es index create
+
+# 索引文档
+./{{ .ProjectName }} es doc index --id 1 --data '{"name":"标题","data":"内容"}'
+
+# 搜索文档
+./{{ .ProjectName }} es search --query "关键词"
+```
+
+## 配置
+
+配置文件: `configs/config.yaml`
+
+## API 文档
+
+{{ if .WithHTTP }}
+HTTP API: http://localhost:{{ .Server.Port }}/docs
+{{ end }}

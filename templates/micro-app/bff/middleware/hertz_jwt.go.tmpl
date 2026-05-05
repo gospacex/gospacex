@@ -1,0 +1,103 @@
+package middleware
+
+import (
+	"context"
+	"strings"
+	"time"
+
+	"{{.AppName}}/{{.BFFName}}/pkg/jwt"
+	"github.com/cloudwego/hertz/pkg/app"
+)
+
+// JWTMiddleware JWT 中间件
+func JWTMiddleware(jwtService *jwt.JWT) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		if jwtService == nil {
+			c.Next(ctx)
+			return
+		}
+
+		// 从 Header、Cookie、Query 中提取 Token
+		tokenString := extractToken(c)
+		if tokenString == "" {
+			c.JSON(401, map[string]interface{}{"code": 401, "message": "missing token"})
+			c.Abort()
+			return
+		}
+
+		// 解析 Token
+		claims, err := jwtService.ParseToken(tokenString)
+		if err != nil {
+			c.JSON(401, map[string]interface{}{"code": 401, "message": "invalid token: " + err.Error()})
+			c.Abort()
+			return
+		}
+
+		// 将用户信息注入 Context
+		c.Set("user_id", claims.UserID)
+		c.Set("username", claims.Username)
+		c.Set("role", claims.Role)
+		c.Set("claims", claims)
+		c.Next(ctx)
+	}
+}
+
+// RefreshTokenHandler 刷新 Token 处理器
+// POST /api/auth/refresh
+func RefreshTokenHandler(jwtService *jwt.JWT) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		if jwtService == nil {
+			c.JSON(500, map[string]interface{}{"code": 500, "message": "jwt service not initialized"})
+			c.Abort()
+			return
+		}
+
+		var req struct {
+			Token string `json:"token"`
+		}
+		if err := c.Bind(&req); err != nil {
+			c.JSON(400, map[string]interface{}{"code": 400, "message": "missing token"})
+			c.Abort()
+			return
+		}
+
+		newToken, err := jwtService.RefreshToken(req.Token)
+		if err != nil {
+			c.JSON(401, map[string]interface{}{"code": 401, "message": "token refresh failed: " + err.Error()})
+			c.Abort()
+			return
+		}
+
+		c.JSON(200, map[string]interface{}{
+			"code":   200,
+			"token":  newToken,
+			"expire": time.Now().Add(time.Hour).Unix(),
+		})
+	}
+}
+
+// extractToken 从 Header/Cookie/Query 中提取 Token
+func extractToken(c *app.RequestContext) string {
+	// 1. 从 Authorization Header 提取 (Bearer xxx)
+	authHeader := string(c.GetHeader("Authorization"))
+	if authHeader != "" {
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			return strings.TrimPrefix(authHeader, "Bearer ")
+		}
+		return authHeader
+	}
+
+	// 2. 从 Cookie 提取
+	token := string(c.Cookie("token"))
+	if token != "" {
+		return token
+	}
+
+	// 3. 从 Query 参数提取
+	token = c.Query("token")
+	if token != "" {
+		return token
+	}
+
+	return ""
+}

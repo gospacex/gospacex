@@ -1,0 +1,26 @@
+package model
+
+import (
+	"time"
+	"gorm.io/gorm"
+)
+
+// {{.EntityName}} {{.TableName}} 模型
+type {{.EntityName}} struct {
+	Base
+{{- range .Fields }}
+	{{.Name}} {{.Type}} `gorm:"column:{{.Column}};type:{{.DbType}}" json:"{{.JsonName}}"`
+{{- end }}
+}
+
+func (s {{.EntityName}}) TableName() string {
+	return "{{.TableName}}"
+}
+
+// Base 通用字段
+type Base struct {
+	ID        int64         `gorm:"primaryKey;autoIncrement"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt gorm.DeletedAt `gorm:"index"`
+}

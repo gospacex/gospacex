@@ -1,0 +1,47 @@
+package mq
+
+import (
+	"fmt"
+
+	"github.com/apache/rocketmq-client-go/v2"
+	"github.com/apache/rocketmq-client-go/v2/primitive"
+	"github.com/apache/rocketmq-client-go/v2/rlog"
+)
+
+// RocketmqClient RocketMQ 客户端封装
+type RocketmqClient struct {
+	nameServer string
+}
+
+// NewRocketmqClient 创建客户端
+func NewRocketmqClient(nameServer string) *RocketmqClient {
+	rlog.SetLogLevel(rlog.InfoLevel)
+	return &RocketmqClient{
+		nameServer: nameServer,
+	}
+}
+
+// IsHealthy 检查连接健康
+func (c *RocketmqClient) IsHealthy() error {
+	// Create a simple producer to test connection
+	p, err := rocketmq.NewProducer(
+		rocketmq.WithNameServer(c.nameServer),
+	)
+	if err != nil {
+		return fmt.Errorf("create producer: %w", err)
+	}
+	defer p.Shutdown()
+
+	if err := p.Start(); err != nil {
+		return fmt.Errorf("start producer: %w", err)
+	}
+
+	// Test a light message
+	msg := primitive.NewMessage("test-topic", []byte("health-check"))
+	_, err = p.SendSync(context.Background(), msg)
+	if err != nil {
+		return fmt.Errorf("send test message: %w", err)
+	}
+
+	return nil
+}

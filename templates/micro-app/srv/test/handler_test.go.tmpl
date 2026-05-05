@@ -1,0 +1,187 @@
+package test
+
+import (
+	"context"
+	"net"
+	"testing"
+
+	"{{.AppName}}/common/kitexGen/{{.ProtoImportPath}}"
+	"myshop/pkg/config"
+	"myshop/pkg/database"
+	"myshop/srvProduct/internal/handler"
+	"myshop/srvProduct/internal/service"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+)
+
+var (
+	testSrvAddr = "localhost:8001"
+	testClient  product.ProductServiceClient
+	testConn    *grpc.ClientConn
+)
+
+func setupGRPCClient(t *testing.T) {
+	var err error
+	testConn, err = grpc.Dial(testSrvAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock())
+	if err != nil {
+		t.Skipf("skipping: cannot connect to gRPC server at %s: %v", testSrvAddr, err)
+	}
+	testClient = product.NewProductServiceClient(testConn)
+}
+
+func teardownGRPCClient() {
+	if testConn != nil {
+		testConn.Close()
+	}
+}
+
+func startTestServer(t *testing.T) func() {
+	cfg, err := config.Load("configs/config.yaml")
+	if err != nil {
+		t.Skipf("skipping: cannot load config: %v", err)
+	}
+	db, err := database.NewDB(&cfg.Database)
+	if err != nil {
+		t.Skipf("skipping: cannot connect to database: %v", err)
+	}
+
+	lis, err := net.Listen("tcp", testSrvAddr)
+	if err != nil {
+		t.Skipf("skipping: cannot listen on %s: %v", testSrvAddr, err)
+	}
+
+	srv := grpc.NewServer()
+	productHandler := handler.NewProductHandler(db)
+	product.RegisterProductServiceServer(srv, productHandler)
+	go srv.Serve(lis)
+
+	return func() {
+		srv.Stop()
+		lis.Close()
+	}
+}
+
+func TestMain(m *testing.M) {
+	m.Run()
+}
+
+// TestProductService_Create 测试创建
+func TestProductService_Create(t *testing.T) {
+	setupGRPCClient(t)
+	defer teardownGRPCClient()
+
+	resp, err := testClient.Create(context.Background(), &product.CreateProductReq{
+		StoreName: "Test Product",
+		Price:     99.9,
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if resp.Id == 0 {
+		t.Error("Expected non-zero id")
+	}
+	t.Logf("Created product with id: %d", resp.Id)
+}
+
+// TestProductService_List 测试列表
+func TestProductService_List(t *testing.T) {
+	setupGRPCClient(t)
+	defer teardownGRPCClient()
+
+	resp, err := testClient.List(context.Background(), &product.ListProductReq{})
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	t.Logf("Listed %d products", len(resp.Items))
+}
+
+// TestProductService_Get 测试查询
+func TestProductService_Get(t *testing.T) {
+	setupGRPCClient(t)
+	defer teardownGRPCClient()
+
+	// 先创建一个用于测试
+	createResp, err := testClient.Create(context.Background(), &product.CreateProductReq{
+		StoreName: "Get Test Product",
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	resp, err := testClient.Get(context.Background(), &product.GetProductReq{
+		Id: createResp.Id,
+	})
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if resp.StoreName != "Get Test Product" {
+		t.Errorf("Expected store_name 'Get Test Product', got '%s'", resp.StoreName)
+	}
+}
+
+// TestProductService_Update 测试更新
+func TestProductService_Update(t *testing.T) {
+	setupGRPCClient(t)
+	defer teardownGRPCClient()
+
+	// 先创建一个用于测试
+	createResp, err := testClient.Create(context.Background(), &product.CreateProductReq{
+		StoreName: "Before Update",
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	// 更新
+	_, err = testClient.Update(context.Background(), &product.UpdateProductReq{
+		Id:        createResp.Id,
+		StoreName: "After Update",
+	})
+	if err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+
+	// 验证更新
+	getResp, err := testClient.Get(context.Background(), &product.GetProductReq{
+		Id: createResp.Id,
+	})
+	if err != nil {
+		t.Fatalf("Get after update failed: %v", err)
+	}
+	if getResp.StoreName != "After Update" {
+		t.Errorf("Expected store_name 'After Update', got '%s'", getResp.StoreName)
+	}
+}
+
+// TestProductService_Delete 测试删除
+func TestProductService_Delete(t *testing.T) {
+	setupGRPCClient(t)
+	defer teardownGRPCClient()
+
+	// 先创建一个用于测试
+	createResp, err := testClient.Create(context.Background(), &product.CreateProductReq{
+		StoreName: "To Delete",
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	// 删除
+	_, err = testClient.Delete(context.Background(), &product.DeleteProductReq{
+		Id: createResp.Id,
+	})
+	if err != nil {
+		t.Fatalf("Delete failed: %v", err)
+	}
+
+	// 验证删除 - 应该失败
+	_, err = testClient.Get(context.Background(), &product.GetProductReq{
+		Id: createResp.Id,
+	})
+	if err == nil {
+		t.Error("Expected error when getting deleted product, got nil")
+	}
+}

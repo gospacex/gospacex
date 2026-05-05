@@ -1,0 +1,42 @@
+package service
+
+import (
+	"context"
+
+	"{{.AppName}}/{{.SrvDirName}}/internal/model"
+	"{{.AppName}}/{{.SrvDirName}}/internal/repository"
+	pb "{{.AppName}}/common/kitexGen/{{.ProtoImportPath}}"
+)
+
+type {{.UpperEntityName}}Service struct { repo *repository.{{.UpperEntityName}}Repo }
+
+func New{{.UpperEntityName}}Service(repo *repository.{{.UpperEntityName}}Repo) *{{.UpperEntityName}}Service {
+	return &{{.UpperEntityName}}Service{repo: repo}
+}
+
+func (s *{{.UpperEntityName}}Service) Create(ctx context.Context, m *model.{{.UpperEntityName}}) error {
+	return s.repo.Create(ctx, m)
+}
+
+func (s *{{.UpperEntityName}}Service) Get(ctx context.Context, id {{.PKGoType}}) (*model.{{.UpperEntityName}}, error) {
+	return s.repo.GetByID(ctx, {{.PKModelConvert}})
+}
+
+// ListWithFilter 支持分页和过滤条件的列表查询
+func (s *{{.UpperEntityName}}Service) ListWithFilter(ctx context.Context, req *pb.List{{.UpperEntityName}}Req) ([]*model.{{.UpperEntityName}}, error) {
+	return s.repo.ListWithFilter(ctx, req)
+}
+
+func (s *{{.UpperEntityName}}Service) Update(ctx context.Context, m *model.{{.UpperEntityName}}) error {
+	return s.repo.Update(ctx, m)
+}
+
+func (s *{{.UpperEntityName}}Service) Delete(ctx context.Context, id {{.PKGoType}}) error {
+	return s.repo.Delete(ctx, {{.PKModelConvert}})
+}
+{{if .HasJoin}}
+
+func (s *{{.UpperEntityName}}Service) {{.JoinRepoMethodName}}(ctx context.Context, id int64) (*model.{{.JoinModelName}}, error) {
+	return s.repo.{{.JoinRepoMethodName}}(ctx, id)
+}
+{{end}}

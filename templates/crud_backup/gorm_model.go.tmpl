@@ -1,0 +1,20 @@
+package model
+
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
+
+// {{.StructName}} {{.StructName}} 模型
+type {{.StructName}} struct {
+	ID        int64          `gorm:"primaryKey;autoIncrement"`
+	CreatedAt time.Time      `gorm:"autoCreateTime"`
+	UpdatedAt time.Time      `gorm:"autoUpdateTime"`
+	DeletedAt gorm.DeletedAt `gorm:"index"`
+}
+
+// TableName 表名
+func ({{.StructName}}) TableName() string {
+	return "{{.TableName}}"
+}

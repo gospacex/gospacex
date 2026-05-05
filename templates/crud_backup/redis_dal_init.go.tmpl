@@ -1,0 +1,46 @@
+package redis
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+)
+
+var (
+	Client *redis.Client
+	err    error
+)
+
+// Init initializes Redis connection
+func Init() {
+	addr := os.Getenv("REDIS_ADDR")
+	if addr == "" {
+		addr = "localhost:6379"
+	}
+
+	password := os.Getenv("REDIS_PASSWORD")
+	db := 0
+
+	Client = redis.NewClient(&redis.Options{
+		Addr:     addr,
+		Password: password,
+		DB:       db,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := Client.Ping(ctx).Err(); err != nil {
+		panic(fmt.Sprintf("Failed to connect to Redis: %v", err))
+	}
+}
+
+// Close closes Redis connection
+func Close() {
+	if Client != nil {
+		Client.Close()
+	}
+}

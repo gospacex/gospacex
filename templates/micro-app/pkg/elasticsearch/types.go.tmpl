@@ -1,0 +1,71 @@
+package elasticsearch
+
+// Document 文档结构
+type Document struct {
+	ID    string                 `json:"id,omitempty"`
+	Index string                 `json:"_index,omitempty"`
+	Score float64                `json:"_score,omitempty"`
+	Source map[string]interface{} `json:"_source,omitempty"`
+}
+
+// SearchResult 搜索结果
+type SearchResult struct {
+	Total int64
+	Hits  []map[string]interface{}
+	Took  int64
+	MaxScore float64
+}
+
+// BulkResult 批量操作结果
+type BulkResult struct {
+	Errors bool
+	Items  []map[string]interface{}
+}
+
+// IndexResult 索引操作结果
+type IndexResult struct {
+	ID      string
+	Index   string
+	Version int64
+	Result  string
+}
+
+// DeleteResult 删除操作结果
+type DeleteResult struct {
+	ID      string
+	Index   string
+	Version int64
+	Result  string
+}
+
+// AggregateResult 聚合查询结果
+type AggregateResult struct {
+	Aggregations map[string]interface{}
+}
+
+// SearchRequest 搜索请求
+type SearchRequest struct {
+	Index   string
+	Query   map[string]interface{}
+	From    int
+	Size    int
+	Sort    []string
+	Source  []string
+	PreFilter map[string]interface{}
+	PostFilter map[string]interface{}
+}
+
+// BulkRequestItem 批量请求项
+type BulkRequestItem struct {
+	Index  string
+	ID     string
+	Doc    interface{}
+	Action string // index, create, update, delete
+}
+
+// MappingRequest 索引映射请求
+type MappingRequest struct {
+	Index  string
+	Mappings map[string]interface{}
+	Settings map[string]interface{}
+}

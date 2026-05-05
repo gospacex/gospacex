@@ -1,0 +1,140 @@
+package rpc
+
+import (
+	"context"
+	"errors"
+	"sync"
+	"time"
+
+	"github.com/cloudwego/kitex/pkg/circuitbreaker"
+	"github.com/cloudwego/kitex/pkg/rpcinfo"
+)
+
+// DefaultCircuitBreaker 默认熔断器实现
+// 使用滑动窗口统计失败率，超过阈值则打开
+type DefaultCircuitBreaker struct {
+	mu               sync.Mutex
+	state           circuitbreaker.State
+	failureCount     int
+	successCount     int
+	totalRequests    int
+	failureThreshold float64   // 失败率阈值，超过则打开
+	windowSize       int       // 窗口大小
+	resetTimeout     time.Duration // 重置超时
+	lastFailureTime  time.Time
+}
+
+// NewDefaultCircuitBreaker 创建默认熔断器
+func NewDefaultCircuitBreaker() *DefaultCircuitBreaker {
+	return &DefaultCircuitBreaker{
+		state:           circuitbreaker.Closed,
+		failureThreshold: 0.5, // 50% 失败率触发
+		windowSize:       100,
+		resetTimeout:     30 * time.Second,
+	}
+}
+
+// State 返回当前状态
+func (cb *DefaultCircuitBreaker) State() circuitbreaker.State {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	return cb.state
+}
+
+// OnStart 请求开始
+func (cb *DefaultCircuitBreaker) OnStart(ctx context.Context, ri rpcinfo.RPCInfo) {
+	// 半开状态允许尝试一个请求
+}
+
+// OnSuccess 请求成功
+func (cb *DefaultCircuitBreaker) OnSuccess(ctx context.Context, ri rpcinfo.RPCInfo) {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	switch cb.state {
+	case circuitbreaker.Closed:
+		cb.successCount++
+		cb.checkState()
+	case circuitbreaker.HalfOpen:
+		// 半开状态成功，关闭熔断器
+		cb.reset()
+		cb.state = circuitbreaker.Closed
+	case circuitbreaker.Open:
+		// 打开状态不应该成功
+	}
+}
+
+// OnFailure 请求失败
+func (cb *DefaultCircuitBreaker) OnFailure(ctx context.Context, ri rpcinfo.RPCInfo) {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	cb.lastFailureTime = time.Now()
+
+	switch cb.state {
+	case circuitbreaker.Closed:
+		cb.failureCount++
+		cb.checkState()
+	case circuitbreaker.HalfOpen:
+		// 半开状态失败，重新打开
+		cb.state = circuitbreaker.Open
+	case circuitbreaker.Open:
+		// 检查是否超时，可以转为半开
+		if time.Since(cb.lastFailureTime) > cb.resetTimeout {
+			cb.state = circuitbreaker.HalfOpen
+		}
+	}
+}
+
+// Check 检查是否允许请求
+func (cb *DefaultCircuitBreaker) Check() error {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	switch cb.state {
+	case circuitbreaker.Open:
+		// 超时后允许尝试
+		if time.Since(cb.lastFailureTime) > cb.resetTimeout {
+			cb.state = circuitbreaker.HalfOpen
+			return nil
+		}
+		return errors.New("circuit breaker is open")
+	default:
+		return nil
+	}
+}
+
+func (cb *DefaultCircuitBreaker) checkState() {
+	total := cb.failureCount + cb.successCount
+	if total < cb.windowSize {
+		return
+	}
+
+	failureRate := float64(cb.failureCount) / float64(total)
+	if failureRate >= cb.failureThreshold {
+		cb.state = circuitbreaker.Open
+		cb.lastFailureTime = time.Now()
+	}
+
+	// 滑动窗口，清空计数器
+	cb.failureCount = 0
+	cb.successCount = 0
+}
+
+func (cb *DefaultCircuitBreaker) reset() {
+	cb.failureCount = 0
+	cb.successCount = 0
+	cb.totalRequests = 0
+}
+
+// WithFailureThreshold 设置失败率阈值
+func (cb *DefaultCircuitBreaker) WithFailureThreshold(threshold float64) *DefaultCircuitBreaker {
+	cb.failureThreshold = threshold
+	return cb
+}
+
+// WithResetTimeout 设置重置超时
+func (cb *DefaultCircuitBreaker) WithResetTimeout(d time.Duration) *DefaultCircuitBreaker {
+	cb.resetTimeout = d
+	return cb
+}

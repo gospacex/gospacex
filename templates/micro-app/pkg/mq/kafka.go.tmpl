@@ -1,0 +1,117 @@
+package mq
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/IBM/sarama"
+)
+
+type KafkaConfig struct {
+	Brokers []string `yaml:"brokers"`
+	Topic   string   `yaml:"topic"`
+	Group   string   `yaml:"group"`
+}
+
+type KafkaClient struct {
+	config    KafkaConfig
+	producer  sarama.SyncProducer
+	consumer  sarama.ConsumerGroup
+	mu        sync.Mutex
+	consumers map[string]func([]byte)
+}
+
+func NewKafkaClient(cfg KafkaConfig) (*KafkaClient, error) {
+	saramaConfig := sarama.NewConfig()
+	saramaConfig.Producer.Return.Successes = true
+	saramaConfig.Producer.Timeout = 10 * time.Second
+
+	producer, err := sarama.NewSyncProducer(cfg.Brokers, saramaConfig)
+	if err != nil {
+		return nil, fmt.Errorf("create kafka producer failed: %w", err)
+	}
+
+	return &KafkaClient{
+		config:   cfg,
+		producer: producer,
+	}, nil
+}
+
+// Publish implements Client interface
+func (k *KafkaClient) Publish(ctx context.Context, topic string, data interface{}) error {
+	dataBytes, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("marshal message failed: %w", err)
+	}
+	msg := &sarama.ProducerMessage{
+		Topic: topic,
+		Key:   sarama.StringEncoder(topic),
+		Value: sarama.ByteEncoder(dataBytes),
+	}
+	_, _, err = k.producer.SendMessage(msg)
+	return err
+}
+
+// Subscribe implements Client interface
+func (k *KafkaClient) Subscribe(ctx context.Context, topic string, handler func([]byte)) error {
+	k.mu.Lock()
+	if k.consumers == nil {
+		k.consumers = make(map[string]func([]byte))
+	}
+	k.consumers[topic] = handler
+	k.mu.Unlock()
+
+	consumerHandler := &kafkaConsumerHandler{handler: handler}
+	consumer, err := sarama.NewConsumerGroup(k.config.Brokers, k.config.Group, saramaConfig())
+	if err != nil {
+		return fmt.Errorf("create kafka consumer failed: %w", err)
+	}
+	k.consumer = consumer
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				if err := consumer.Consume(ctx, []string{topic}, consumerHandler); err != nil {
+					time.Sleep(time.Second)
+				}
+			}
+		}
+	}()
+	return nil
+}
+
+func saramaConfig() *sarama.Config {
+	cfg := sarama.NewConfig()
+	cfg.Consumer.Group.Rebalance.GroupStrategies = []sarama.BalanceStrategy{sarama.NewBalanceStrategyRoundRobin()}
+	return cfg
+}
+
+type kafkaConsumerHandler struct {
+	handler func([]byte)
+}
+
+func (h *kafkaConsumerHandler) Setup(sarama.ConsumerGroupSession) error   { return nil }
+func (h *kafkaConsumerHandler) Cleanup(sarama.ConsumerGroupSession) error { return nil }
+func (h *kafkaConsumerHandler) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+	for msg := range claim.Messages() {
+		h.handler(msg.Value)
+		sess.MarkMessage(msg, "")
+	}
+	return nil
+}
+
+func (k *KafkaClient) Close() error {
+	if k.producer != nil {
+		k.producer.Close()
+	}
+	if k.consumer != nil {
+		k.consumer.Close()
+	}
+	return nil
+}

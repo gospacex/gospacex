@@ -1,0 +1,101 @@
+package redis
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"time"
+)
+
+// CacheKeyPrefix 缓存 key 前缀
+const DefaultPrefix = "{{.RedisPrefix}}"
+
+// Cache 缓存封装
+type Cache struct {
+	client *Client
+	prefix string
+}
+
+// NewCache 创建缓存实例
+func NewCache(client *Client, prefix string) *Cache {
+	if prefix == "" {
+		prefix = DefaultPrefix
+	}
+	return &Cache{
+		client: client,
+		prefix: prefix,
+	}
+}
+
+// buildKey 构建缓存 key
+func (c *Cache) buildKey(key string) string {
+	return c.prefix + key
+}
+
+// Get 获取缓存
+func (c *Cache) Get(ctx context.Context, key string) (string, error) {
+	return c.client.Get(ctx, c.buildKey(key))
+}
+
+// Set 设置缓存
+func (c *Cache) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+	return c.client.Set(ctx, c.buildKey(key), value, ttl)
+}
+
+// Delete 删除缓存
+func (c *Cache) Delete(ctx context.Context, key string) error {
+	return c.client.Delete(ctx, c.buildKey(key))
+}
+
+// InvalidateHashFieldHash 删除 Hash 中的字段
+func (c *Cache) InvalidateHashFieldHash(ctx context.Context, key, field string) error {
+	return c.client.rdb.HDel(ctx, c.buildKey(key), field).Err()
+}
+
+// InvalidateByPattern 删除匹配模式的所有 key
+func (c *Cache) InvalidateByPattern(ctx context.Context, pattern string) error {
+	iter := c.client.rdb.Scan(ctx, 0, c.buildKey(pattern), 100).Iterator()
+	for iter.Next(ctx) {
+		if err := c.client.rdb.Del(ctx, iter.Val()).Err(); err != nil {
+			return err
+		}
+	}
+	return iter.Err()
+}
+
+// CacheHash Hash 缓存操作
+type CacheHash struct {
+	cache *Cache
+}
+
+// NewCacheHash 创建 Hash 缓存操作
+func NewCacheHash(cache *Cache) *CacheHash {
+	return &CacheHash{cache: cache}
+}
+
+// HGet 获取 Hash 字段值
+func (ch *CacheHash) HGet(ctx context.Context, key, field string) (string, error) {
+	return ch.cache.client.rdb.HGet(ctx, ch.cache.buildKey(key), field).Result()
+}
+
+// HSet 设置 Hash 字段值
+func (ch *CacheHash) HSet(ctx context.Context, key, field string, value interface{}) error {
+	return ch.cache.client.rdb.HSet(ctx, ch.cache.buildKey(key), field, value).Err()
+}
+
+// HDel 删除 Hash 字段
+func (ch *CacheHash) HDel(ctx context.Context, key string, fields ...string) error {
+	return ch.cache.client.rdb.HDel(ctx, ch.cache.buildKey(key), fields...).Err()
+}
+
+// HGetAll 获取所有 Hash 字段
+func (ch *CacheHash) HGetAll(ctx context.Context, key string) (map[string]string, error) {
+	return ch.cache.client.rdb.HGetAll(ctx, ch.cache.buildKey(key)).Result()
+}
+
+// BuildCacheKey 构建缓存 key (用于需要自定义 key 的场景)
+func BuildCacheKey(prefix, id string) string {
+	h := sha256.Sum256([]byte(id))
+	return fmt.Sprintf("%s:%s:%s", prefix, id[:8], hex.EncodeToString(h[:4]))
+}

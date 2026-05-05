@@ -1,0 +1,17 @@
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ .ServiceName }}-auth
+  namespace: {{ .Namespace | default "default" }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ .ServiceName }}
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/{{ .Namespace | default "default" }}/sa/{{ .ServiceName }}"]
+    to:
+    - operation:
+        methods: ["GET", "POST", "PUT", "DELETE"]
+        paths: ["/api/*"]

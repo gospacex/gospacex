@@ -1,0 +1,42 @@
+package middleware
+
+import (
+	"context"
+	"strings"
+
+	"{{.GoModuleName}}/pkg/logger"
+
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
+	"go.uber.org/zap"
+)
+
+// AuthMiddleware JWT 认证中间件
+func AuthMiddleware() app.HandlerFunc {
+	return func(c context.Context, ctx *app.RequestContext) {
+		authHeader := string(ctx.Request.Header.Peek("Authorization"))
+		if authHeader == "" {
+			logger.Warn("Missing authorization header")
+			ctx.AbortWithStatus(consts.StatusUnauthorized)
+			return
+		}
+
+		// Bearer token 格式
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			logger.Warn("Invalid authorization format")
+			ctx.AbortWithStatus(consts.StatusUnauthorized)
+			return
+		}
+
+		token := parts[1]
+		// TODO: 验证 token
+		// 如果验证失败，返回 401
+
+		// 将用户信息存入上下文
+		// ctx.Set("user_id", claims.UserID)
+
+		logger.Debug("Auth passed")
+		ctx.Next(c)
+	}
+}

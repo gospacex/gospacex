@@ -1,0 +1,82 @@
+package config
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
+
+// 完整优先级覆盖测试
+// 测试场景:
+//  远程: app.name = "remote"
+//  环境变量: app.port = 8080
+//  本地文件: app.name = "local", app.debug = false
+//  默认: app.name = "default", app.debug = true, app.port = 8000
+
+func TestManager_FullPriorityCoverage(t *testing.T) {
+	m := NewManager()
+
+	// 默认加载器（最低优先级）
+	defaultLoader := NewMockLoader(SourceDefault, map[string]interface{}{
+		"app.name":  "default",
+		"app.debug": true,
+		"app.port":  8000,
+	})
+	m.AddLoader(defaultLoader)
+
+	// 本地文件
+	localLoader := NewMockLoader(SourceLocalFile, map[string]interface{}{
+		"app.name":  "local",
+		"app.debug": false,
+	})
+	m.AddLoader(localLoader)
+
+	// 环境变量
+	envLoader := NewMockLoader(SourceEnv, map[string]interface{}{
+		"app.port": 8080,
+	})
+	m.AddLoader(envLoader)
+
+	// 远程（最高优先级）
+	remoteLoader := NewMockLoader(SourceRemote, map[string]interface{}{
+		"app.name": "remote",
+	})
+	m.AddLoader(remoteLoader)
+
+	// 加载
+	cfg, err := m.Load("")
+	assert.NoError(t, err)
+	assert.NotNil(t, cfg)
+
+	// 验证优先级覆盖结果
+	// 最高优先级覆盖
+	assert.Equal(t, "remote", m.Get("app.name"))
+	// 环境覆盖本地和默认
+	assert.Equal(t, 8080, m.Get("app.port"))
+	// 本地覆盖默认
+	assert.Equal(t, false, m.Get("app.debug"))
+
+	// 验证来源
+	assert.Equal(t, "remote", m.GetSource("app.name").Name)
+	assert.Equal(t, "env", m.GetSource("app.port").Name)
+	assert.Equal(t, "local_file", m.GetSource("app.debug").Name)
+}
+
+func TestManager_Empty(t *testing.T) {
+	m := NewManager()
+	cfg, err := m.Load("")
+	assert.NoError(t, err)
+	assert.NotNil(t, cfg)
+}
+
+func TestManager_GetNotFound(t *testing.T) {
+	m := NewManager()
+	m.Load("")
+
+	// 不存在的key返回nil
+	val := m.Get("not.exists")
+	assert.Nil(t, val)
+
+	src := m.GetSource("not.exists")
+	assert.Nil(t, src)
+}

@@ -1,0 +1,214 @@
+package handler
+
+import (
+	"net/http"
+	"strconv"
+	"time"
+
+	"{{.AppName}}/pkg/logger"
+	rpc "{{.AppName}}/{{.BffDirName}}/internal/rpcClient"
+	pb "{{.AppName}}/common/kitexGen/{{.ProtoImportPath}}"
+
+	"github.com/gin-gonic/gin"
+)
+
+type {{.UpperName}}Handler struct {
+	client *rpc.{{.UpperName}}Client
+}
+
+func New{{.UpperName}}Handler() *{{.UpperName}}Handler {
+	cli, err := rpc.New{{.UpperName}}Client()
+	if err != nil {
+		logger.Business.Errorw("failed to create {{.LowerName}} client", "error", err.Error())
+		panic("failed to create {{.LowerName}} client: " + err.Error())
+	}
+	logger.Business.Infow("{{.UpperName}}Handler initialized")
+	return &{{.UpperName}}Handler{client: cli}
+}
+
+type ErrorResponse struct {
+	Code      int         `json:"code"`
+	SubCode   string      `json:"subCode,omitempty"`
+	Message   string      `json:"message"`
+	Details   interface{} `json:"details,omitempty"`
+	TraceId   string      `json:"traceId,omitempty"`
+	RequestId string      `json:"requestId,omitempty"`
+}
+
+func (h *{{.UpperName}}Handler) errorResponse(c *gin.Context, httpStatus int, code int, subCode string, message string, err error) {
+	requestID, _ := c.Get("requestID")
+	traceId, _ := c.Get("traceId")
+	resp := ErrorResponse{
+		Code:      code,
+		SubCode:   subCode,
+		Message:   message,
+		TraceId:   traceId.(string),
+		RequestId: requestID.(string),
+	}
+	if err != nil {
+		resp.Message = err.Error()
+	}
+	c.JSON(httpStatus, resp)
+}
+
+func (h *{{.UpperName}}Handler) Create(c *gin.Context) {
+	requestID, _ := c.Get("requestID")
+	start := time.Now()
+
+	logger.Access.Infow("create request start", "method", c.Request.Method, "path", c.Request.URL.Path, "requestID", requestID)
+	logger.Business.Infow("create business start", "resource", "{{.LowerName}}", "requestID", requestID)
+
+	req := &pb.Create{{.UpperName}}Req{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		logger.Access.Errorw("create request bind failed", "error", err.Error(), "requestID", requestID)
+		h.errorResponse(c, http.StatusBadRequest, 1001, "FIELD_VALIDATION_FAILED", "请求参数错误", err)
+		return
+	}
+
+	resp, err := h.client.Create(c.Request.Context(), req)
+	if err != nil {
+		logger.Access.Errorw("create RPC failed", "error", err.Error(), "requestID", requestID)
+		logger.Business.Errorw("create {{.LowerName}} failed", "error", err.Error(), "requestID", requestID)
+		logger.Audit.Errorw("audit: create {{.LowerName}} failed", "error", err.Error(), "requestID", requestID)
+		h.errorResponse(c, http.StatusInternalServerError, 5001, "SYSTEM_ERROR", "系统繁忙，请稍后再试", err)
+		return
+	}
+
+	logger.Access.Infow("create request success", "requestID", requestID, "duration", time.Since(start).String())
+	logger.Business.Infow("create {{.LowerName}} success", "id", resp.Id, "requestID", requestID, "duration", time.Since(start).String())
+	logger.Audit.Infow("audit: create {{.LowerName}} success", "id", resp.Id, "requestID", requestID)
+
+	c.JSON(http.StatusCreated, resp)
+}
+
+func (h *{{.UpperName}}Handler) List(c *gin.Context) {
+	requestID, _ := c.Get("requestID")
+	start := time.Now()
+
+	logger.Access.Infow("list request start", "method", c.Request.Method, "path", c.Request.URL.Path, "requestID", requestID)
+	logger.Business.Infow("list business start", "resource", "{{.LowerName}}", "requestID", requestID)
+
+	req := &pb.List{{.UpperName}}Req{}
+	if err := c.ShouldBindQuery(req); err != nil {
+		logger.Access.Errorw("list request bind failed", "error", err.Error(), "requestID", requestID)
+		h.errorResponse(c, http.StatusBadRequest, 1001, "FIELD_VALIDATION_FAILED", "请求参数错误", err)
+		return
+	}
+
+	resp, err := h.client.List(c.Request.Context(), req)
+	if err != nil {
+		logger.Access.Errorw("list RPC failed", "error", err.Error(), "requestID", requestID)
+		logger.Business.Errorw("list {{.LowerName}} failed", "error", err.Error(), "requestID", requestID)
+		h.errorResponse(c, http.StatusInternalServerError, 5001, "SYSTEM_ERROR", "系统繁忙，请稍后再试", err)
+		return
+	}
+
+	logger.Access.Infow("list request success", "requestID", requestID, "count", len(resp.Items), "duration", time.Since(start).String())
+	logger.Business.Infow("list {{.LowerName}} success", "count", len(resp.Items), "requestID", requestID, "duration", time.Since(start).String())
+
+	c.JSON(http.StatusOK, resp)
+}
+
+func (h *{{.UpperName}}Handler) Get(c *gin.Context) {
+	requestID, _ := c.Get("requestID")
+	start := time.Now()
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+
+	logger.Access.Infow("get request start", "method", c.Request.Method, "path", c.Request.URL.Path, "requestID", requestID)
+	logger.Business.Infow("get business start", "resource", "{{.LowerName}}", "id", id, "requestID", requestID)
+
+	req := &pb.Get{{.UpperName}}Req{Id: id}
+	resp, err := h.client.Get(c.Request.Context(), req)
+	if err != nil {
+		logger.Access.Errorw("get RPC failed", "error", err.Error(), "requestID", requestID)
+		logger.Business.Errorw("get {{.LowerName}} failed", "id", id, "error", err.Error(), "requestID", requestID)
+		h.errorResponse(c, http.StatusInternalServerError, 5001, "SYSTEM_ERROR", "系统繁忙，请稍后再试", err)
+		return
+	}
+
+	logger.Access.Infow("get request success", "id", id, "requestID", requestID, "duration", time.Since(start).String())
+	logger.Business.Infow("get {{.LowerName}} success", "id", id, "requestID", requestID, "duration", time.Since(start).String())
+
+	c.JSON(http.StatusOK, resp)
+}
+
+func (h *{{.UpperName}}Handler) Update(c *gin.Context) {
+	requestID, _ := c.Get("requestID")
+	start := time.Now()
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+
+	logger.Access.Infow("update request start", "method", c.Request.Method, "path", c.Request.URL.Path, "requestID", requestID)
+	logger.Business.Infow("update business start", "resource", "{{.LowerName}}", "id", id, "requestID", requestID)
+
+	req := &pb.Update{{.UpperName}}Req{Id: id}
+	if err := c.ShouldBindJSON(req); err != nil {
+		logger.Access.Errorw("update request bind failed", "error", err.Error(), "requestID", requestID)
+		h.errorResponse(c, http.StatusBadRequest, 1001, "FIELD_VALIDATION_FAILED", "请求参数错误", err)
+		return
+	}
+
+	resp, err := h.client.Update(c.Request.Context(), req)
+	if err != nil {
+		logger.Access.Errorw("update RPC failed", "error", err.Error(), "requestID", requestID)
+		logger.Business.Errorw("update {{.LowerName}} failed", "id", id, "error", err.Error(), "requestID", requestID)
+		logger.Audit.Errorw("audit: update {{.LowerName}} failed", "id", id, "error", err.Error(), "requestID", requestID)
+		h.errorResponse(c, http.StatusInternalServerError, 5001, "SYSTEM_ERROR", "系统繁忙，请稍后再试", err)
+		return
+	}
+
+	logger.Access.Infow("update request success", "id", id, "requestID", requestID, "duration", time.Since(start).String())
+	logger.Business.Infow("update {{.LowerName}} success", "id", id, "requestID", requestID, "duration", time.Since(start).String())
+	logger.Audit.Infow("audit: update {{.LowerName}} success", "id", id, "requestID", requestID)
+
+	c.JSON(http.StatusOK, resp)
+}
+
+{{range .JoinTables}}
+func (h *{{.UpperName}}Handler) GetWith{{.RightUpper}}(c *gin.Context) {
+	requestID, _ := c.Get("requestID")
+	start := time.Now()
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+
+	logger.Access.Infow("get-with-join request start", "method", c.Request.Method, "path", c.Request.URL.Path, "requestID", requestID)
+	logger.Business.Infow("get-with-join business start", "resource", "{{.LowerName}}", "id", id, "join", "{{.RightTable}}", "requestID", requestID)
+
+	req := &pb.Get{{.UpperName}}With{{.RightUpper}}Req{Id: id}
+	resp, err := h.client.GetWith{{.RightUpper}}(c.Request.Context(), req)
+	if err != nil {
+		logger.Access.Errorw("get-with-join RPC failed", "error", err.Error(), "requestID", requestID)
+		logger.Business.Errorw("get-with-join {{.LowerName}} failed", "id", id, "error", err.Error(), "requestID", requestID)
+		h.errorResponse(c, http.StatusInternalServerError, 5001, "SYSTEM_ERROR", "系统繁忙，请稍后再试", err)
+		return
+	}
+
+	logger.Access.Infow("get-with-join request success", "id", id, "requestID", requestID, "duration", time.Since(start).String())
+	logger.Business.Infow("get-with-join {{.LowerName}} success", "id", id, "requestID", requestID, "duration", time.Since(start).String())
+
+	c.JSON(http.StatusOK, resp)
+}
+{{end}}
+
+func (h *{{.UpperName}}Handler) Delete(c *gin.Context) {
+	requestID, _ := c.Get("requestID")
+	start := time.Now()
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+
+	logger.Access.Infow("delete request start", "method", c.Request.Method, "path", c.Request.URL.Path, "requestID", requestID)
+	logger.Business.Infow("delete business start", "resource", "{{.LowerName}}", "id", id, "requestID", requestID)
+
+	req := &pb.Delete{{.UpperName}}Req{Id: id}
+	_, err := h.client.Delete(c.Request.Context(), req)
+	if err != nil {
+		logger.Access.Errorw("delete RPC failed", "error", err.Error(), "requestID", requestID)
+		logger.Business.Errorw("delete {{.LowerName}} failed", "id", id, "error", err.Error(), "requestID", requestID)
+		logger.Audit.Errorw("audit: delete {{.LowerName}} failed", "id", id, "error", err.Error(), "requestID", requestID)
+		h.errorResponse(c, http.StatusInternalServerError, 5001, "SYSTEM_ERROR", "系统繁忙，请稍后再试", err)
+		return
+	}
+
+	logger.Access.Infow("delete request success", "id", id, "requestID", requestID, "duration", time.Since(start).String())
+	logger.Business.Infow("delete {{.LowerName}} success", "id", id, "requestID", requestID, "duration", time.Since(start).String())
+	logger.Audit.Infow("audit: delete {{.LowerName}} success", "id", id, "requestID", requestID)
+
+	c.Status(http.StatusNoContent)
+}

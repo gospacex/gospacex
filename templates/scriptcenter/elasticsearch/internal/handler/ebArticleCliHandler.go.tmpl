@@ -1,0 +1,109 @@
+package handler
+
+import (
+	"context"
+	"fmt"
+	"strconv"
+
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
+
+	"{{.ProjectName}}/internal/model"
+	"{{.ProjectName}}/internal/service"
+)
+
+// EbArticleCliHandler CLI 命令处理器
+type EbArticleCliHandler struct {
+	svc *service.EbArticleService
+}
+
+// NewEbArticleCliHandler 创建处理器
+func NewEbArticleCliHandler(svc *service.EbArticleService) *EbArticleCliHandler {
+	return &EbArticleCliHandler{svc: svc}
+}
+
+// Create 创建文章
+func (h *EbArticleCliHandler) Create(ctx context.Context, req *CreateRequest) (*CreateResponse, error) {
+	article := &model.EbArticle{
+		Name:      req.Name,
+		Data:      req.Data,
+	}
+
+	if err := h.svc.Create(ctx, article); err != nil {
+		return nil, fmt.Errorf("create failed: %w", err)
+	}
+
+	return &CreateResponse{
+		ID:      article.ID,
+		Message: "created successfully",
+	}, nil
+}
+
+// Get 获取文章
+func (h *EbArticleCliHandler) Get(ctx context.Context, id int64) (*model.EbArticle, error) {
+	return h.svc.GetByID(ctx, id)
+}
+
+// List 列表查询
+func (h *EbArticleCliHandler) List(ctx context.Context, offset, limit int) ([]*model.EbArticle, int64, error) {
+	return h.svc.List(ctx, offset, limit)
+}
+
+// Update 更新文章
+func (h *EbArticleCliHandler) Update(ctx context.Context, id int64, name, data string) error {
+	article, err := h.svc.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	article.Name = name
+	article.Data = data
+
+	return h.svc.Update(ctx, article)
+}
+
+// Delete 删除文章
+func (h *EbArticleCliHandler) Delete(ctx context.Context, id int64) error {
+	return h.svc.Delete(ctx, id)
+}
+
+// Search 搜索文章
+func (h *EbArticleCliHandler) Search(ctx context.Context, keyword string) ([]*model.EbArticle, int64, error) {
+	return h.svc.Search(ctx, keyword)
+}
+
+// CreateRequest 创建请求
+type CreateRequest struct {
+	Name string
+	Data string
+}
+
+// CreateResponse 创建响应
+type CreateResponse struct {
+	ID      int64
+	Message string
+}
+
+// MountAsCLIHandler 将处理器挂载为 CLI 处理器
+func MountAsCLIHandler(h *EbArticleCliHandler, cmd *app.RequestContext) {
+	// 实现 CLI 处理逻辑
+}
+
+// CLI 命令处理函数
+func (h *EbArticleCliHandler) HandleCreate(c *app.RequestContext) {
+	name := c.PostForm("name")
+	data := c.PostForm("data")
+
+	req := &CreateRequest{
+		Name: name,
+		Data: data,
+	}
+
+	resp, err := h.Create(c.Request.Context(), req)
+	if err != nil {
+		c.String(consts.StatusInternalServerError, err.Error())
+		return
+	}
+
+	c.JSON(consts.StatusOK, resp)
+}

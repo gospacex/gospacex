@@ -1,0 +1,26 @@
+
+// GetJoin{{.LeftUpper}}{{.RightUpper}}List 获取多对一联表数据
+func (h *Join{{.LeftUpper}}{{.RightUpper}}Handler) GetJoin{{.LeftUpper}}{{.RightUpper}}List(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	// 获取右表详情
+	{{.RightVarName}}Resp, err := h.{{.RightVarName}}Client.Get(c.Request.Context(), int64(id))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	// 获取左表列表
+	{{.LeftVarName}}Resp, err := h.{{.LeftVarName}}Client.ListBy{{.RightVarName}}(c.Request.Context(), int64(id))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"{{.RightModule}}": {{.RightVarName}}Resp,
+		"{{.LeftModule}}_items": {{.LeftVarName}}Resp,
+	})
+}

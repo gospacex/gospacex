@@ -1,0 +1,15 @@
+package commands
+
+import (
+	"github.com/spf13/cobra"
+)
+
+var redisCmd = &cobra.Command{
+	Use:   "redis",
+	Short: "Redis operations",
+	Long:  "Redis data type operations",
+}
+
+func init() {
+	rootCmd.AddCommand(redisCmd)
+}

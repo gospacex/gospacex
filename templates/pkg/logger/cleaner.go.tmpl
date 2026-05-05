@@ -1,0 +1,80 @@
+package logger
+
+import (
+	"os"
+	"path/filepath"
+	"time"
+)
+
+type Cleaner struct {
+	dir      string
+	baseName string
+	maxAge   time.Duration
+	interval time.Duration
+	stopChan chan struct{}
+}
+
+func NewCleaner(dir, baseName string, maxAgeDays int, interval time.Duration) *Cleaner {
+	return &Cleaner{
+		dir:      dir,
+		baseName: baseName,
+		maxAge:   time.Duration(maxAgeDays) * 24 * time.Hour,
+		interval: interval,
+		stopChan: make(chan struct{}),
+	}
+}
+
+func (c *Cleaner) Run() {
+	c.clean()
+	ticker := time.NewTicker(c.interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			c.clean()
+		case <-c.stopChan:
+			return
+		}
+	}
+}
+
+func (c *Cleaner) Stop() {
+	close(c.stopChan)
+}
+
+func (c *Cleaner) clean() {
+	entries, err := os.ReadDir(c.dir)
+	if err != nil {
+		return
+	}
+
+	now := time.Now()
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		if !isLogFile(c.baseName, name) {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		age := now.Sub(info.ModTime())
+		if age > c.maxAge {
+			path := filepath.Join(c.dir, name)
+			os.Remove(path)
+		}
+	}
+}
+
+func isLogFile(baseName, fileName string) bool {
+	return len(fileName) > len(baseName)+11 &&
+		fileName[:len(baseName)] == baseName &&
+		fileName[len(fileName)-4:] == ".log"
+}

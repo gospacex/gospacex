@@ -1,0 +1,75 @@
+package jwt
+
+import (
+	"github.com/golang-jwt/jwt/v5"
+)
+
+// Config JWT 配置
+type Config struct {
+	SecretKey       string            // 密钥
+	SigningMethod   jwt.SigningMethod // 签名方法 (HS256, HS384, HS512)
+	Issuer          string            // 签发者
+	Expiration      int               // Token 过期时间(秒)
+	RefreshWindow   int               // 刷新窗口(秒), 允许过期多久内的 Token 刷新
+}
+
+// CustomClaims 自定义 Claims
+type CustomClaims struct {
+	UserID   int64  `json:"user_id"`   // 用户 ID
+	Username string `json:"username"` // 用户名
+	Role     string `json:"role"`     // 角色
+	jwt.RegisteredClaims
+}
+
+// JWT JWT 服务
+type JWT struct {
+	config *Config
+}
+
+// NewJWT 创建 JWT 服务
+func NewJWT(cfg Config) *JWT {
+	return &JWT{config: &cfg}
+}
+
+// GenerateToken 生成 Token
+func (j *JWT) GenerateToken(claims CustomClaims) (string, error) {
+	token := jwt.NewWithClaims(j.config.SigningMethod, claims)
+	return token.SignedString([]byte(j.config.SecretKey))
+}
+
+// ParseToken 解析 Token
+func (j *JWT) ParseToken(tokenString string) (*CustomClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &CustomClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return []byte(j.config.SecretKey), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if claims, ok := token.Claims.(*CustomClaims); ok && token.Valid {
+		return claims, nil
+	}
+	return nil, jwt.ErrSignatureInvalid
+}
+
+// RefreshToken 刷新 Token (仅在刷新窗口内有效)
+func (j *JWT) RefreshToken(oldToken string) (string, error) {
+	claims, err := j.ParseToken(oldToken)
+	if err != nil {
+		return "", err
+	}
+
+	// 检查是否在刷新窗口内
+	if claims.ExpiresAt == nil {
+		return "", jwt.ErrTokenInvalidClaims
+	}
+
+	// 计算距离过期还有多少秒
+	remaining := int(claims.ExpiresAt.Unix() - jwt.NewNumericDate(jwt.NewNumericDate(nil).Time).Unix())
+	if remaining > j.config.RefreshWindow {
+		return "", jwt.ErrTokenInvalidClaims
+	}
+
+	// 生成新 Token
+	return j.GenerateToken(*claims)
+}

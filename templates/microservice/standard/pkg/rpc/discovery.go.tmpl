@@ -1,0 +1,104 @@
+package rpc
+
+import (
+	"fmt"
+	{{- if .NacosEnabled}}
+	"github.com/cloudwego/kitex/pkg/registry"
+	"github.com/nacos-group/nacos-sdk-go/v2/clients"
+	"github.com/nacos-group/nacos-sdk-go/v2/common/constant"
+	"github.com/nacos-group/nacos-sdk-go/v2/vo"
+	nacos_resolver "github.com/kitex-contrib/registry-nacos/resolver"
+	{{- end}}
+	{{- if .ConsulEnabled}}
+	consul_resolver "github.com/kitex-contrib/registry-consul"
+	{{- end}}
+	{{- if .EtcdEnabled}}
+	etcd_resolver "github.com/kitex-contrib/registry-etcd/resolver"
+	clientv3 "go.etcd.io/etcd/client/v3"
+	{{- end}}
+)
+
+// Discovery 服务发现接口
+type Discovery interface {
+	// Resolve 解析服务地址
+	Resolve(serviceName string) ([]*registry.Instance, error)
+}
+
+// NewDiscovery 根据类型创建服务发现
+func NewDiscovery(typ string, serviceName string) (registry.Resolver, error) {
+	switch typ {
+	{{- if .NacosEnabled}}
+	case "nacos":
+		return newNacosDiscovery()
+	{{- end}}
+	{{- if .ConsulEnabled}}
+	case "consul":
+		return newConsulDiscovery()
+	{{- end}}
+	{{- if .EtcdEnabled}}
+	case "etcd":
+		return newEtcdDiscovery()
+	{{- end}}
+	default:
+		return nil, fmt.Errorf("unsupported registry type: %s", typ)
+	}
+}
+
+{{- if .NacosEnabled}}
+// newNacosDiscovery 创建 Nacos 服务发现
+func newNacosDiscovery() (registry.Resolver, error) {
+	// 从全局配置读取 Nacos 配置
+	// 这里假设已经通过 pkg/config 加载了配置
+	// 实际使用时会从 config 中读取地址、端口等信息
+
+	// TODO: 从全局配置读取
+	serverConfig := []constant.ServerConfig{
+		*constant.NewServerConfig("localhost", 8848, constant.WithContextPath("/nacos")),
+	}
+
+	clientConfig := constant.ClientConfig{
+		NamespaceId:         "",
+		TimeoutMs:           5000,
+		NotLoadCacheAtStart: true,
+	}
+
+	nacosClient, err := clients.NewNamingClient(
+		vo.NacosClientParam{
+			ClientConfig:  &clientConfig,
+			ServerConfigs: serverConfig,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create nacos client: %w", err)
+	}
+
+	return nacos_resolver.NewNacosResolver(nacosClient), nil
+}
+{{- end}}
+
+{{- if .ConsulEnabled}}
+// newConsulDiscovery 创建 Consul 服务发现
+func newConsulDiscovery() (registry.Resolver, error) {
+	// TODO: 从全局配置读取 Consul 地址
+	resolver, err := consul_resolver.NewConsulResolver("localhost:8500")
+	if err != nil {
+		return nil, fmt.Errorf("create consul resolver: %w", err)
+	}
+	return resolver, nil
+}
+{{- end}}
+
+{{- if .EtcdEnabled}}
+// newEtcdDiscovery 创建 Etcd 服务发现
+func newEtcdDiscovery() (registry.Resolver, error) {
+	// TODO: 从全局配置读取 Etcd 端点
+	cli, err := clientv3.New(clientv3.Config{
+		Endpoints:   []string{"localhost:2379"},
+		DialTimeout: 5,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create etcd client: %w", err)
+	}
+	return etcd_resolver.NewEtcdResolver(cli), nil
+}
+{{- end}}

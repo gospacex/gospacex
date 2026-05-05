@@ -1,0 +1,71 @@
+package mq
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/apache/rocketmq-client-go/v2"
+	"github.com/apache/rocketmq-client-go/v2/primitive"
+	"github.com/apache/rocketmq-client-go/v2/transaction"
+	"{{.ProjectName}}/internal/model"
+)
+
+// RocketmqTransaction 事务消息支持
+type RocketmqTransaction struct {
+	producer rocketmq.TransactionProducer
+	listener transaction.LocalTransactionListener
+}
+
+// NewRocketmqTransaction 创建事务生产者
+func NewRocketmqTransaction(nameServer, topic string, listener transaction.LocalTransactionListener) (*RocketmqTransaction, error) {
+	p, err := rocketmq.NewTransactionProducer(
+		listener,
+		rocketmq.WithNameServer(nameServer),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create transaction producer: %w", err)
+	}
+
+	if err := p.Start(); err != nil {
+		return nil, fmt.Errorf("start transaction producer: %w", err)
+	}
+
+	return &RocketmqTransaction{
+		producer: p,
+		listener: listener,
+	}, nil
+}
+
+// Send 发送事务消息
+func (t *RocketmqTransaction) Send(ctx context.Context, article *model.EbArticle, callback func() error) (primitive.LocalTransactionState, error) {
+	data, err := json.Marshal(article)
+	if err != nil {
+		return primitive.CommitMessageState, fmt.Errorf("marshal article: %w", err)
+	}
+
+	msg := primitive.NewMessage(topic, data)
+	_, err = t.producer.SendMessageInTransaction(ctx, msg, nil)
+	if err != nil {
+		return primitive.RollbackMessageState, fmt.Errorf("send transaction message: %w", err)
+	}
+
+	// Execute local transaction after send
+	if err := callback(); err != nil {
+		return primitive.RollbackMessageState, err
+	}
+
+	return primitive.CommitMessageState, nil
+}
+
+// IsHealthy 检查健康
+func (t *RocketmqTransaction) IsHealthy() error {
+	if t.producer == nil {
+		return fmt.Errorf("transaction producer not initialized")
+	}
+	return nil
+}
+
+// Shutdown 关闭
+func (t *RocketmqTransaction) Shutdown() error {
+	return t.producer.Shutdown()
+}

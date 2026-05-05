@@ -1,0 +1,116 @@
+package object
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
+)
+
+// MinIOConfig MinIO 配置
+type MinIOConfig struct {
+	Endpoint        string
+	AccessKeyID     string
+	SecretAccessKey string
+	Bucket          string
+	UseSSL          bool
+}
+
+// MinIOStorage MinIO 对象存储
+type MinIOStorage struct {
+	client *minio.Client
+	bucket string
+}
+
+// NewMinIOStorage 创建 MinIO 存储
+func NewMinIOStorage(cfg *MinIOConfig) (*MinIOStorage, error) {
+	client, err := minio.New(cfg.Endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
+		Secure: cfg.UseSSL,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create minio client: %w", err)
+	}
+
+	ctx := context.Background()
+	exists, err := client.BucketExists(ctx, cfg.Bucket)
+	if err != nil {
+		return nil, fmt.Errorf("check bucket: %w", err)
+	}
+
+	if !exists {
+		err = client.MakeBucket(ctx, cfg.Bucket, minio.MakeBucketOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("create bucket: %w", err)
+		}
+	}
+
+	return &MinIOStorage{
+		client: client,
+		bucket: cfg.Bucket,
+	}, nil
+}
+
+// Upload 上传文件
+func (s *MinIOStorage) Upload(ctx context.Context, key string, data []byte) error {
+	_, err := s.client.PutObject(ctx, s.bucket, key, io.NopCloser(bytes.NewReader(data)), int64(len(data)), minio.PutObjectOptions{
+		ContentType: "application/octet-stream",
+	})
+	return err
+}
+
+// Download 下载文件
+func (s *MinIOStorage) Download(ctx context.Context, key string) ([]byte, error) {
+	obj, err := s.client.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, err
+	}
+	defer obj.Close()
+
+	return io.ReadAll(obj)
+}
+
+// Delete 删除文件
+func (s *MinIOStorage) Delete(ctx context.Context, key string) error {
+	return s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{})
+}
+
+// GetURL 获取文件访问 URL
+func (s *MinIOStorage) GetURL(ctx context.Context, key string) (string, error) {
+	presignedURL, err := s.client.PresignedGetObject(ctx, s.bucket, key, 3600, nil)
+	if err != nil {
+		return "", err
+	}
+	return presignedURL.String(), nil
+}
+
+// Exist 检查文件是否存在
+func (s *MinIOStorage) Exist(ctx context.Context, key string) (bool, error) {
+	_, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
+	if err != nil {
+		errResp := minio.ToErrorResponse(err)
+		if errResp.Code == "NoSuchKey" {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// NewMinIOStorage 兼容旧接口
+func NewMinIOStorage(config interface{}) (ObjectStorage, error) {
+	cfg, ok := config.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid minio config")
+	}
+
+	return NewMinIOStorage(&MinIOConfig{
+		Endpoint:        getString(cfg, "endpoint"),
+		AccessKeyID:     getString(cfg, "access_key_id"),
+		SecretAccessKey: getString(cfg, "secret_access_key"),
+		Bucket:          getString(cfg, "bucket"),
+	})
+}

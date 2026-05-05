@@ -1,0 +1,374 @@
+package middleware
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"sync"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+)
+
+// PrometheusConfig Prometheus 配置
+//
+// YAML 配置示例:
+// ```yaml
+// middleware:
+//   monitoring:
+//     prometheus:
+//       enabled: true
+//       path: "/metrics"
+//       port: 9090
+//       service_name: "my-service"
+// ```
+type PrometheusConfig struct {
+	Enabled     bool   `yaml:"enabled" json:"enabled"`
+	Path        string `yaml:"path" json:"path"`        // metrics 路径，默认 "/metrics"
+	Port        int    `yaml:"port" json:"port"`        // metrics 服务端口，默认 9090
+	ServiceName string `yaml:"service_name" json:"service_name"`
+}
+
+// defaultPrometheusConfig 返回默认配置
+func defaultPrometheusConfig() PrometheusConfig {
+	return PrometheusConfig{
+		Enabled: true,
+		Path:    "/metrics",
+		Port:    9090,
+	}
+}
+
+// Metrics Prometheus 指标集合
+type Metrics struct {
+	// 标准 HTTP 指标
+	HTTPRequestsTotal      prometheus.Counter
+	HTTPRequestDuration    prometheus.Histogram
+	ActiveRequests         prometheus.Gauge
+	HTTPRequestsByStatus   *prometheus.CounterVec
+	HTTPRequestSize        prometheus.Histogram
+	HTTPResponseSize       prometheus.Histogram
+	
+	// 数据库指标
+	DBConnectionsOpen      prometheus.Gauge
+	DBConnectionsInUse     prometheus.Gauge
+	DBConnectionsIdle     prometheus.Gauge
+	
+	// 自定义指标注册表
+	registry *prometheus.Registry
+	
+	// 内部状态
+	config       PrometheusConfig
+	httpServer   *http.Server
+	shutdownOnce sync.Once
+	mu           sync.RWMutex
+}
+
+// NewPrometheusClient 创建 Prometheus 客户端
+// 自动启动 HTTP 服务器暴露 /metrics 端点
+func NewPrometheusClient(cfg PrometheusConfig) (*Metrics, error) {
+	if !cfg.Enabled {
+		return nil, nil
+	}
+
+	// 应用默认值
+	if cfg.Path == "" {
+		cfg.Path = "/metrics"
+	}
+	if cfg.Port <= 0 {
+		cfg.Port = 9090
+	}
+
+	// 创建注册表
+	registry := prometheus.NewRegistry()
+
+	m := &Metrics{
+		registry: registry,
+		config:   cfg,
+	}
+
+	// 注册标准收集器
+	registry.MustRegister(collectors.NewGoCollector())
+	registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+
+	// 创建自定义指标
+	m.HTTPRequestsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name:        "http_requests_total",
+		Help:        "Total number of HTTP requests",
+		ConstLabels: prometheus.Labels{"service": cfg.ServiceName},
+	})
+
+	m.HTTPRequestDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:        "http_request_duration_seconds",
+		Help:        "HTTP request duration in seconds",
+		Buckets:     prometheus.DefBuckets,
+		ConstLabels: prometheus.Labels{"service": cfg.ServiceName},
+	})
+
+	m.ActiveRequests = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name:        "active_requests",
+		Help:        "Number of active HTTP requests",
+		ConstLabels: prometheus.Labels{"service": cfg.ServiceName},
+	})
+
+	m.HTTPRequestsByStatus = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name:        "http_requests_by_status",
+		Help:        "HTTP requests by status code",
+		ConstLabels: prometheus.Labels{"service": cfg.ServiceName},
+	}, []string{"status"})
+
+	m.HTTPRequestSize = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:        "http_request_size_bytes",
+		Help:        "HTTP request size in bytes",
+		Buckets:     prometheus.ExponentialBuckets(100, 10, 7),
+		ConstLabels: prometheus.Labels{"service": cfg.ServiceName},
+	})
+
+	m.HTTPResponseSize = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:        "http_response_size_bytes",
+		Help:        "HTTP response size in bytes",
+		Buckets:     prometheus.ExponentialBuckets(100, 10, 7),
+		ConstLabels: prometheus.Labels{"service": cfg.ServiceName},
+	})
+
+	m.DBConnectionsOpen = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name:        "db_connections_open",
+		Help:        "Number of open database connections",
+		ConstLabels: prometheus.Labels{"service": cfg.ServiceName},
+	})
+
+	m.DBConnectionsInUse = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name:        "db_connections_in_use",
+		Help:        "Number of database connections in use",
+		ConstLabels: prometheus.Labels{"service": cfg.ServiceName},
+	})
+
+	m.DBConnectionsIdle = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name:        "db_connections_idle",
+		Help:        "Number of idle database connections",
+		ConstLabels: prometheus.Labels{"service": cfg.ServiceName},
+	})
+
+	// 注册所有指标
+	registry.MustRegister(m.HTTPRequestsTotal)
+	registry.MustRegister(m.HTTPRequestDuration)
+	registry.MustRegister(m.ActiveRequests)
+	registry.MustRegister(m.HTTPRequestsByStatus)
+	registry.MustRegister(m.HTTPRequestSize)
+	registry.MustRegister(m.HTTPResponseSize)
+	registry.MustRegister(m.DBConnectionsOpen)
+	registry.MustRegister(m.DBConnectionsInUse)
+	registry.MustRegister(m.DBConnectionsIdle)
+
+	// 启动 HTTP 服务器
+	m.startHTTPServer()
+
+	return m, nil
+}
+
+// startHTTPServer 启动 metrics HTTP 服务器
+func (m *Metrics) startHTTPServer() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	mux := http.NewServeMux()
+	mux.Handle(m.config.Path, promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{
+		EnableOpenMetrics: true,
+	}))
+
+	m.httpServer = &http.Server{
+		Addr:         fmt.Sprintf(":%d", m.config.Port),
+		Handler:      m.withLogging(mux),
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
+
+	// 在后台启动服务器
+	go func() {
+		if err := m.httpServer.ListenAndServe(); err != http.ErrServerClosed {
+			fmt.Printf("metrics server error: %v\n", err)
+		}
+	}()
+}
+
+// withLogging 添加简单日志包装
+func (m *Metrics) withLogging(handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		handler.ServeHTTP(w, r)
+		fmt.Printf("metrics request: %s %s (%v)\n", r.Method, r.URL.Path, time.Since(start))
+	})
+}
+
+// RecordHTTPRequest 记录 HTTP 请求指标
+func (m *Metrics) RecordHTTPRequest(duration time.Duration, path string, statusCode int, requestSize, responseSize int64) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	// 记录总请求数
+	m.HTTPRequestsTotal.Inc()
+
+	// 记录请求持续时间
+	m.HTTPRequestDuration.Observe(duration.Seconds())
+
+	// 记录状态码
+	m.HTTPRequestsByStatus.WithLabelValues(fmt.Sprintf("%d", statusCode)).Inc()
+
+	// 记录请求/响应大小
+	m.HTTPRequestSize.Observe(float64(requestSize))
+	m.HTTPResponseSize.Observe(float64(responseSize))
+}
+
+// IncrementActiveRequests 增加活跃请求数
+func (m *Metrics) IncrementActiveRequests() {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	m.ActiveRequests.Inc()
+}
+
+// DecrementActiveRequests 减少活跃请求数
+func (m *Metrics) DecrementActiveRequests() {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	m.ActiveRequests.Dec()
+}
+
+// NewHTTPMiddleware 创建 HTTP 中间件，自动收集指标
+// 用法：wrappedHandler = metrics.NewHTTPMiddleware()(handler)
+func (m *Metrics) NewHTTPMiddleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// 增加活跃请求数
+			m.IncrementActiveRequests()
+			defer m.DecrementActiveRequests()
+
+			// 包装响应写入器以捕获状态码和大小
+			wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+
+			// 记录请求开始时间
+			start := time.Now()
+
+			// 处理请求
+			next.ServeHTTP(wrapped, r)
+
+			// 记录请求指标
+			duration := time.Since(start)
+			m.RecordHTTPRequest(
+				duration,
+				r.URL.Path,
+				wrapped.statusCode,
+				int64(r.ContentLength),
+				int64(wrapped.written),
+			)
+		})
+	}
+}
+
+// responseWriter 包装 http.ResponseWriter 以捕获状态码和写入大小
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+	written    int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+func (rw *responseWriter) Write(b []byte) (int, error) {
+	n, err := rw.ResponseWriter.Write(b)
+	rw.written += n
+	return n, err
+}
+
+// UpdateDBConnections 更新数据库连接指标
+func (m *Metrics) UpdateDBConnections(open, inUse, idle int) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	m.DBConnectionsOpen.Set(float64(open))
+	m.DBConnectionsInUse.Set(float64(inUse))
+	m.DBConnectionsIdle.Set(float64(idle))
+}
+
+// RecordCustomCounter 记录自定义计数器
+func (m *Metrics) RecordCustomCounter(name, help string, labels map[string]string) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	counter := prometheus.NewCounter(prometheus.CounterOpts{
+		Name:        name,
+		Help:        help,
+		ConstLabels: prometheus.Labels{"service": m.config.ServiceName},
+	})
+
+	if err := m.registry.Register(counter); err != nil {
+		return fmt.Errorf("register counter %s failed: %w", name, err)
+	}
+
+	counter.Inc()
+	return nil
+}
+
+// RecordCustomGauge 记录自定义仪表盘
+func (m *Metrics) RecordCustomGauge(name, help string, value float64, labels map[string]string) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	gauge := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name:        name,
+		Help:        help,
+		ConstLabels: prometheus.Labels{"service": m.config.ServiceName},
+	})
+
+	if err := m.registry.Register(gauge); err != nil {
+		return fmt.Errorf("register gauge %s failed: %w", name, err)
+	}
+
+	gauge.Set(value)
+	return nil
+}
+
+// RecordCustomHistogram 记录自定义直方图
+func (m *Metrics) RecordCustomHistogram(name, help string, value float64, buckets []float64, labels map[string]string) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	histogram := prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:        name,
+		Help:        help,
+		Buckets:     buckets,
+		ConstLabels: prometheus.Labels{"service": m.config.ServiceName},
+	})
+
+	if err := m.registry.Register(histogram); err != nil {
+		return fmt.Errorf("register histogram %s failed: %w", name, err)
+	}
+
+	histogram.Observe(value)
+	return nil
+}
+
+// Close 关闭 metrics 服务器
+func (m *Metrics) Close() error {
+	var err error
+	m.shutdownOnce.Do(func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+
+		if m.httpServer != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			err = m.httpServer.Shutdown(ctx)
+		}
+	})
+	return err
+}
+
+// Observable interface (与 Jaeger 共享的可观测性接口)
+type Observable interface {
+	StartSpan(ctx context.Context, spanName string) (context.Context, trace.Span)
+	RecordEvent(span trace.Span, eventName string)
+}

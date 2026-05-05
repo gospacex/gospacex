@@ -1,0 +1,28 @@
+package usecase
+
+type paymentUseCase struct {
+	repo OrderRepository
+}
+
+type OrderRepository interface {
+	Save(order *Order) error
+	FindByID(id string) (*Order, error)
+}
+
+func NewPaymentUseCase(repo OrderRepository) PaymentUseCase {
+	return &paymentUseCase{repo: repo}
+}
+
+func (uc *paymentUseCase) ProcessPayment(orderID string, amount float64) error {
+	order := NewOrder(orderID, amount)
+	order.Status = "paid"
+	return uc.repo.Save(order)
+}
+
+func (uc *paymentUseCase) QueryPayment(orderID string) (*Payment, error) {
+	order, err := uc.repo.FindByID(orderID)
+	if err != nil {
+		return nil, err
+	}
+	return &Payment{OrderID: order.ID, Amount: order.Amount, Status: order.Status}, nil
+}

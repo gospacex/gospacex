@@ -1,0 +1,35 @@
+package service
+
+import (
+	"context"
+
+	"{{.ProjectName}}/internal/mq"
+	"{{.ProjectName}}/internal/model"
+)
+
+// RabbitmqProducerService RabbitMQ 生产者服务
+type RabbitmqProducerService interface {
+	Publish(ctx context.Context, article *model.EbArticle) error
+	CheckHealth() error
+}
+
+type rabbitmqProducerServiceImpl struct {
+	producer *mq.RabbitmqProducer
+}
+
+// NewRabbitmqProducerService 创建服务
+func NewRabbitmqProducerService(producer *mq.RabbitmqProducer) RabbitmqProducerService {
+	return &rabbitmqProducerServiceImpl{
+		producer: producer,
+	}
+}
+
+// Publish 发布文章事件
+func (s *rabbitmqProducerServiceImpl) Publish(ctx context.Context, article *model.EbArticle) error {
+	return s.producer.Publish(ctx, article)
+}
+
+// CheckHealth 检查健康
+func (s *rabbitmqProducerServiceImpl) CheckHealth() error {
+	return s.producer.IsHealthy()
+}

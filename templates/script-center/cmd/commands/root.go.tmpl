@@ -1,0 +1,70 @@
+package commands
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/spf13/cobra"
+)
+
+var (
+	// Version 应用版本号
+	Version = "0.1.0"
+	// BuildTime 编译时间
+	BuildTime = "unknown"
+	// GitCommit Git commit hash
+	GitCommit = "unknown"
+)
+
+var rootCmd = &cobra.Command{
+	Use:   "{{.ProjectName}}",
+	Short: "{{.ProjectName}} - 脚本中心应用",
+	Long: `{{.ProjectName}} 是一个基于 Go 的脚本中心应用，支持定时任务调度和 CRUD 代码生成。
+
+Built with Cobra CLI and gin-gonic HTTP framework.
+
+Version: ` + Version + `
+Build Time: ` + BuildTime + `
+Git Commit: ` + GitCommit,
+	Run: func(cmd *cobra.Command, args []string) {
+		cmd.Help()
+	},
+}
+
+// Execute executes the root command
+func Execute() error {
+	return rootCmd.Execute()
+}
+
+func init() {
+	// 添加全局标志
+	rootCmd.PersistentFlags().StringP("config", "c", "configs/config.yaml", "配置文件路径")
+	rootCmd.PersistentFlags().StringP("env", "e", "development", "运行环境 (development, production)")
+	rootCmd.PersistentFlags().Bool("version", false, "显示版本号")
+
+	// 添加 version 命令
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "version",
+		Short: "显示版本信息",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Printf("%s version %s\n", "{{.ProjectName}}", Version)
+			fmt.Printf("Build time: %s\n", BuildTime)
+			fmt.Printf("Git commit: %s\n", GitCommit)
+		},
+	})
+}
+
+// init checks if the version flag is passed
+func init() {
+	for i, arg := range os.Args {
+		if arg == "--version" || arg == "-v" {
+			fmt.Printf("%s version %s\n", "{{.ProjectName}}", Version)
+			os.Exit(0)
+		}
+		// 处理 -v 后跟版本号的情况
+		if arg == "-v" && i+1 < len(os.Args) {
+			fmt.Printf("%s version %s\n", "{{.ProjectName}}", Version)
+			os.Exit(0)
+		}
+	}
+}

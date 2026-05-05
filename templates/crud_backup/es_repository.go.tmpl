@@ -1,0 +1,250 @@
+package repository
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/elastic/go-elasticsearch/v8/esapi"
+)
+
+// {{.StructName}}Repository Elasticsearch {{.StructName}} 仓储
+type {{.StructName}}Repository struct {
+	client  *elasticsearch.Client
+	index   string
+}
+
+// New{{.StructName}}Repository creates new {{.StructName}} repository
+func New{{.StructName}}Repository(client *elasticsearch.Client) *{{.StructName}}Repository {
+	return &{{.StructName}}Repository{
+		client: client,
+		index:  "{{.IndexName}}",
+	}
+}
+
+// Index indexes {{.StructName}} to Elasticsearch
+func (r *{{.StructName}}Repository) Index(ctx context.Context, id string, entity *{{.StructName}}) error {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(entity); err != nil {
+		return err
+	}
+
+	req := esapi.IndexRequest{
+		Index:      r.index,
+		DocumentID: id,
+		Body:       &buf,
+		Refresh:    "true",
+	}
+
+	res, err := req.Do(ctx, r.client)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("index {{.LowerName}}: %s", res.String())
+	}
+
+	return nil
+}
+
+// Get gets {{.StructName}} from Elasticsearch by ID
+func (r *{{.StructName}}Repository) Get(ctx context.Context, id string) (*{{.StructName}}, error) {
+	req := esapi.GetRequest{
+		Index:      r.index,
+		DocumentID: id,
+	}
+
+	res, err := req.Do(ctx, r.client)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		if res.StatusCode == 404 {
+			return nil, fmt.Errorf("{{.LowerName}} not found")
+		}
+		return nil, fmt.Errorf("get {{.LowerName}}: %s", res.String())
+	}
+
+	var entity {{.StructName}}
+	if err := json.NewDecoder(res.Body).Decode(&entity); err != nil {
+		return nil, err
+	}
+
+	return &entity, nil
+}
+
+// Search searches {{.StructName}} in Elasticsearch
+func (r *{{.StructName}}Repository) Search(ctx context.Context, query string, from, size int) ([]{{.StructName}}, int64, error) {
+	var buf bytes.Buffer
+	queryDSL := map[string]interface{}{
+		"from": from,
+		"size": size,
+		"query": map[string]interface{}{
+			"multi_match": map[string]interface{}{
+				"query": query,
+				"fields": []string{"*"},
+			},
+		},
+	}
+	
+	if err := json.NewEncoder(&buf).Encode(queryDSL); err != nil {
+		return nil, 0, err
+	}
+
+	req := esapi.SearchRequest{
+		Index: []string{r.index},
+		Body:  &buf,
+	}
+
+	res, err := req.Do(ctx, r.client)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, 0, fmt.Errorf("search: %s", res.String())
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return nil, 0, err
+	}
+
+	hits := result["hits"].(map[string]interface{})
+	total := int64(hits["total"].(map[string]interface{})["value"].(float64))
+
+	var entities []{{.StructName}}
+	for _, hit := range hits["hits"].([]interface{}) {
+		hitMap := hit.(map[string]interface{})
+		var entity {{.StructName}}
+		sourceBytes, _ := json.Marshal(hitMap["_source"])
+		if err := json.Unmarshal(sourceBytes, &entity); err != nil {
+			return nil, 0, err
+		}
+		entities = append(entities, entity)
+	}
+
+	return entities, total, nil
+}
+
+// Update updates {{.StructName}} in Elasticsearch
+func (r *{{.StructName}}Repository) Update(ctx context.Context, id string, entity *{{.StructName}}) error {
+	var buf bytes.Buffer
+	doc := map[string]interface{}{
+		"doc": entity,
+	}
+	if err := json.NewEncoder(&buf).Encode(doc); err != nil {
+		return err
+	}
+
+	req := esapi.UpdateRequest{
+		Index:      r.index,
+		DocumentID: id,
+		Body:       &buf,
+		Refresh:    "true",
+	}
+
+	res, err := req.Do(ctx, r.client)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("update {{.LowerName}}: %s", res.String())
+	}
+
+	return nil
+}
+
+// Delete deletes {{.StructName}} from Elasticsearch
+func (r *{{.StructName}}Repository) Delete(ctx context.Context, id string) error {
+	req := esapi.DeleteRequest{
+		Index:      r.index,
+		DocumentID: id,
+		Refresh:    "true",
+	}
+
+	res, err := req.Do(ctx, r.client)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("delete {{.LowerName}}: %s", res.String())
+	}
+
+	return nil
+}
+
+// Count counts {{.StructName}} in Elasticsearch
+func (r *{{.StructName}}Repository) Count(ctx context.Context) (int64, error) {
+	req := esapi.CountRequest{
+		Index: []string{r.index},
+	}
+
+	res, err := req.Do(ctx, r.client)
+	if err != nil {
+		return 0, err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return 0, fmt.Errorf("count: %s", res.String())
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return 0, err
+	}
+
+	return int64(result["count"].(float64)), nil
+}
+
+// Exists checks if index exists
+func (r *{{.StructName}}Repository) Exists(ctx context.Context) (bool, error) {
+	req := esapi.IndicesExistsRequest{
+		Index: []string{r.index},
+	}
+
+	res, err := req.Do(ctx, r.client)
+	if err != nil {
+		return false, err
+	}
+	defer res.Body.Close()
+
+	return res.StatusCode == 200, nil
+}
+
+// CreateIndex creates index with mapping
+func (r *{{.StructName}}Repository) CreateIndex(ctx context.Context, mapping map[string]interface{}) error {
+	req := esapi.IndicesCreateRequest{
+		Index: r.index,
+		Body:  bytes.NewReader(mappingBytes(mapping)),
+	}
+
+	res, err := req.Do(ctx, r.client)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("create index: %s", res.String())
+	}
+
+	return nil
+}
+
+func mappingBytes(m map[string]interface{}) []byte {
+	data, _ := json.Marshal(m)
+	return data
+}

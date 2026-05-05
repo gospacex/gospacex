@@ -1,0 +1,79 @@
+package tracing
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/jaeger"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
+	"go.opentelemetry.io/otel/trace"
+)
+
+type Config struct {
+	Enabled    bool
+	Endpoint   string
+	ServiceName string
+}
+
+var tp *sdktrace.TracerProvider
+
+// Init 初始化 OTEL + Jaeger tracing provider
+func Init(cfg *Config) error {
+	if !cfg.Enabled {
+		return nil
+	}
+
+	exp, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(cfg.Endpoint)))
+	if err != nil {
+		return fmt.Errorf("failed to create jaeger exporter: %w", err)
+	}
+
+	tp = sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exp),
+		sdktrace.WithResource(resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceNameKey.String(cfg.ServiceName),
+		)),
+	)
+
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+
+	log.Printf("[tracing] initialized: endpoint=%s, service=%s", cfg.Endpoint, cfg.ServiceName)
+	return nil
+}
+
+// Shutdown 优雅关闭 tracer provider
+func Shutdown(ctx context.Context) error {
+	if tp != nil {
+		return tp.Shutdown(ctx)
+	}
+	return nil
+}
+
+// Tracer 返回全局 tracer
+func Tracer(name string) trace.Tracer {
+	return otel.Tracer(name)
+}
+
+// SpanFromContext 获取当前 span context
+func SpanFromContext(ctx context.Context) trace.Span {
+	return trace.SpanFromContext(ctx)
+}
+
+// TraceIDFromContext 从 context 获取 trace ID
+func TraceIDFromContext(ctx context.Context) string {
+	span := trace.SpanFromContext(ctx)
+	if span.SpanContext().HasTraceID() {
+		return span.SpanContext().TraceID().String()
+	}
+	return ""
+}

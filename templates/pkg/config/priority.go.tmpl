@@ -1,0 +1,30 @@
+package config
+
+// Priority 配置来源优先级
+// 数值越小优先级越高
+type Priority int
+
+const (
+	// PriorityRemote 远程配置中心 (最高优先级)
+	PriorityRemote Priority = 10
+	// PriorityEnv 本地环境变量
+	PriorityEnv Priority = 20
+	// PriorityLocalFile 本地配置文件
+	PriorityLocalFile Priority = 30
+	// PriorityDefault 默认值 (最低优先级)
+	PriorityDefault Priority = 40
+)
+
+// Source 配置来源定义
+type Source struct {
+	Name     string
+	Priority Priority
+}
+
+// 预定义的配置来源
+var (
+	SourceRemote    = Source{Name: "remote", Priority: PriorityRemote}
+	SourceEnv       = Source{Name: "env", Priority: PriorityEnv}
+	SourceLocalFile = Source{Name: "local_file", Priority: PriorityLocalFile}
+	SourceDefault   = Source{Name: "default", Priority: PriorityDefault}
+)

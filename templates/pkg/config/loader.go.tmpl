@@ -1,0 +1,47 @@
+package config
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/nacos-group/nacos-sdk-go/v2/clients"
+	"github.com/nacos-group/nacos-sdk-go/v2/common/constant"
+	"github.com/nacos-group/nacos-sdk-go/v2/vo"
+	"github.com/spf13/viper"
+)
+
+// ConfigLoader 配置加载器接口
+// 所有配置来源都需要实现此接口
+type ConfigLoader interface {
+	// Source 返回配置来源信息
+	Source() Source
+	// Load 加载配置，返回键值对映射
+	Load() (map[string]interface{}, error)
+	// Watch 监听配置变更，返回变更通道
+	Watch(key string) <-chan *ConfigChange
+}
+
+// ConfigChange 配置变更事件
+type ConfigChange struct {
+	Key      string
+	OldValue interface{}
+	NewValue interface{}
+	Source   Source
+}
+
+// Load 加载配置 (支持多来源优先级)
+func Load(path string) (*Config, error) {
+	return defaultManager.Load(path)
+}
+
+// Get 获取全局配置
+func Get() *Config {
+	if globalConfig == nil {
+		cfg, err := Load("")
+		if err != nil {
+			panic(fmt.Sprintf("Failed to load config: %v", err))
+		}
+		globalConfig = cfg
+	}
+	return globalConfig
+}

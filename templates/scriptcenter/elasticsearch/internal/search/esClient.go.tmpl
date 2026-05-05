@@ -1,0 +1,284 @@
+package search
+
+import (
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"fmt"
+	"net"
+	"net/http"
+	"time"
+
+	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/elastic/go-elasticsearch/v8/esapi"
+	"github.com/olivere/elastic/v7"
+
+	"{{.ModuleName}}/configs"
+)
+
+// ESClient Elasticsearch 客户端
+type ESClient struct {
+	client        *elasticsearch.Client
+	simpleClient *elastic.Client
+	indexName    string
+}
+
+// NewESClient 创建 Elasticsearch 客户端
+func NewESClient(cfg *configs.Config) (*ESClient, error) {
+	esCfg := cfg.Elasticsearch
+
+	// 配置 HTTP 客户端
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			DialContext:         (&net.Dialer{Timeout: time.Duration(esCfg.ConnectTimeout) * time.Second}).DialContext,
+			TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
+			DisableKeepAlives: true,
+		},
+		Timeout: time.Duration(esCfg.RequestTimeout) * time.Second,
+	}
+
+	// 创建官方客户端
+	client, err := elasticsearch.NewClient(elasticsearch.Config{
+		Addresses:     []string{esCfg.Addresses},
+		Username:    esCfg.Username,
+		Password:   esCfg.Password,
+		Header:     http.Header{},
+		HTTPClient: httpClient,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建 Elasticsearch 客户端失败: %w", err)
+	}
+
+	// 创建 simple 客户端（用于复杂查询）
+	simpleClient, err := elastic.NewClient(
+		elastic.SetURL(esCfg.Addresses...),
+		elastic.SetBasicAuth(esCfg.Username, esCfg.Password),
+		elastic.SetHttpClient(httpClient),
+		elastic.SetSniff(false),
+		elastic.SetHealthcheck(false),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("创建 simple 客户端失败: %w", err)
+	}
+
+	return &ESClient{
+		client:        client,
+		simpleClient: simpleClient,
+		indexName:    esCfg.IndexName,
+	}, nil
+}
+
+// GetClient 获取官方客户端
+func (c *ESClient) GetClient() *elasticsearch.Client {
+	return c.client
+}
+
+// GetSimpleClient 获取 simple 客户端
+func (c *ESClient) GetSimpleClient() *elastic.Client {
+	return c.simpleClient
+}
+
+// GetIndexName 获取索引名
+func (c *ESClient) GetIndexName() string {
+	return c.indexName
+}
+
+// Ping ping Elasticsearch 服务
+func (c *ESClient) Ping(ctx context.Context) error {
+	res, err := c.client.Ping(c.client.Config().Addresses[0])
+	if err != nil {
+		return fmt.Errorf("ping 失败: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("ping 响应错误: %s", res.String())
+	}
+	return nil
+}
+
+// Search 搜索文档
+func (c *ESClient) Search(ctx context.Context, keyword string) ([]*model.EbArticle, int64, error) {
+	query := Query{
+		Query: MatchQuery("data", keyword),
+		Size:  20,
+	}
+
+	result, err := c.SearchWithQuery(ctx, query)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var articles []*model.EbArticle
+	for _, hit := range result.Hits.Hits {
+		var article model.EbArticle
+		if err := json.Unmarshal(hit.Source, &article); err != nil {
+			continue
+		}
+		articles = append(articles, &article)
+	}
+
+	return articles, result.Hits.Total.Value, nil
+}
+
+// SearchWithQuery 使用 Query 结构搜索
+func (c *ESClient) SearchWithQuery(ctx context.Context, query Query) (*SearchResult, error) {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(query); err != nil {
+		return nil, fmt.Errorf("编码查询失败: %w", err)
+	}
+
+	res, err := c.client.Search(
+		c.client.Search.WithContext(ctx),
+		c.client.Search.WithIndex(c.indexName),
+		c.client.Search.WithBody(&buf),
+		c.client.Search.WithTrackTotalHits(true),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("搜索失败: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, fmt.Errorf("搜索响应错误: %s", res.String())
+	}
+
+	var result SearchResult
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("解码结果失败: %w", err)
+	}
+
+	return &result, nil
+}
+
+// Index 索引文档
+func (c *ESClient) Index(ctx context.Context, doc interface{}) error {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(doc); err != nil {
+		return fmt.Errorf("编码文档失败: %w", err)
+	}
+
+	id := doc.(interface{ DocumentID() int64 }).DocumentID()
+	req := esapi.IndexRequest{
+		Index:      c.indexName,
+		DocumentID: fmt.Sprintf("%d", id),
+		Body:       &buf,
+		Refresh:    "true",
+	}
+
+	res, err := req.Do(ctx, c.client)
+	if err != nil {
+		return fmt.Errorf("索引文档失败: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("索引文档响应错误: %s", res.String())
+	}
+	return nil
+}
+
+// Get 获取文档
+func (c *ESClient) Get(ctx context.Context, id string) (*model.EbArticle, error) {
+	req := esapi.GetRequest{
+		Index:      c.indexName,
+		DocumentID: id,
+	}
+
+	res, err := req.Do(ctx, c.client)
+	if err != nil {
+		return nil, fmt.Errorf("获取文档失败: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, fmt.Errorf("获取文档响应错误: %s", res.String())
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("解码文档失败: %w", err)
+	}
+
+	source, ok := result["_source"].(map[string]interface{})
+	if !ok {
+		return nil, nil
+	}
+
+	var article model.EbArticle
+	data, _ := json.Marshal(source)
+	json.Unmarshal(data, &article)
+
+	return &article, nil
+}
+
+// Delete 删除文档
+func (c *ESClient) Delete(ctx context.Context, id string) error {
+	req := esapi.DeleteRequest{
+		Index:      c.indexName,
+		DocumentID: id,
+		Refresh:   "true",
+	}
+
+	res, err := req.Do(ctx, c.client)
+	if err != nil {
+		return fmt.Errorf("删除文档失败: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("删除文档响应错误: %s", res.String())
+	}
+	return nil
+}
+
+// Update 更新文档
+func (c *ESClient) Update(ctx context.Context, doc interface{}) error {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(doc); err != nil {
+		return fmt.Errorf("编码文档失败: %w", err)
+	}
+
+	id := doc.(interface{ DocumentID() int64 }).DocumentID()
+	req := esapi.UpdateRequest{
+		Index:      c.indexName,
+		DocumentID: fmt.Sprintf("%d", id),
+		Body:       &buf,
+		Refresh:    "true",
+	}
+
+	res, err := req.Do(ctx, c.client)
+	if err != nil {
+		return fmt.Errorf("更新文档失败: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("更新文档响应错误: %s", res.String())
+	}
+	return nil
+}
+
+// SearchResult 搜索结果
+type SearchResult struct {
+	Took int `json:"took"`
+	Hits struct {
+		Total struct {
+			Value    int `json:"value"`
+			Relation string `json:"relation"`
+		} `json:"total"`
+		Hits []Hit `json:"hits"`
+	} `json:"hits"`
+}
+
+// Hit 单个命中
+type Hit struct {
+	ID     string          `json:"_id"`
+	Source json.RawMessage `json:"_source"`
+	Score  float64        `json:"_score"`
+}
+
+// Close 关闭客户端
+func (c *ESClient) Close() error {
+	return nil
+}

@@ -1,0 +1,125 @@
+package search
+
+import (
+	"encoding/json"
+)
+
+// Aggs 聚合操作
+type Aggs struct {
+	client    *elasticsearch.Client
+	indexName string
+}
+
+// NewAggs 创建聚合操作
+func NewAggs(client *elasticsearch.Client, indexName string) *Aggs {
+	return &Aggs{client: client, indexName: indexName}
+}
+
+// TermsAgg 词条聚合
+func TermsAgg(field string, size int) map[string]interface{} {
+	return map[string]interface{}{
+		"terms": map[string]interface{}{
+			"field": field,
+			"size":  size,
+		},
+	}
+}
+
+// DateHistAgg 日期直方图聚合
+func DateHistAgg(field string, interval string) map[string]interface{} {
+	return map[string]interface{}{
+		"date_histogram": map[string]interface{}{
+			"field":    field,
+			"calendar_interval": interval,
+		},
+	}
+}
+
+// HistAgg 直方图聚合
+func HistAgg(field string, interval float64) map[string]interface{} {
+	return map[string]interface{}{
+		"histogram": map[string]interface{}{
+			"field":    field,
+			"interval": interval,
+		},
+	}
+}
+
+// AvgAgg 平均值聚合
+func AvgAgg(field string) map[string]interface{} {
+	return map[string]interface{}{
+		"avg": map[string]interface{}{
+			"field": field,
+		},
+	}
+}
+
+// SumAgg 求和聚合
+func SumAgg(field string) map[string]interface{} {
+	return map[string]interface{}{
+		"sum": map[string]interface{}{
+			"field": field,
+		},
+	}
+}
+
+// MinAgg 最小值聚合
+func MinAgg(field string) map[string]interface{} {
+	return map[string]interface{}{
+		"min": map[string]interface{}{
+			"field": field,
+		},
+	}
+}
+
+// MaxAgg 最大值聚合
+func MaxAgg(field string) map[string]interface{} {
+	return map[string]interface{}{
+		"max": map[string]interface{}{
+			"field": field,
+		},
+	}
+}
+
+// StatsAgg 统计聚合
+func StatsAgg(field string) map[string]interface{} {
+	return map[string]interface{}{
+		"stats": map[string]interface{}{
+			"field": field,
+		},
+	}
+}
+
+// CardinalityAgg 基数聚合（去重）
+func CardinalityAgg(field string) map[string]interface{} {
+	return map[string]interface{}{
+		"cardinality": map[string]interface{}{
+			"field": field,
+		},
+	}
+}
+
+// PercentilesAgg 百分位聚合
+func PercentilesAgg(field string, percents []float64) map[string]interface{} {
+	return map[string]interface{}{
+		"percentiles": map[string]interface{}{
+			"field":    field,
+			"percents": percents,
+		},
+	}
+}
+
+// RangeAgg 范围聚合
+func RangeAgg(field string, ranges []map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"range": map[string]interface{}{
+			"field":  field,
+			"ranges": ranges,
+		},
+	}
+}
+
+// FilterAgg 过滤聚合
+func FilterAgg(name string, filter interface{}) map[string]interface{} {
+	return map[name]json.RawMessage{}
+}

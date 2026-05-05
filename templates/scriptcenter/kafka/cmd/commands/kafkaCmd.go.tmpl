@@ -1,0 +1,43 @@
+package commands
+
+import (
+	"fmt"
+
+	"{{.ProjectName}}/internal/service"
+	"github.com/spf13/cobra"
+)
+
+var (
+	consumer bool
+	producer bool
+)
+
+// kafkaCmd Kafka 管理命令
+var kafkaCmd = &cobra.Command{
+	Use:   "kafka",
+	Short: "Kafka 连接和状态检查",
+	Long:  `检查 Kafka 连接状态，查看消费者信息`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if consumer {
+			if err := service.CheckConsumerHealth(); err != nil {
+				return fmt.Errorf("consumer health check failed: %w", err)
+			}
+			fmt.Println("✓ Kafka consumers are healthy")
+		}
+
+		if producer {
+			if err := service.CheckProducerHealth(); err != nil {
+				return fmt.Errorf("producer health check failed: %w", err)
+			}
+			fmt.Println("✓ Kafka producers are healthy")
+		}
+
+		return nil
+	},
+}
+
+func init() {
+	kafkaCmd.Flags().BoolVar(&consumer, "consumer", false, "Check consumer health")
+	kafkaCmd.Flags().BoolVar(&producer, "producer", false, "Check producer health")
+	rootCmd.AddCommand(kafkaCmd)
+}

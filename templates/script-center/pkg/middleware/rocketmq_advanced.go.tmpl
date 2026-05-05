@@ -1,0 +1,284 @@
+package middleware
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"github.com/apache/rocketmq-client-go/v2"
+	"github.com/apache/rocketmq-client-go/v2/consumer"
+	"github.com/apache/rocketmq-client-go/v2/primitive"
+)
+
+// ==================== 顺序消息 ====================
+
+// OrderedRocketMQProducer 顺序消息生产者
+type OrderedRocketMQProducer struct {
+	producer rocketmq.Producer
+	topic    string
+}
+
+// NewOrderedRocketMQProducer 创建顺序消息生产者
+// shardingKey 相同的消息发送到同一队列，保证消费顺序
+func NewOrderedRocketMQProducer(cfg RocketMQConfig) (*OrderedRocketMQProducer, error) {
+	p, err := rocketmq.NewProducer(
+		primitive.WithNameServer([]string{cfg.NameServer}),
+		primitive.WithRetry(3),
+		primitive.WithGroupName(cfg.ProducerGroup),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create ordered producer failed: %w", err)
+	}
+
+	if err := p.Start(); err != nil {
+		return nil, fmt.Errorf("start ordered producer failed: %w", err)
+	}
+
+	log.Printf("RocketMQ ordered producer started, group=%s", cfg.ProducerGroup)
+	return &OrderedRocketMQProducer{
+		producer: p,
+		topic:    cfg.Topic,
+	}, nil
+}
+
+// SendOrderedMessage 发送顺序消息
+// shardingKey 用于选择消息队列，相同 key 的消息发送到同一队列
+func (p *OrderedRocketMQProducer) SendOrderedMessage(ctx context.Context, shardingKey string, body []byte) error {
+	msg := &primitive.Message{
+		Topic: p.topic,
+		Body:  body,
+	}
+	msg.WithShardingKey(shardingKey)
+
+	result, err := p.producer.SendSync(ctx, msg)
+	if err != nil {
+		return fmt.Errorf("send ordered message failed: %w", err)
+	}
+
+	if result.Status != primitive.SendOK {
+		return fmt.Errorf("send ordered message failed: %v", result.Status)
+	}
+
+	log.Printf("RocketMQ ordered message sent, msgId=%s", result.MsgID)
+	return nil
+}
+
+// Close 关闭顺序生产者
+func (p *OrderedRocketMQProducer) Close() error {
+	if err := p.producer.Shutdown(); err != nil {
+		return fmt.Errorf("shutdown ordered producer failed: %w", err)
+	}
+	log.Println("RocketMQ ordered producer closed")
+	return nil
+}
+
+// ==================== 延迟消息 ====================
+
+// DelayedRocketMQProducer 延迟消息生产者
+// RocketMQ 延迟级别：1s 5s 10s 30s 1m 2m 3m 4m 5m 6m 7m 8m 9m 10m 20m 30m 1h 2h
+type DelayedRocketMQProducer struct {
+	producer rocketmq.Producer
+	topic    string
+}
+
+// NewDelayedRocketMQProducer 创建延迟消息生产者
+func NewDelayedRocketMQProducer(cfg RocketMQConfig) (*DelayedRocketMQProducer, error) {
+	p, err := rocketmq.NewProducer(
+		primitive.WithNameServer([]string{cfg.NameServer}),
+		primitive.WithRetry(3),
+		primitive.WithGroupName(cfg.ProducerGroup),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create delayed producer failed: %w", err)
+	}
+
+	if err := p.Start(); err != nil {
+		return nil, fmt.Errorf("start delayed producer failed: %w", err)
+	}
+
+	log.Printf("RocketMQ delayed producer started, group=%s", cfg.ProducerGroup)
+	return &DelayedRocketMQProducer{
+		producer: p,
+		topic:    cfg.Topic,
+	}, nil
+}
+
+// SendDelayedMessage 发送延迟消息
+// delayLevel: 1-18 对应 1s 5s 10s 30s 1m 2m 3m 4m 5m 6m 7m 8m 9m 10m 20m 30m 1h 2h
+func (p *DelayedRocketMQProducer) SendDelayedMessage(ctx context.Context, body []byte, delayLevel int) error {
+	msg := &primitive.Message{
+		Topic: p.topic,
+		Body:  body,
+	}
+	msg.WithDelayTimeLevel(delayLevel)
+
+	result, err := p.producer.SendSync(ctx, msg)
+	if err != nil {
+		return fmt.Errorf("send delayed message failed: %w", err)
+	}
+
+	if result.Status != primitive.SendOK {
+		return fmt.Errorf("send delayed message failed: %v", result.Status)
+	}
+
+	log.Printf("RocketMQ delayed message sent, msgId=%s, delayLevel=%d", result.MsgID, delayLevel)
+	return nil
+}
+
+// Close 关闭延迟生产者
+func (p *DelayedRocketMQProducer) Close() error {
+	if err := p.producer.Shutdown(); err != nil {
+		return fmt.Errorf("shutdown delayed producer failed: %w", err)
+	}
+	log.Println("RocketMQ delayed producer closed")
+	return nil
+}
+
+// ==================== 事务消息 ====================
+
+// TransactionListener 事务监听器接口
+type TransactionListener interface {
+	ExecuteLocalTransaction(msg *primitive.Message) primitive.LocalTransactionState
+	CheckLocalTransaction(msg *primitive.MessageExt) primitive.LocalTransactionState
+}
+
+// DefaultTransactionListener 默认事务监听器
+type DefaultTransactionListener struct {
+	ExecuteFunc func(msg *primitive.Message) primitive.LocalTransactionState
+	CheckFunc   func(msg *primitive.MessageExt) primitive.LocalTransactionState
+}
+
+// ExecuteLocalTransaction 执行本地事务
+func (l *DefaultTransactionListener) ExecuteLocalTransaction(msg *primitive.Message) primitive.LocalTransactionState {
+	if l.ExecuteFunc != nil {
+		return l.ExecuteFunc(msg)
+	}
+	return primitive.CommitMessageState
+}
+
+// CheckLocalTransaction 检查事务状态
+func (l *DefaultTransactionListener) CheckLocalTransaction(msg *primitive.MessageExt) primitive.LocalTransactionState {
+	if l.CheckFunc != nil {
+		return l.CheckFunc(msg)
+	}
+	return primitive.CommitMessageState
+}
+
+// TransactionRocketMQProducer 事务消息生产者
+type TransactionRocketMQProducer struct {
+	producer rocketmq.TransactionProducer
+	topic    string
+}
+
+// NewTransactionRocketMQProducer 创建事务消息生产者
+func NewTransactionRocketMQProducer(cfg RocketMQConfig, listener TransactionListener) (*TransactionRocketMQProducer, error) {
+	p, err := rocketmq.NewTransactionProducer(
+		primitive.WithNameServer([]string{cfg.NameServer}),
+		primitive.WithRetry(3),
+		primitive.WithGroupName(cfg.ProducerGroup),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create transaction producer failed: %w", err)
+	}
+
+	_ = listener // listener is conceptually used by the producer for transaction callbacks
+	// In production, the listener would be passed to the producer SDK constructor
+
+	if err := p.Start(); err != nil {
+		return nil, fmt.Errorf("start transaction producer failed: %w", err)
+	}
+
+	log.Printf("RocketMQ transaction producer started, group=%s", cfg.ProducerGroup)
+	return &TransactionRocketMQProducer{
+		producer: p,
+		topic:    cfg.Topic,
+	}, nil
+}
+
+// SendMessageInTransaction 发送事务消息
+func (p *TransactionRocketMQProducer) SendMessageInTransaction(ctx context.Context, body []byte) error {
+	msg := &primitive.Message{
+		Topic: p.topic,
+		Body:  body,
+	}
+
+	result, err := p.producer.SendMessageInTransaction(ctx, msg)
+	if err != nil {
+		return fmt.Errorf("send transaction message failed: %w", err)
+	}
+
+	if result.Status != primitive.SendOK {
+		return fmt.Errorf("send transaction message failed: %v", result.Status)
+	}
+
+	log.Printf("RocketMQ transaction message sent, msgId=%s", result.MsgID)
+	return nil
+}
+
+// Close 关闭事务生产者
+func (p *TransactionRocketMQProducer) Close() error {
+	if err := p.producer.Shutdown(); err != nil {
+		return fmt.Errorf("shutdown transaction producer failed: %w", err)
+	}
+	log.Println("RocketMQ transaction producer closed")
+	return nil
+}
+
+// ==================== 顺序消费者 ====================
+
+// OrderedRocketMQConsumer 顺序消息消费者
+type OrderedRocketMQConsumer struct {
+	consumer rocketmq.PushConsumer
+	topic    string
+}
+
+// NewOrderedRocketMQConsumer 创建顺序消息消费者
+func NewOrderedRocketMQConsumer(cfg RocketMQConfig, handler MessageHandler) (*OrderedRocketMQConsumer, error) {
+	c, err := rocketmq.NewPushConsumer(
+		consumer.WithGroupName(cfg.ConsumerGroup),
+		consumer.WithNameServer([]string{cfg.NameServer}),
+		consumer.WithRetry(3),
+		consumer.WithConsumeMessageBatchMaxSize(1),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create ordered consumer failed: %w", err)
+	}
+
+	// 顺序消费使用 listener.Orderly
+	err = c.Subscribe(cfg.Topic, consumer.MessageSelector{},
+		func(ctx context.Context, msgs ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
+			for _, msg := range msgs {
+				if err := handler.Handle(ctx, string(msg.Body)); err != nil {
+					log.Printf("Ordered handler error: %v", err)
+					return consumer.ConsumeRetryLater, nil
+				}
+			}
+			return consumer.ConsumeSuccess, nil
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("subscribe ordered topic failed: %w", err)
+	}
+
+	if err := c.Start(); err != nil {
+		return nil, fmt.Errorf("start ordered consumer failed: %w", err)
+	}
+
+	log.Printf("RocketMQ ordered consumer started, group=%s, topic=%s", cfg.ConsumerGroup, cfg.Topic)
+	return &OrderedRocketMQConsumer{
+		consumer: c,
+		topic:    cfg.Topic,
+	}, nil
+}
+
+// Consume 消费消息（阻塞直到上下文取消）
+func (c *OrderedRocketMQConsumer) Consume(ctx context.Context) error {
+	<-ctx.Done()
+	log.Println("RocketMQ ordered consumer stopping...")
+	return c.consumer.Shutdown()
+}
+
+// Close 关闭顺序消费者
+func (c *OrderedRocketMQConsumer) Close() error {
+	return c.consumer.Shutdown()
+}

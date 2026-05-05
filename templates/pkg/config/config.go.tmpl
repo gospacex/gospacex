@@ -1,0 +1,211 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"sync"
+	"time"
+
+	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
+)
+
+var (
+	globalConfig *Config
+	configMu     sync.RWMutex
+	hotReloader  *HotReloader
+)
+
+// Config 配置结构 (完整定义见 types.go.tmpl)
+// 包含：App, Log, MySQL, PostgreSQL, Redis, MongoDB, Elasticsearch, Etcd, Nacos, Consul
+
+// Load 从文件加载配置
+func Load(path string) (*Config, error) {
+	v := viper.New()
+	v.SetConfigFile(path)
+	v.SetConfigType("yaml")
+
+	// 设置默认值
+	setDefaults(v)
+
+	v.AutomaticEnv()
+
+	if err := v.ReadInConfig(); err != nil {
+		return nil, fmt.Errorf("error reading config: %w", err)
+	}
+
+	var cfg Config
+	if err := v.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("error unmarshaling config: %w", err)
+	}
+
+	// 验证配置
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("config validation failed: %w", err)
+	}
+
+	configMu.Lock()
+	globalConfig = &cfg
+	configMu.Unlock()
+
+	return &cfg, nil
+}
+
+// LoadFromString 从 YAML 字符串加载配置
+func LoadFromString(content string) (*Config, error) {
+	cfg := &Config{}
+	if err := yaml.Unmarshal([]byte(content), cfg); err != nil {
+		return nil, fmt.Errorf("error unmarshaling config: %w", err)
+	}
+
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("config validation failed: %w", err)
+	}
+
+	return cfg, nil
+}
+
+// Get 获取全局配置（线程安全）
+func Get() *Config {
+	configMu.RLock()
+	defer configMu.RUnlock()
+
+	if globalConfig == nil {
+		// 尝试从默认路径加载
+		cfg, err := Load("configs/config.yaml")
+		if err != nil {
+			// 返回默认配置
+			globalConfig = defaultConfig()
+		} else {
+			globalConfig = cfg
+		}
+	}
+	return globalConfig
+}
+
+// Set 设置全局配置（主要用于测试）
+func Set(cfg *Config) {
+	configMu.Lock()
+	defer configMu.Unlock()
+	globalConfig = cfg
+}
+
+// InitHotReload initializes config hot reload
+func InitHotReload(hotReloadCfg *HotReloadConfig) error {
+	cfg := Get()
+	var err error
+	hotReloader, err = NewHotReloader(cfg, hotReloadCfg)
+	if err != nil {
+		return fmt.Errorf("init hot reloader: %w", err)
+	}
+
+	if err := hotReloader.Start(); err != nil {
+		return fmt.Errorf("start hot reloader: %w", err)
+	}
+
+	return nil
+}
+
+// GetHotReloader returns the hot reloader instance
+func GetHotReloader() *HotReloader {
+	return hotReloader
+}
+
+// setDefaults sets default values for viper
+func setDefaults(v *viper.Viper) {
+	v.SetDefault("app.name", "gpx-service")
+	v.SetDefault("app.environment", "development")
+
+	v.SetDefault("server.port", 8080)
+	v.SetDefault("server.shutdown_timeout", 5*time.Second)
+	v.SetDefault("server.rate_limit.enabled", false)
+	v.SetDefault("server.rate_limit.qps", 1000)
+
+	v.SetDefault("bff.port", 8081)
+	v.SetDefault("bff.shutdown_timeout", 5*time.Second)
+
+	v.SetDefault("auth.enabled", false)
+
+	v.SetDefault("log.level", "info")
+	v.SetDefault("log.format", "json")
+	v.SetDefault("log.output", "stdout")
+
+	v.SetDefault("mysql.port", 3306)
+	v.SetDefault("postgresql.port", 5432)
+
+	v.SetDefault("redis.addr", "localhost:6379")
+	v.SetDefault("redis.pool_size", 100)
+
+	v.SetDefault("mongodb.port", 27017)
+
+	v.SetDefault("elasticsearch.addresses", []string{"http://localhost:9200"})
+
+	v.SetDefault("etcd.endpoints", []string{"localhost:2379"})
+	v.SetDefault("etcd.dial_timeout", 5*time.Second)
+
+	v.SetDefault("nacos.port", 8848)
+	v.SetDefault("nacos.timeout", 10*time.Second)
+}
+
+// defaultConfig returns a default configuration
+func defaultConfig() *Config {
+	return &Config{
+		App: AppConfig{
+			Name:        "gpx-service",
+			Environment: "development",
+		},
+		Server: ServerConfig{
+			Port:             8080,
+			ShutdownTimeout:  5 * time.Second,
+			RateLimit: RateLimitConfig{
+				Enabled: false,
+				QPS:     1000,
+			},
+		},
+		Auth: AuthConfig{
+			Enabled: false,
+		},
+		Log: LogConfig{
+			Level:  "info",
+			Format: "json",
+		},
+		MySQL: MySQLConfig{
+			Port: 3306,
+		},
+		PostgreSQL: PostgreSQLConfig{
+			Port: 5432,
+		},
+		Redis: RedisConfig{
+			Addr:     "localhost:6379",
+			PoolSize: 100,
+		},
+		MongoDB: MongoDBConfig{
+			Port: 27017,
+		},
+		Elasticsearch: ElasticsearchConfig{
+			Addresses: []string{"http://localhost:9200"},
+		},
+		Etcd: EtcdConfig{
+			Endpoints:   []string{"localhost:2379"},
+			DialTimeout: 5 * time.Second,
+		},
+		Nacos: NacosConfig{
+			Port:    8848,
+			Timeout: 10 * time.Second,
+		},
+	}
+}
+
+// Save saves the config to file
+func Save(cfg *Config, path string) error {
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("error marshaling config: %w", err)
+	}
+
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("error writing config file: %w", err)
+	}
+
+	return nil
+}

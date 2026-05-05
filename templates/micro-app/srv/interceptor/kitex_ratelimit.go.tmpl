@@ -1,0 +1,17 @@
+package interceptor
+
+import (
+	"context"
+
+	"{{.AppName}}/pkg/ratelimit"
+	"github.com/cloudwego/kitex/pkg/endpoint"
+)
+
+func (i *Interceptor) ratelimitMiddleware() endpoint.Middleware {
+	return func(ctx context.Context, req interface{}, next endpoint endpoint.Endpoint) (interface{}, error) {
+		if i.ratelimit != nil && !i.ratelimit.Allow() {
+			return nil, nil
+		}
+		return next(ctx, req)
+	}
+}

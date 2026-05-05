@@ -1,0 +1,48 @@
+package rpcclient
+
+import (
+	"context"
+
+	"{{.ModuleName}}/common/kitexGen/{{.ProtoImportPath}}"
+
+	"github.com/cloudwego/kitex/client"
+	"github.com/cloudwego/kitex/pkg/transmeta"
+)
+
+type {{.UpperName}}Client struct {
+	kitexClient {{.ProtoImportPath}}.{{.UpperName}}ServiceClient
+}
+
+func New{{.UpperName}}Client(addr string, opts ...client.Option) (*{{.UpperName}}Client, error) {
+	opts = append(opts,
+		client.WithHostPorts(addr),
+		client.WithTransportType(transmeta.HTTP2),
+	)
+
+	cli, err := {{.ProtoImportPath}}.NewClient("{{.UpperName}}Service", opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return &{{.UpperName}}Client{kitexClient: cli}, nil
+}
+
+func (c *{{.UpperName}}Client) Create(ctx context.Context, name string) (*{{.TableName}}.Create{{.UpperName}}Resp, error) {
+	return c.kitexClient.Create{{.UpperName}}(ctx, &{{.ProtoImportPath}}.Create{{.UpperName}}Req{Name: name})
+}
+
+func (c *{{.UpperName}}Client) Get(ctx context.Context, id int64) (*{{.TableName}}.Get{{.UpperName}}Resp, error) {
+	return c.kitexClient.Get{{.UpperName}}(ctx, &{{.ProtoImportPath}}.Get{{.UpperName}}Req{Id: id})
+}
+
+func (c *{{.UpperName}}Client) List(ctx context.Context) (*{{.TableName}}.List{{.UpperName}}Resp, error) {
+	return c.kitexClient.List{{.UpperName}}(ctx, &{{.ProtoImportPath}}.List{{.UpperName}}Req{})
+}
+
+func (c *{{.UpperName}}Client) Update(ctx context.Context, id int64, name string) (*{{.TableName}}.Update{{.UpperName}}Resp, error) {
+	return c.kitexClient.Update{{.UpperName}}(ctx, &{{.ProtoImportPath}}.Update{{.UpperName}}Req{Id: id, Name: name})
+}
+
+func (c *{{.UpperName}}Client) Delete(ctx context.Context, id int64) (*{{.TableName}}.Delete{{.UpperName}}Resp, error) {
+	return c.kitexClient.Delete{{.UpperName}}(ctx, &{{.ProtoImportPath}}.Delete{{.UpperName}}Req{Id: id})
+}

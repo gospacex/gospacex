@@ -1,0 +1,162 @@
+package config
+
+import (
+	"fmt"
+	"sync"
+
+	{{- if .NacosEnabled}}
+	"github.com/nacos-group/nacos-sdk-go/v2/clients"
+	"github.com/nacos-group/nacos-sdk-go/v2/common/constant"
+	"github.com/nacos-group/nacos-sdk-go/v2/vo"
+	{{- end}}
+	{{- if .ConsulEnabled}}
+	"github.com/hashicorp/consul/api"
+	{{- end}}
+	{{- if .EtcdEnabled}}
+	clientv3 "go.etcd.io/etcd/client/v3"
+	{{- end}}
+)
+
+// RemoteLoader 远程配置加载器接口实现
+type RemoteLoader struct {
+	provider string // nacos/consul/etcd
+	endpoint  string
+	dataID    string
+	group     string
+	cache     map[string]interface{}
+	mu        sync.RWMutex
+}
+
+// NewNacosLoader 创建 Nacos 远程配置加载器
+func NewNacosLoader(endpoint, dataID, group string) *RemoteLoader {
+	return &RemoteLoader{
+		provider: "nacos",
+		endpoint:  endpoint,
+		dataID:    dataID,
+		group:     group,
+		cache:     make(map[string]interface{}),
+	}
+}
+
+// Source 返回配置来源
+func (r *RemoteLoader) Source() Source {
+	return SourceRemote
+}
+
+// Load 从远程加载配置
+func (r *RemoteLoader) Load() (map[string]interface{}, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	switch r.provider {
+	{{- if .NacosEnabled}}
+	case "nacos":
+		return r.loadFromNacos()
+	{{- end}}
+	{{- if .ConsulEnabled}}
+	case "consul":
+		return r.loadFromConsul()
+	{{- end}}
+	{{- if .EtcdEnabled}}
+	case "etcd":
+		return r.loadFromEtcd()
+	{{- end}}
+	default:
+		return nil, fmt.Errorf("unsupported remote provider: %s", r.provider)
+	}
+}
+
+// Watch 监听配置变更
+func (r *RemoteLoader) Watch(key string) <-chan *ConfigChange {
+	ch := make(chan *ConfigChange, 1)
+	// TODO: 不同provider实现不同监听
+	// Nacos 支持长轮询监听配置变更
+	return ch
+}
+
+{{- if .NacosEnabled}}
+// loadFromNacos 从 Nacos 加载配置
+func (r *RemoteLoader) loadFromNacos() (map[string]interface{}, error) {
+	// 这里假设已经从全局配置读取了 Nacos 连接信息
+	// TODO: 从全局 config 获取 Nacos 配置
+	serverConfig := []constant.ServerConfig{
+		*constant.NewServerConfig(r.endpoint, 8848, constant.WithContextPath("/nacos")),
+	}
+
+	clientConfig := constant.ClientConfig{
+		NamespaceId:         "",
+		TimeoutMs:           5000,
+		NotLoadCacheAtStart: true,
+	}
+
+	client, err := clients.NewConfigClient(
+		vo.NacosClientParam{
+			ClientConfig:  &clientConfig,
+			ServerConfigs: serverConfig,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create nacos client: %w", err)
+	}
+	defer client.Close()
+
+	content, err := client.GetConfig(vo.ConfigParam{
+		DataId: r.dataID,
+		Group:  r.group,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get config from nacos: %w", err)
+	}
+
+	// 解析 YAML 内容
+	var result map[string]interface{}
+	// TODO: 解析 YAML/JSON
+	// 这里简化处理，假设内容是 YAML 格式
+	// 实际需要根据 content-type 解析
+	return result, nil
+}
+{{- end}}
+
+{{- if .ConsulEnabled}}
+// loadFromConsul 从 Consul 加载配置
+func (r *RemoteLoader) loadFromConsul() (map[string]interface{}, error) {
+	config := api.DefaultConfig()
+	config.Address = r.endpoint
+
+	client, err := api.NewClient(config)
+	if err != nil {
+		return nil, fmt.Errorf("create consul client: %w", err)
+	}
+
+	kv, _, err := client.KV().Get(r.dataID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get config from consul: %w", err)
+	}
+
+	if kv == nil {
+		return make(map[string]interface{}), nil
+	}
+
+	// TODO: 解析 KV 到 map
+	result := make(map[string]interface{})
+	return result, nil
+}
+{{- end}}
+
+{{- if .EtcdEnabled}}
+// loadFromEtcd 从 Etcd 加载配置
+func (r *RemoteLoader) loadFromEtcd() (map[string]interface{}, error) {
+	cli, err := clientv3.New(clientv3.Config{
+		Endpoints:   []string{r.endpoint},
+		DialTimeout: 5,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create etcd client: %w", err)
+	}
+	defer cli.Close()
+
+	// TODO: 加载配置
+	result := make(map[string]interface{})
+	return result, nil
+}
+{{- end}}

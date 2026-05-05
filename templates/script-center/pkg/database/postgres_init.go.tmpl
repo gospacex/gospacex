@@ -1,0 +1,53 @@
+package database
+
+import (
+	"fmt"
+	"time"
+
+	"{{.ProjectName}}/pkg/config"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+)
+
+var PostgresDB *gorm.DB
+
+// InitPostgres initializes PostgreSQL connection with connection pooling
+func InitPostgres(cfg config.Config) error {
+	var dsn string
+
+	if cfg.PostgreSQL.Host != "" {
+		fmt.Printf("Using PostgreSQL config: host=%s, port=%d, database=%s, schema=%s\n",
+			cfg.PostgreSQL.Host, cfg.PostgreSQL.Port, cfg.PostgreSQL.Database, cfg.PostgreSQL.Schema)
+		dsn = cfg.PostgreSQL.GetDSN()
+	} else {
+		return fmt.Errorf("PostgreSQL configuration is required")
+	}
+
+	var gormLogger logger.Interface
+	if cfg.App.Environment == "development" {
+		gormLogger = logger.Default.LogMode(logger.Info)
+	} else {
+		gormLogger = logger.Default.LogMode(logger.Silent)
+	}
+
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		Logger: gormLogger,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to open PostgreSQL connection: %w", err)
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("failed to get underlying dB object: %w", err)
+	}
+
+	// Set connection pool
+	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetMaxOpenConns(100)
+	sqlDB.SetConnMaxLifetime(time.Hour)
+
+	PostgresDB = db
+	return nil
+}

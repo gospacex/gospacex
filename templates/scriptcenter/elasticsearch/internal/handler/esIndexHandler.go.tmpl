@@ -1,0 +1,26 @@
+package handler
+
+import (
+	"context"
+	"fmt"
+
+	"{{.ProjectName}}/internal/model"
+	"{{.ProjectName}}/internal/search"
+)
+
+// EsIndexHandler Elasticsearch 索引处理器
+type EsIndexHandler struct {
+	client *search.EsClient
+}
+
+// NewEsIndexHandler 创建处理器
+func NewEsIndexHandler(client *search.EsClient) *EsIndexHandler {
+	return &EsIndexHandler{
+		client: client,
+	}
+}
+
+// Index 索引文章
+func (h *EsIndexHandler) Index(ctx context.Context, article *model.EbArticle) error {
+	return h.client.IndexArticle(ctx, article)
+}

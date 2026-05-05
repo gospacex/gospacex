@@ -1,0 +1,19 @@
+order:
+  - jwt
+  - ratelimit
+  - blacklist
+
+jwt:
+  secret: "your-secret-key-change-in-production"
+  expiry: "24h"
+  issuer: "{{.AppName}}"
+
+ratelimit:
+  qps: 100
+  burst: 200
+
+blacklist:
+  mode: "block"
+  ips:
+    - "192.168.1.1"
+    - "10.0.0.0/8"

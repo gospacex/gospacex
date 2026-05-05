@@ -1,0 +1,15 @@
+package main
+
+import (
+	"log"
+	"os"
+
+	"{{.ProjectName}}/cmd/commands"
+)
+
+func main() {
+	if err := commands.Execute(); err != nil {
+		log.Fatalf("Error: %v", err)
+	}
+	os.Exit(0)
+}

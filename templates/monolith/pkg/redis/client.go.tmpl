@@ -1,0 +1,66 @@
+package redis
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+)
+
+// Config Redis 配置
+type Config struct {
+	Addr     string
+	Password string
+	DB       int
+	PoolSize int
+}
+
+// Client Redis 客户端
+type Client struct {
+	rdb *redis.Client
+}
+
+// NewClient 创建 Redis 客户端
+func NewClient(cfg *Config) (*Client, error) {
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     cfg.Addr,
+		Password: cfg.Password,
+		DB:       cfg.DB,
+		PoolSize: cfg.PoolSize,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		return nil, fmt.Errorf("redis ping failed: %w", err)
+	}
+
+	return &Client{rdb: rdb}, nil
+}
+
+// Get 获取值
+func (c *Client) Get(ctx context.Context, key string) (string, error) {
+	return c.rdb.Get(ctx, key).Result()
+}
+
+// Set 设置值
+func (c *Client) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
+	return c.rdb.Set(ctx, key, value, expiration).Err()
+}
+
+// Delete 删除键
+func (c *Client) Delete(ctx context.Context, keys ...string) error {
+	return c.rdb.Del(ctx, keys...).Err()
+}
+
+// Exists 检查键是否存在
+func (c *Client) Exists(ctx context.Context, keys ...string) (int64, error) {
+	return c.rdb.Exists(ctx, keys...).Result()
+}
+
+// Close 关闭连接
+func (c *Client) Close() error {
+	return c.rdb.Close()
+}

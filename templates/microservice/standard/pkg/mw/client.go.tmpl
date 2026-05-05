@@ -1,0 +1,44 @@
+package mw
+
+import (
+	"context"
+	"time"
+	
+	"github.com/cloudwego/kitex/client"
+	"github.com/cloudwego/kitex/pkg/circuitbreak"
+	"github.com/cloudwego/kitex/pkg/fallback"
+	"github.com/cloudwego/kitex/pkg/retry"
+)
+
+// WithCircuitBreaker adds circuit breaker to client options
+func WithCircuitBreaker() client.Option {
+	cbCfg := circuitbreak.NewCBSuite(
+		func(ctx context.Context) bool {
+			// Custom circuit breaker logic
+			return true
+		},
+	)
+	return client.WithCircuitBreaker(cbCfg)
+}
+
+// WithRetry adds retry policy to client options
+func WithRetry() client.Option {
+	return client.WithRetryPolicy(retry.FailurePolicy(
+		retry.WithMaxAttemptTimes(3),
+		retry.WithFixedBackoff(100*time.Millisecond),
+	))
+}
+
+// WithFallback adds fallback policy to client options
+func WithFallback(fallbackFunc fallback.Fallback) client.Option {
+	return client.WithFallback(
+		fallback.NewFallbackPolicy(
+			fallback.WithDefault(fallbackFunc),
+		),
+	)
+}
+
+// WithTimeout adds timeout to client options
+func WithTimeout(timeout time.Duration) client.Option {
+	return client.WithRPCTimeout(timeout)
+}

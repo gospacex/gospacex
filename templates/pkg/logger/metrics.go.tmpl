@@ -1,0 +1,79 @@
+package logger
+
+import (
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/zap/zapcore"
+)
+
+type Metrics struct {
+	messagesTotal *prometheus.CounterVec
+	writeDuration *prometheus.HistogramVec
+}
+
+func NewMetrics(namespace, subsystem string) *Metrics {
+	if namespace == "" {
+		namespace = "app"
+	}
+	if subsystem == "" {
+		subsystem = "log"
+	}
+
+	return &Metrics{
+		messagesTotal: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "messages_total",
+				Help:      "Total number of log messages",
+			},
+			[]string{"level", "type"},
+		),
+		writeDuration: promauto.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "write_duration_seconds",
+				Help:      "Log write duration in seconds",
+			},
+			[]string{"level"},
+		),
+	}
+}
+
+func (m *Metrics) Inc(level, logType string) {
+	m.messagesTotal.WithLabelValues(level, logType).Inc()
+}
+
+func (m *Metrics) Observe(level string, duration float64) {
+	m.writeDuration.WithLabelValues(level).Observe(duration)
+}
+
+type metricsCore struct {
+	zapcore.Core
+	metrics *Metrics
+}
+
+func WrapWithMetrics(core zapcore.Core, metrics *Metrics) zapcore.Core {
+	return &metricsCore{
+		Core:    core,
+		metrics: metrics,
+	}
+}
+
+func (m *metricsCore) Write(entry zapcore.Entry, fields []zapcore.Field) error {
+	level := entry.Level.String()
+	m.metrics.Inc(level, "total")
+
+	for _, field := range fields {
+		if field.Key == "log_type" && field.Type == zapcore.StringType {
+			m.metrics.Inc(level, field.String)
+		}
+	}
+
+	return m.Core.Write(entry, fields)
+}
+
+func (m *metricsCore) Sync() error {
+	return m.Core.Sync()
+}

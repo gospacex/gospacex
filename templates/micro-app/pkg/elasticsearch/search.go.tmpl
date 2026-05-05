@@ -1,0 +1,101 @@
+package elasticsearch
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+)
+
+// SearchClient 搜索客户端
+type SearchClient struct {
+	client *Client
+	req    *SearchRequest
+}
+
+// Query 设置查询条件
+func (c *SearchClient) Query(query map[string]interface{}) *SearchClient {
+	if c.req == nil {
+		c.req = &SearchRequest{}
+	}
+	c.req.Query = query
+	return c
+}
+
+// From 设置起始位置
+func (c *SearchClient) From(from int) *SearchClient {
+	c.req.From = from
+	return c
+}
+
+// Size 设置返回数量
+func (c *SearchClient) Size(size int) *SearchClient {
+	c.req.Size = size
+	return c
+}
+
+// Sort 设置排序
+func (c *SearchClient) Sort(sort []string) *SearchClient {
+	c.req.Sort = sort
+	return c
+}
+
+// Source 设置返回字段
+func (c *SearchClient) Source(source []string) *SearchClient {
+	c.req.Source = source
+	return c
+}
+
+// Execute 执行搜索
+func (c *SearchClient) Execute(index string, result *SearchResult) error {
+	if c.req == nil || c.req.Query == nil {
+		return fmt.Errorf("query is required")
+	}
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(c.req.Query); err != nil {
+		return fmt.Errorf("encode query: %w", err)
+	}
+
+	res, err := c.client.es.Search(
+		c.client.es.Search.WithContext(context.Background()),
+		c.client.es.Search.WithIndex(index),
+		c.client.es.Search.WithBody(&buf),
+		c.client.es.Search.WithFrom(c.req.From),
+		c.client.es.Search.WithSize(c.req.Size),
+		c.client.es.Search.WithTrackTotalHits(true),
+	)
+	if err != nil {
+		return fmt.Errorf("search: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("search error: %s", res.String())
+	}
+
+	var response map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&response); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+
+	hits := response["hits"].(map[string]interface{})
+	total := int64(hits["total"].(map[string]interface{})["value"].(float64))
+
+	var docs []map[string]interface{}
+	for _, hit := range hits["hits"].([]interface{}) {
+		doc := hit.(map[string]interface{})["_source"].(map[string]interface{})
+		docs = append(docs, doc)
+	}
+
+	result.Total = total
+	result.Hits = docs
+	if took, ok := response["took"].(float64); ok {
+		result.Took = int64(took)
+	}
+	if maxScore, ok := response["max_score"].(float64); ok {
+		result.MaxScore = maxScore
+	}
+
+	return nil
+}

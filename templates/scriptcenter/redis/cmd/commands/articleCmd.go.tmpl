@@ -1,0 +1,85 @@
+package commands
+
+import (
+	"fmt"
+	"log"
+
+	"github.com/redis/go-redis/v9"
+	"github.com/spf13/cobra"
+)
+
+var (
+	articleName  string
+	articleKey  string
+)
+
+// articleCmd 文章 CRUD 命令
+var articleCmd = &cobra.Command{
+	Use:   "article",
+	Short: "文章操作",
+}
+
+// articleSetCmd 设置文章
+var articleSetCmd = &cobra.Command{
+	Use:   "set [key]",
+	Short: "设置文章",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		key := articleKey
+		if key == "" {
+			key = args[0]
+		}
+		client := getRedisClient()
+		err := client.Set(key, articleName, 0).Err()
+		if err != nil {
+			return fmt.Errorf("set failed: %w", err)
+		}
+		log.Printf("✓ Article set: %s", key)
+		return nil
+	},
+}
+
+// articleGetCmd 获取文章
+var articleGetCmd = &cobra.Command{
+	Use:   "get [key]",
+	Short: "获取文章",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		key := args[0]
+		client := getRedisClient()
+		val, err := client.Get(key).Result()
+		if err != nil {
+			return fmt.Errorf("get failed: %w", err)
+		}
+		log.Printf("Article: %s = %s", key, val)
+		return nil
+	},
+}
+
+// articleDelCmd 删除文章
+var articleDelCmd = &cobra.Command{
+	Use:   "del [key]",
+	Short: "删除文章",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		key := args[0]
+		client := getRedisClient()
+		_, err := client.Del(key).Result()
+		if err != nil {
+			return fmt.Errorf("del failed: %w", err)
+		}
+		log.Printf("✓ Article deleted: %s", key)
+		return nil
+	},
+}
+
+func getRedisClient() *redis.Client {
+	return nil // TODO: 从配置获取
+}
+
+func init() {
+	articleCmd.AddCommand(articleSetCmd)
+	articleCmd.AddCommand(articleGetCmd)
+	articleCmd.AddCommand(articleDelCmd)
+
+	articleSetCmd.Flags().StringVar(&articleName, "name", "", "文章名称")
+
+	rootCmd.AddCommand(articleCmd)
+}

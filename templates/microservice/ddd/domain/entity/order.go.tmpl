@@ -1,0 +1,108 @@
+package entity
+
+import (
+	"errors"
+	"time"
+	
+	"{{ .ModuleName }}/domain/valueobject"
+)
+
+// OrderStatus 订单状态
+type OrderStatus int
+
+const (
+	StatusCreated OrderStatus = iota
+	StatusPaid
+	StatusShipped
+	StatusCompleted
+	StatusCancelled
+)
+
+// Order 订单实体
+type Order struct {
+	ID          int64
+	UserID      int64
+	Status      OrderStatus
+	TotalMoney  *valueobject.Money
+	Items       []OrderItem
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// OrderItem 订单项
+type OrderItem struct {
+	ProductID int64
+	Quantity  int
+	Price     *valueobject.Money
+}
+
+// NewOrder 创建订单
+func NewOrder(userID int64, totalMoney *valueobject.Money) *Order {
+	now := time.Now()
+	return &Order{
+		UserID:     userID,
+		Status:     StatusCreated,
+		TotalMoney: totalMoney,
+		Items:      make([]OrderItem, 0),
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+}
+
+// AddItem 添加订单项
+func (o *Order) AddItem(productID int64, quantity int, price *valueobject.Money) error {
+	if quantity <= 0 {
+		return errors.New("quantity must be positive")
+	}
+	
+	itemTotal, err := price.Multiply(int64(quantity))
+	if err != nil {
+		return err
+	}
+	
+	o.Items = append(o.Items, OrderItem{
+		ProductID: productID,
+		Quantity:  quantity,
+		Price:     price,
+	})
+	
+	// 更新总金额
+	o.TotalMoney, err = o.TotalMoney.Add(itemTotal)
+	if err != nil {
+		return err
+	}
+	
+	o.UpdatedAt = time.Now()
+	return nil
+}
+
+// Pay 支付订单
+func (o *Order) Pay() error {
+	if o.Status != StatusCreated {
+		return errors.New("order cannot be paid")
+	}
+	o.Status = StatusPaid
+	o.UpdatedAt = time.Now()
+	return nil
+}
+
+// Cancel 取消订单
+func (o *Order) Cancel() error {
+	if o.Status == StatusPaid || o.Status == StatusShipped {
+		return errors.New("cannot cancel paid/shipped order")
+	}
+	o.Status = StatusCancelled
+	o.UpdatedAt = time.Now()
+	return nil
+}
+
+// Validate 验证订单
+func (o *Order) Validate() error {
+	if o.UserID <= 0 {
+		return errors.New("invalid user ID")
+	}
+	if len(o.Items) == 0 {
+		return errors.New("order must have at least one item")
+	}
+	return nil
+}

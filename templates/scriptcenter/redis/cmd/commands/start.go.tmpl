@@ -1,0 +1,45 @@
+package commands
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/spf13/cobra"
+
+	"{{.ModuleName}}/configs"
+	"{{.ModuleName}}/internal/redis"
+)
+
+var startCmd = &cobra.Command{
+	Use:   "start",
+	Short: "Start the application",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := configs.Load()
+		if err != nil {
+			return fmt.Errorf("load config: %w", err)
+		}
+
+		client, err := redis.NewClient(cfg.Redis)
+		if err != nil {
+			return fmt.Errorf("connect to redis: %w", err)
+		}
+		defer client.Close()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		go func() {
+			<-sigCh
+			cancel()
+		}()
+
+		fmt.Println("Application started. Press Ctrl+C to stop.")
+		<-ctx.Done()
+		return nil
+	},
+}

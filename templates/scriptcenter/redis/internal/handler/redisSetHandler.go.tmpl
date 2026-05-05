@@ -1,0 +1,51 @@
+package handler
+
+import (
+	"context"
+
+	"github.com/redis/go-redis/v9"
+)
+
+type SetHandler struct {
+	client *redis.Client
+}
+
+func NewSetHandler(client *redis.Client) *SetHandler {
+	return &SetHandler{client: client}
+}
+
+func (h *SetHandler) SAdd(ctx context.Context, key string, members ...interface{}) error {
+	return h.client.SAdd(ctx, key, members...).Err()
+}
+
+func (h *SetHandler) SMembers(ctx context.Context, key string) ([]string, error) {
+	return h.client.SMembers(ctx, key).Result()
+}
+
+func (h *SetHandler) SIsMember(ctx context.Context, key string, member interface{}) (bool, error) {
+	return h.client.SIsMember(ctx, key, member).Result()
+}
+
+func (h *SetHandler) SRem(ctx context.Context, key string, members ...interface{}) error {
+	return h.client.SRem(ctx, key, members...).Err()
+}
+
+func (h *SetHandler) SCard(ctx context.Context, key string) (int64, error) {
+	return h.client.SCard(ctx, key).Result()
+}
+
+func (h *SetHandler) SMove(ctx context.Context, src, dst string, member interface{}) error {
+	return h.client.SMove(ctx, src, dst, member).Err()
+}
+
+func (h *SetHandler) SInter(ctx context.Context, keys ...string) ([]string, error) {
+	return h.client.SInter(ctx, keys...).Result()
+}
+
+func (h *SetHandler) SUnion(ctx context.Context, keys ...string) ([]string, error) {
+	return h.client.SUnion(ctx, keys...).Result()
+}
+
+func (h *SetHandler) SDiff(ctx context.Context, keys ...string) ([]string, error) {
+	return h.client.SDiff(ctx, keys...).Result()
+}

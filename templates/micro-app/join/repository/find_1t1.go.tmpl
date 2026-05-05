@@ -1,0 +1,15 @@
+// FindJoin{{.LeftUpper}}2{{.RightUpper}} 一对一联表查询
+func (r *StoreProductRepo) FindJoin{{.LeftUpper}}2{{.RightUpper}}(ctx context.Context, id int64) (*model.Join{{.LeftUpper}}{{.RightUpper}}, error) {
+	var result model.Join{{.LeftUpper}}{{.RightUpper}}
+	err := r.db.WithContext(ctx).
+		Table("`{{.LeftTable}}` AS {{.LeftModule}}").
+		Select("{{range $i, $col := .LeftColumns}}{{if $i}}, {{end}}`store_product`.`{{$col.Name}}`{{end}}{{range $i, $col := .RightColumns}}, `store_product_attr`.`{{$col.Name}}` AS attr_{{$col.Name}}{{end}}").
+		Joins("LEFT JOIN `{{.RightTable}}` AS store_product_attr ON `store_product_attr`.`{{.RightField}}` = `store_product`.`{{.LeftField}}`").
+		Where("`store_product`.`id` = ?", id).
+		Scan(&result).
+		Error
+	if err != nil {
+		return nil, errors.New("join query failed")
+	}
+	return &result, nil
+}

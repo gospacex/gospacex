@@ -1,0 +1,24 @@
+package object
+
+// StorageType 对象存储类型
+type StorageType string
+
+const (
+	OSS    StorageType = "oss"
+	MinIO  StorageType = "minio"
+	RustFS StorageType = "rustfs"
+)
+
+// ObjectStorage 对象存储接口
+type ObjectStorage interface {
+	// Upload 上传文件
+	Upload(ctx context.Context, key string, data []byte) error
+	// Download 下载文件
+	Download(ctx context.Context, key string) ([]byte, error)
+	// Delete 删除文件
+	Delete(ctx context.Context, key string) error
+	// GetURL 获取文件访问 URL
+	GetURL(ctx context.Context, key string) (string, error)
+	// Exist 检查文件是否存在
+	Exist(ctx context.Context, key string) (bool, error)
+}

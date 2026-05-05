@@ -1,0 +1,198 @@
+package config
+
+import (
+	"fmt"
+	"net/url"
+	"os"
+	"strings"
+	"sync"
+
+	"github.com/nacos-group/nacos-sdk-go/clients"
+	"github.com/nacos-group/nacos-sdk-go/clients/config_client"
+	"github.com/nacos-group/nacos-sdk-go/common/constant"
+	"github.com/nacos-group/nacos-sdk-go/vo"
+	"gopkg.in/yaml.v3"
+)
+
+var (
+	nacosClient config_client.IConfigClient
+	nacosOnce   sync.Once
+)
+
+// initNacosClient 初始化 Nacos 客户端
+func initNacosClient(cfg *NacosConfig) error {
+	var initErr error
+	nacosOnce.Do(func() {
+		serverConfigs := []constant.ServerConfig{
+			*constant.NewServerConfig(cfg.ServerAddr, cfg.Port),
+		}
+		clientConfig := *constant.NewClientConfig(
+			constant.WithNamespaceId(cfg.Namespace),
+		)
+		nacosClient, initErr = clients.NewConfigClient(
+			vo.NacosClientParam{
+				ClientConfig:  &clientConfig,
+				ServerConfigs: serverConfigs,
+			},
+		)
+	})
+	return initErr
+}
+
+// LoadFromNacos 从 Nacos 配置中心加载配置
+func LoadFromNacos(nacosCfg *NacosConfig) (*Config, error) {
+	if err := initNacosClient(nacosCfg); err != nil {
+		return nil, fmt.Errorf("init nacos client failed: %w", err)
+	}
+
+	content, err := nacosClient.GetConfig(vo.ConfigParam{
+		DataId: nacosCfg.DataID,
+		Group:  nacosCfg.Group,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get config from nacos failed: %w", err)
+	}
+
+	// 空内容视为配置不存在
+	if content == "" {
+		return nil, fmt.Errorf("config data not found in nacos (dataId: %s)", nacosCfg.DataID)
+	}
+
+	var cfg Config
+	if err := yaml.Unmarshal([]byte(content), &cfg); err != nil {
+		return nil, fmt.Errorf("parse config from nacos failed: %w", err)
+	}
+
+	// 验证解析结果不为零值（避免非 YAML 文本被当作空配置）
+	if cfg.Server.Host == "" && cfg.Server.Port == 0 {
+		return nil, fmt.Errorf("config from nacos is empty (dataId: %s)", nacosCfg.DataID)
+	}
+
+	return &cfg, nil
+}
+
+// LoadWithFallback 优先从 Nacos 加载，失败则从本地文件加载
+func LoadWithFallback(localPath string, nacosCfg *NacosConfig) (*Config, error) {
+	if nacosCfg != nil && nacosCfg.ServerAddr != "" {
+		cfg, err := LoadFromNacos(nacosCfg)
+		if err == nil {
+			return cfg, nil
+		}
+		// Nacos 加载失败，回退到本地文件
+		fmt.Fprintf(os.Stderr, "Warning: load from nacos failed: %v, fallback to local config\n", err)
+	}
+	return Load(localPath)
+}
+
+// ParseConfigURL parses nacos:// URL into NacosConfig
+// URL format: nacos://127.0.0.1:8848?namespace=dev&dataId=myshop-product&group=DEFAULT_GROUP
+// Returns nil if url is empty or "local"
+func ParseConfigURL(configURL string) (*NacosConfig, error) {
+	if configURL == "" || configURL == "local" {
+		return nil, nil
+	}
+	if configURL == "nacos" || configURL == "viper" {
+		return nil, nil
+	}
+
+	u, err := parseURL(configURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid nacos URL: %w", err)
+	}
+	if u.Scheme != "nacos" {
+		return nil, fmt.Errorf("unsupported scheme: %s (expected 'nacos')", u.Scheme)
+	}
+
+	host := u.Host
+	if host == "" {
+		host = u.Path
+	}
+
+	port := uint64(8848)
+	if strings.Contains(host, ":") {
+		parts := strings.Split(host, ":")
+		host = parts[0]
+		if len(parts) > 1 {
+			if p, err := parsePort(parts[1]); err == nil {
+				port = p
+			}
+		}
+	}
+
+	q := u.Query()
+	group := q.Get("group")
+	if group == "" {
+		group = "DEFAULT_GROUP"
+	}
+
+	return &NacosConfig{
+		ServerAddr: host,
+		Port:       port,
+		Namespace:  q.Get("namespace"),
+		DataID:     q.Get("dataId"),
+		Group:      group,
+	}, nil
+}
+
+// MergeConfig merges remote Nacos config over local config
+// Only non-empty remote fields override local values
+// Note: This matches the generated config.go fields (Server, Database, Registry, Tracing)
+func MergeConfig(local, remote *Config) *Config {
+	if remote == nil {
+		return local
+	}
+	if local == nil {
+		return remote
+	}
+
+	// Database - only override non-empty fields
+	if remote.Database.Host != "" {
+		local.Database.Host = remote.Database.Host
+	}
+	if remote.Database.Port != "" {
+		local.Database.Port = remote.Database.Port
+	}
+	if remote.Database.User != "" {
+		local.Database.User = remote.Database.User
+	}
+	if remote.Database.Password != "" {
+		local.Database.Password = remote.Database.Password
+	}
+	if remote.Database.Database != "" {
+		local.Database.Database = remote.Database.Database
+	}
+
+	// Registry - address only
+	if remote.Registry.Address != "" {
+		local.Registry.Address = remote.Registry.Address
+	}
+
+	// Tracing
+	if remote.Tracing.Enabled {
+		local.Tracing.Enabled = remote.Tracing.Enabled
+	}
+	if remote.Tracing.Endpoint != "" {
+		local.Tracing.Endpoint = remote.Tracing.Endpoint
+	}
+	if remote.Tracing.ServiceName != "" {
+		local.Tracing.ServiceName = remote.Tracing.ServiceName
+	}
+
+	return local
+}
+
+// Helper functions (avoid adding strings import)
+func parseURL(rawURL string) (*url.URL, error) {
+	return url.Parse(rawURL)
+}
+
+func parsePort(s string) (uint64, error) {
+	var port uint64
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0, fmt.Errorf("invalid port")
+		}
+		port = port*10 + uint64(c-'0')
+	}
+	return port, nil
+}

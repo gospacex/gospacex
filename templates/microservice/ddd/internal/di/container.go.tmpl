@@ -1,0 +1,40 @@
+package di
+
+import (
+	"gorm.io/gorm"
+	"{{ .ModuleName }}/domain/repository"
+	"{{ .ModuleName }}/application/service"
+	"{{ .ModuleName }}/infrastructure/repository"
+)
+
+// Container 依赖注入容器
+type Container struct {
+	db           *gorm.DB
+	orderRepo    repository.OrderRepository
+	orderService *service.OrderService
+}
+
+// NewContainer 创建容器
+func NewContainer(db *gorm.DB) *Container {
+	c := &Container{
+		db: db,
+	}
+	
+	// 初始化仓储
+	c.orderRepo = repository.NewOrderRepositoryImpl(db)
+	
+	// 初始化应用服务
+	c.orderService = service.NewOrderService(c.orderRepo)
+	
+	return c
+}
+
+// OrderService 获取订单服务
+func (c *Container) OrderService() *service.OrderService {
+	return c.orderService
+}
+
+// OrderRepository 获取订单仓储
+func (c *Container) OrderRepository() repository.OrderRepository {
+	return c.orderRepo
+}

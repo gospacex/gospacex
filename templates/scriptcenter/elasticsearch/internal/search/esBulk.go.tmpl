@@ -1,0 +1,126 @@
+package search
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/elastic/go-elasticsearch/v8"
+)
+
+// BulkRequest 批量请求
+type BulkRequest struct {
+	Actions []BulkAction
+}
+
+// BulkAction 单个批量操作
+type BulkAction struct {
+	ID        string
+	Index    string
+	Document interface{}
+	Delete   bool
+}
+
+// AddIndex 添加索引操作
+func (b *BulkRequest) AddIndex(index, id string, doc interface{}) {
+	b.Actions = append(b.Actions, BulkAction{
+		ID:        id,
+		Index:    index,
+		Document: doc,
+	})
+}
+
+// AddDelete 添加删除操作
+func (b *BulkRequest) AddDelete(index, id string) {
+	b.Actions = append(b.Actions, BulkAction{
+		ID:    id,
+		Index: index,
+		Delete: true,
+	})
+}
+
+// BulkOps 批量操作
+type BulkOps struct {
+	client *elasticsearch.Client
+}
+
+// NewBulkOps 创建批量操作
+func NewBulkOps(client *elasticsearch.Client) *BulkOps {
+	return &BulkOps{client: client}
+}
+
+// Execute 执行批量操作
+func (b *BulkOps) Execute(ctx context.Context, req *BulkRequest) (*BulkResponse, error) {
+	var buf bytes.Buffer
+
+	for _, action := range req.Actions {
+		meta := map[string]interface{}{
+			"_index": action.Index,
+		}
+		if action.ID != "" {
+			meta["_id"] = action.ID
+		}
+
+		if action.Delete {
+			meta["delete"] = map[string]interface{}{}
+		} else {
+			meta["index"] = map[string]interface{}{}
+		}
+
+		metaBytes, _ := json.Marshal(meta)
+		buf.Write(metaBytes)
+		buf.WriteByte('\n')
+
+		if !action.Delete && action.Document != nil {
+			docBytes, _ := json.Marshal(action.Document)
+			buf.Write(docBytes)
+			buf.WriteByte('\n')
+		}
+	}
+
+	if buf.Len() == 0 {
+		return &BulkResponse{}, nil
+	}
+
+	res, err := b.client.Bulk(
+		&buf,
+		b.client.Bulk.WithContext(ctx),
+		b.client.Bulk.WithRefresh("true"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("批量操作失败: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, fmt.Errorf("批量操作响应错误: %s", res.String())
+	}
+
+	var result BulkResponse
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("解码结果失败: %w", err)
+	}
+
+	return &result, nil
+}
+
+// BulkResponse 批量响应
+type BulkResponse struct {
+	Took   int  `json:"took"`
+	Errors bool `json:"errors"`
+	Items []BulkResultItem `json:"items"`
+}
+
+// BulkResultItem 单个批量结果
+type BulkResultItem struct {
+	Index  BulkResultOp `json:"index"`
+	Delete BulkResultOp `json:"delete"`
+}
+
+// BulkResultOp 单个操作结果
+type BulkResultOp struct {
+	ID      string `json:"_id"`
+	Status int   `json:"status"`
+	Error  string `json:"error,omitempty"`
+}

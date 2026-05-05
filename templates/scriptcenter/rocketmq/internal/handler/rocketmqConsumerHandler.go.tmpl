@@ -1,0 +1,38 @@
+package handler
+
+import (
+	"context"
+	"log"
+
+	"{{.ProjectName}}/internal/mq"
+	"{{.ProjectName}}/internal/model"
+	"{{.ProjectName}}/internal/service"
+)
+
+// RocketMQConsumerHandler RocketMQ 消息消费者处理器
+type RocketMQConsumerHandler struct {
+	consumer  *mq.RocketMQConsumer
+	service   service.EbArticleService
+}
+
+// NewRocketMQConsumerHandler 创建处理器
+func NewRocketMQConsumerHandler(consumer *mq.RocketmqConsumer, svc service.EbArticleService) *RocketMQConsumerHandler {
+	return &RocketMQConsumerHandler{
+		consumer:  consumer,
+		service:   svc,
+	}
+}
+
+// Start 开始消费
+func (h *RocketMQConsumerHandler) Start(ctx context.Context) error {
+	log.Println("Starting RocketMQ consumer...")
+	return h.consumer.Consume(ctx, func(article *model.EbArticle) error {
+		log.Printf("Received article: %s", article.Name)
+		if err := h.service.Store(ctx, article); err != nil {
+			log.Printf("Error storing article: %v", err)
+			return err
+		}
+		log.Printf("Article stored successfully")
+		return nil
+	})
+}

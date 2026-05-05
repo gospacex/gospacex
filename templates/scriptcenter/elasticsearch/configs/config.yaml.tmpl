@@ -1,0 +1,17 @@
+server:
+  host: 0.0.0.0
+  port: 8888
+  mode: release
+
+elasticsearch:
+  addresses:
+    - http://localhost:9200
+  index_name: eb_articles
+  username: ""
+  password: ""
+  connect_timeout: 5
+  request_timeout: 30
+
+logger:
+  level: info
+  format: json

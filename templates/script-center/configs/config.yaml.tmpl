@@ -1,0 +1,95 @@
+# Script Center Configuration
+
+# Server configuration
+server:
+  port: 8080
+  mode: debug  # debug, release
+
+# MySQL configuration
+mysql:
+  host: localhost
+  port: 3306
+  user: root
+  password: root
+  dbname: {{.ProjectName}}
+  max_idle_conns: 10
+  max_open_conns: 100
+
+# Redis configuration
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+  pool_size: 100
+
+# PostgreSQL configuration (optional)
+postgresql:
+  enabled: false
+  host: localhost
+  port: 5432
+  user: postgres
+  password: postgres
+  dbname: {{.ProjectName}}
+  schema: public
+
+# MongoDB configuration (optional)
+mongodb:
+  enabled: false
+  uri: mongodb://localhost:27017
+  database: {{.ProjectName}}
+
+# Elasticsearch configuration (optional)
+elasticsearch:
+  enabled: false
+  addresses:
+    - http://localhost:9200
+  username: ""
+  password: ""
+  index: orders
+  sync_from_mysql: false
+
+# Kafka configuration (optional)
+kafka:
+  enabled: false
+  brokers:
+    - localhost:9092
+  topic: order-events
+  consumer_group: gpx-scripts-group
+
+# RabbitMQ configuration (optional)
+rabbitmq:
+  enabled: false
+  addr: localhost:5672
+  vhost: /
+  username: guest
+  password: guest
+  exchange: order-exchange
+  queue: order-queue
+
+# RocketMQ configuration (optional)
+rocketmq:
+  enabled: false
+  name_server: localhost:9876
+  topic: order-topic
+  consumer_group: order-consumer-group
+  producer_group: order-producer-group
+
+# etcd configuration (optional)
+etcd:
+  enabled: false
+  endpoints:
+    - localhost:2379
+  dial_timeout: 5s
+
+# Log configuration
+log:
+  level: info
+  format: json
+  output: stdout
+
+# Scheduled task configuration
+scheduler:
+  enabled: true
+  location: Local  # Timezone
+  max_concurrent: 10

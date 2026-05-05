@@ -1,0 +1,180 @@
+package test
+
+import (
+	"context"
+	"net"
+	"testing"
+
+	"{{.AppName}}/common/kitex_gen/{{.EntityName}}"
+	"{{.AppName}}/pkg/config"
+	"{{.AppName}}/pkg/database"
+	"{{.AppName}}/{{.SrvDirName}}/internal/handler"
+	"{{.AppName}}/{{.SrvDirName}}/internal/service"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+)
+
+var (
+	testSrvAddr = "localhost:{{.SrvPort}}"
+	testClient  {{.UpperEntityName}}.{{.UpperEntityName}}ServiceClient
+	testConn    *grpc.ClientConn
+)
+
+func setupGRPCClient(t *testing.T) {
+	var err error
+	testConn, err = grpc.Dial(testSrvAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock())
+	if err != nil {
+		t.Skipf("skipping: cannot connect to gRPC server at %s: %v", testSrvAddr, err)
+	}
+	testClient = {{.UpperEntityName}}.New{{.UpperEntityName}}ServiceClient(testConn)
+}
+
+func teardownGRPCClient() {
+	if testConn != nil {
+		testConn.Close()
+	}
+}
+
+func startTestServer(t *testing.T) func() {
+	cfg, err := config.Load("configs/config.yaml")
+	if err != nil {
+		t.Skipf("skipping: cannot load config: %v", err)
+	}
+	db, err := database.NewDB(&cfg.Database)
+	if err != nil {
+		t.Skipf("skipping: cannot connect to database: %v", err)
+	}
+
+	lis, err := net.Listen("tcp", testSrvAddr)
+	if err != nil {
+		t.Skipf("skipping: cannot listen on %s: %v", testSrvAddr, err)
+	}
+
+	srv := grpc.NewServer()
+	{{.LowerEntityName}}Handler := handler.New{{.UpperEntityName}}Handler(db)
+	{{.UpperEntityName}}.Register{{.UpperEntityName}}ServiceServer(srv, {{.LowerEntityName}}Handler)
+	go srv.Serve(lis)
+
+	return func() {
+		srv.Stop()
+		lis.Close()
+	}
+}
+
+func TestMain(m *testing.M) {
+	m.Run()
+}
+
+// Test{{.UpperEntityName}}Service_Create 测试创建
+func Test{{.UpperEntityName}}Service_Create(t *testing.T) {
+	setupGRPCClient(t)
+	defer teardownGRPCClient()
+
+	resp, err := testClient.Create(context.Background(), &{{.UpperEntityName}}.Create{{.UpperEntityName}}Req{
+		StoreName: "Test {{.UpperEntityName}}",
+		Price:     99.9,
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if resp.Id == 0 {
+		t.Error("Expected non-zero id")
+	}
+	t.Logf("Created {{.LowerEntityName}} with id: %d", resp.Id)
+}
+
+// Test{{.UpperEntityName}}Service_List 测试列表
+func Test{{.UpperEntityName}}Service_List(t *testing.T) {
+	setupGRPCClient(t)
+	defer teardownGRPCClient()
+
+	resp, err := testClient.List(context.Background(), &{{.UpperEntityName}}.List{{.UpperEntityName}}Req{})
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	t.Logf("Listed %d {{.LowerEntityName}}s", len(resp.Items))
+}
+
+// Test{{.UpperEntityName}}Service_Get 测试查询
+func Test{{.UpperEntityName}}Service_Get(t *testing.T) {
+	setupGRPCClient(t)
+	defer teardownGRPCClient()
+
+	createResp, err := testClient.Create(context.Background(), &{{.UpperEntityName}}.Create{{.UpperEntityName}}Req{
+		StoreName: "Get Test {{.UpperEntityName}}",
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	resp, err := testClient.Get(context.Background(), &{{.UpperEntityName}}.Get{{.UpperEntityName}}Req{
+		Id: createResp.Id,
+	})
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if resp.StoreName != "Get Test {{.UpperEntityName}}" {
+		t.Errorf("Expected store_name 'Get Test {{.UpperEntityName}}', got '%s'", resp.StoreName)
+	}
+}
+
+// Test{{.UpperEntityName}}Service_Update 测试更新
+func Test{{.UpperEntityName}}Service_Update(t *testing.T) {
+	setupGRPCClient(t)
+	defer teardownGRPCClient()
+
+	createResp, err := testClient.Create(context.Background(), &{{.UpperEntityName}}.Create{{.UpperEntityName}}Req{
+		StoreName: "Before Update",
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	_, err = testClient.Update(context.Background(), &{{.UpperEntityName}}.Update{{.UpperEntityName}}Req{
+		Id:        createResp.Id,
+		StoreName: "After Update",
+	})
+	if err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+
+	getResp, err := testClient.Get(context.Background(), &{{.UpperEntityName}}.Get{{.UpperEntityName}}Req{
+		Id: createResp.Id,
+	})
+	if err != nil {
+		t.Fatalf("Get after update failed: %v", err)
+	}
+	if getResp.StoreName != "After Update" {
+		t.Errorf("Expected store_name 'After Update', got '%s'", getResp.StoreName)
+	}
+}
+
+// Test{{.UpperEntityName}}Service_Delete 测试删除
+func Test{{.UpperEntityName}}Service_Delete(t *testing.T) {
+	setupGRPCClient(t)
+	defer teardownGRPCClient()
+
+	createResp, err := testClient.Create(context.Background(), &{{.UpperEntityName}}.Create{{.UpperEntityName}}Req{
+		StoreName: "To Delete",
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	_, err = testClient.Delete(context.Background(), &{{.UpperEntityName}}.Delete{{.UpperEntityName}}Req{
+		Id: createResp.Id,
+	})
+	if err != nil {
+		t.Fatalf("Delete failed: %v", err)
+	}
+
+	_, err = testClient.Get(context.Background(), &{{.UpperEntityName}}.Get{{.UpperEntityName}}Req{
+		Id: createResp.Id,
+	})
+	if err == nil {
+		t.Error("Expected error when getting deleted {{.LowerEntityName}}, got nil")
+	}
+}

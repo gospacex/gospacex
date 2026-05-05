@@ -1,0 +1,200 @@
+package handler
+
+import (
+	"net/http"
+	"strconv"
+	"time"
+
+{{- if or (eq .Register "consul") (eq .Register "etcd")}}
+	"{{.AppName}}/pkg/config"
+{{- end}}
+	"{{.AppName}}/pkg/logger"
+	"{{.AppName}}/{{.BffDirName}}/internal/rpcClient"
+	pb "{{.AppName}}/common/kitexGen/{{.ProtoImportPath}}"
+
+	"github.com/gin-gonic/gin"
+)
+
+type {{.UpperEntityName}}Handler struct {
+	client rpcclient.{{.UpperEntityName}}ServiceClientInterface
+}
+
+func New{{.UpperEntityName}}Handler() *{{.UpperEntityName}}Handler {
+	return New{{.UpperEntityName}}HandlerWithClient("127.0.0.1:{{.SrvPort}}")
+}
+
+func New{{.UpperEntityName}}HandlerWithClient(grpcAddr string) *{{.UpperEntityName}}Handler {
+{{- if eq .Register "consul"}}
+	cfg, _ := config.Load("configs/config.yaml")
+	cli, err := rpcclient.New{{.UpperEntityName}}Client(cfg.Registry.Address)
+{{- else if eq .Register "etcd"}}
+	cfg, _ := config.Load("configs/config.yaml")
+	cli, err := rpcclient.New{{.UpperEntityName}}Client(cfg.Registry.Address)
+{{- else}}
+	cli, err := rpcclient.New{{.UpperEntityName}}Client(grpcAddr)
+{{- end}}
+	if err != nil {
+		logger.Business.Errorw("failed to create {{.Module}} client", "error", err.Error())
+		panic("failed to create {{.Module}} client: " + err.Error())
+	}
+	logger.Business.Infow("{{.UpperEntityName}}Handler initialized", "addr", grpcAddr)
+	return &{{.UpperEntityName}}Handler{client: cli}
+}
+
+func (h *{{.UpperEntityName}}Handler) Create(c *gin.Context) {
+	start := time.Now()
+	requestID, _ := c.Get("requestID")
+	logger.Access.Infow("create request start", "method", c.Request.Method, "path", c.Request.URL.Path, "requestID", requestID)
+	logger.Business.Infow("create {{.Module}} start", "requestID", requestID)
+
+	var req struct {
+{{- range .CreateFields}}
+		{{.ProtoGoName}} {{.GoType}} `json:"{{.Name}}"`
+{{- end}}
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Business.Errorw("bind create request failed", "error", err.Error(), "requestID", requestID)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	rpcReq := &pb.Create{{.UpperEntityName}}Req{
+{{- range .CreateFields}}
+		{{.ProtoGoName}}: req.{{.ProtoGoName}},
+{{- end}}
+	}
+
+	resp, err := h.client.Create(c.Request.Context(), rpcReq)
+	if err != nil {
+		logger.Business.Errorw("create {{.Module}} failed", "error", err.Error(), "requestID", requestID)
+		logger.Audit.Errorw("audit: create {{.Module}} failed", "error", err.Error(), "requestID", requestID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	logger.Business.Infow("create {{.Module}} success", "id", resp.{{.PKProtoGoName}}, "duration", time.Since(start).String())
+	logger.Audit.Infow("audit: create {{.Module}} success", "id", resp.{{.PKProtoGoName}}, "requestID", requestID)
+	c.JSON(http.StatusOK, gin.H{"id": resp.{{.PKProtoGoName}}})
+}
+
+func (h *{{.UpperEntityName}}Handler) Get(c *gin.Context) {
+	start := time.Now()
+	requestID, _ := c.Get("requestID")
+	idStr := c.Param("id")
+	logger.Business.Infow("get {{.Module}} start", "id", idStr, "requestID", requestID)
+
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		logger.Business.Errorw("invalid id", "id", idStr, "error", err.Error())
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	resp, err := h.client.Get(c.Request.Context(), {{.PKGoType}}(id))
+	if err != nil {
+		logger.Business.Errorw("get {{.Module}} failed", "id", id, "error", err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	logger.Business.Infow("get {{.Module}} success", "id", id, "duration", time.Since(start).String())
+	c.JSON(http.StatusOK, gin.H{
+{{- range .Columns}}
+		"{{.Name}}": resp.{{.ProtoGoName}},
+{{- end}}
+	})
+}
+
+func (h *{{.UpperEntityName}}Handler) List(c *gin.Context) {
+	start := time.Now()
+	requestID, _ := c.Get("requestID")
+	logger.Business.Infow("list {{.Module}} start", "requestID", requestID)
+
+	resp, err := h.client.List(c.Request.Context())
+	if err != nil {
+		logger.Business.Errorw("list {{.Module}} failed", "error", err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var items []map[string]interface{}
+	for _, item := range resp.Items {
+		items = append(items, map[string]interface{}{
+{{- range .Columns}}
+			"{{.Name}}": item.{{.ProtoGoName}},
+{{- end}}
+		})
+	}
+	logger.Business.Infow("list {{.Module}} success", "count", len(items), "duration", time.Since(start).String())
+	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
+func (h *{{.UpperEntityName}}Handler) Update(c *gin.Context) {
+	start := time.Now()
+	requestID, _ := c.Get("requestID")
+	idStr := c.Param("id")
+	logger.Business.Infow("update {{.Module}} start", "id", idStr, "requestID", requestID)
+
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		logger.Business.Errorw("invalid id", "id", idStr, "error", err.Error())
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	var req struct {
+{{- range .UpdateFields}}
+		{{.ProtoGoName}} {{.GoType}} `json:"{{.Name}}"`
+{{- end}}
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Business.Errorw("bind update request failed", "error", err.Error())
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	rpcReq := &pb.Update{{.UpperEntityName}}Req{
+		{{.PKProtoGoName}}: {{.PKGoType}}(id),
+{{- range .UpdateFields}}
+		{{.ProtoGoName}}: req.{{.ProtoGoName}},
+{{- end}}
+	}
+
+	resp, err := h.client.Update(c.Request.Context(), rpcReq)
+	if err != nil {
+		logger.Business.Errorw("update {{.Module}} failed", "id", id, "error", err.Error())
+		logger.Audit.Errorw("audit: update {{.Module}} failed", "id", id, "error", err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	logger.Business.Infow("update {{.Module}} success", "id", id, "duration", time.Since(start).String())
+	logger.Audit.Infow("audit: update {{.Module}} success", "id", id, "requestID", requestID)
+	c.JSON(http.StatusOK, gin.H{"success": resp.Success})
+}
+
+func (h *{{.UpperEntityName}}Handler) Delete(c *gin.Context) {
+	start := time.Now()
+	requestID, _ := c.Get("requestID")
+	idStr := c.Param("id")
+	logger.Business.Infow("delete {{.Module}} start", "id", idStr, "requestID", requestID)
+
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		logger.Business.Errorw("invalid id", "id", idStr, "error", err.Error())
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	resp, err := h.client.Delete(c.Request.Context(), {{.PKGoType}}(id))
+	if err != nil {
+		logger.Business.Errorw("delete {{.Module}} failed", "id", id, "error", err.Error())
+		logger.Audit.Errorw("audit: delete {{.Module}} failed", "id", id, "error", err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	logger.Business.Infow("delete {{.Module}} success", "id", id, "duration", time.Since(start).String())
+	logger.Audit.Infow("audit: delete {{.Module}} success", "id", id, "requestID", requestID)
+	c.JSON(http.StatusOK, gin.H{"success": resp.Success})
+}

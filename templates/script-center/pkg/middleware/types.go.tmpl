@@ -1,0 +1,32 @@
+package middleware
+
+import "context"
+
+// MQType MQ 类型枚举
+const (
+	MQTypeKafka     = "kafka"
+	MQTypeRabbitMQ  = "rabbitmq"
+	MQTypeRocketMQ  = "rocketmq"
+)
+
+// FunctionType 功能类型枚举
+const (
+	FnTypeBasic      = "basic"
+	FnTypeOrdered    = "ordered"
+	FnTypeDelayed    = "delayed"
+	FnTypeBroadcast  = "broadcast"
+	FnTypePubSub     = "pubsub"
+	FnTypeTransaction = "transaction"
+)
+
+// MessageHandler MQ 消息处理器接口
+type MessageHandler interface {
+	Handle(ctx context.Context, msg string) error
+}
+
+// MessageHandlerFunc 函数式处理器
+type MessageHandlerFunc func(ctx context.Context, msg string) error
+
+func (f MessageHandlerFunc) Handle(ctx context.Context, msg string) error {
+	return f(ctx, msg)
+}

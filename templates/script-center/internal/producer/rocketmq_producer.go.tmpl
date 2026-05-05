@@ -1,0 +1,44 @@
+package producer
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"{{.ProjectName}}/pkg/middleware"
+)
+
+// RocketMQOrderProducer RocketMQ 订单消息生产者
+type RocketMQOrderProducer struct {
+	producer *middleware.RocketMQProducer
+	topic    string
+}
+
+// NewRocketMQOrderProducer 创建订单生产者
+func NewRocketMQOrderProducer(producer *middleware.RocketMQProducer, topic string) *RocketMQOrderProducer {
+	return &RocketMQOrderProducer{
+		producer: producer,
+		topic:    topic,
+	}
+}
+
+// SendOrderCreated 发送订单创建消息
+func (p *RocketMQOrderProducer) SendOrderCreated(ctx context.Context, orderID int64, data string) error {
+	log.Printf("Sending order.created message: orderID=%d", orderID)
+	body := []byte(data)
+	return p.producer.SendMessage(ctx, body)
+}
+
+// SendOrderUpdated 发送订单更新消息
+func (p *RocketMQOrderProducer) SendOrderUpdated(ctx context.Context, orderID int64, data string) error {
+	log.Printf("Sending order.updated message: orderID=%d", orderID)
+	body := []byte(data)
+	return p.producer.SendMessage(ctx, body)
+}
+
+// SendOrderDeleted 发送订单删除消息
+func (p *RocketMQOrderProducer) SendOrderDeleted(ctx context.Context, orderID int64) error {
+	log.Printf("Sending order.deleted message: orderID=%d", orderID)
+	data := fmt.Sprintf(`{"event":"order.deleted","order_id":%d}`, orderID)
+	return p.producer.SendMessage(ctx, []byte(data))
+}

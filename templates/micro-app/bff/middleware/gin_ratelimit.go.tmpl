@@ -1,0 +1,22 @@
+package middleware
+
+import (
+	"{{.AppName}}/{{.BFFName}}/internal/middleware/ratelimit"
+	"github.com/gin-gonic/gin"
+)
+
+func RateLimitMiddleware(rl *ratelimit.TokenBucketLimiter) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if rl == nil {
+			c.Next()
+			return
+		}
+
+		if !rl.Allow() {
+			c.JSON(429, gin.H{"code": 429, "message": "rate limit exceeded"})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}

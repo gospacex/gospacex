@@ -1,0 +1,133 @@
+package repository
+
+import (
+	"context"
+	"time"
+
+	"{{.AppName}}/pkg/database"
+	"{{.AppName}}/pkg/logger"
+	"{{.AppName}}/{{.SrvDirName}}/internal/model"
+	"gorm.io/gorm"
+)
+
+type {{.UpperModule}}Repo struct { db *gorm.DB }
+
+func New{{.UpperModule}}Repo(db *gorm.DB) *{{.UpperModule}}Repo {
+	if db == nil {
+		db, _ = database.NewDB(nil)
+	}
+	logger.Business.Infow("{{.UpperModule}}Repo initialized")
+	return &{{.UpperModule}}Repo{db: db}
+}
+
+func (r *{{.UpperModule}}Repo) Create(ctx context.Context, m *model.{{.UpperModule}}) error {
+	start := time.Now()
+	logger.Business.Infow("create {{.LowerModule}}", "model", m)
+
+	err := r.db.WithContext(ctx).Create(m).Error
+	if err != nil {
+		logger.Business.Errorw("create {{.LowerModule}} failed", "error", err.Error())
+		logger.Error.Errorw("repository create error", "error", err.Error())
+		return err
+	}
+
+	logger.Business.Infow("create {{.LowerModule}} success", "id", m.ID, "duration", time.Since(start).String())
+	return nil
+}
+
+func (r *{{.UpperModule}}Repo) GetByID(ctx context.Context, id uint) (*model.{{.UpperModule}}, error) {
+	start := time.Now()
+	logger.Business.Infow("get {{.LowerModule}} by id", "id", id)
+
+	var m model.{{.UpperModule}}
+{{- if .HasSoftDelete}}
+	if err := r.db.WithContext(ctx).Where("id = ? AND {{.SoftDeleteCol}} = 0", id).First(&m).Error; err != nil {
+{{- else}}
+	if err := r.db.WithContext(ctx).First(&m, id).Error; err != nil {
+{{- end}}
+		logger.Business.Errorw("get {{.LowerModule}} failed", "id", id, "error", err.Error())
+		logger.Error.Errorw("repository get error", "id", id, "error", err.Error())
+		return nil, err
+	}
+
+	logger.Business.Infow("get {{.LowerModule}} success", "id", id, "duration", time.Since(start).String())
+	return &m, nil
+}
+
+func (r *{{.UpperModule}}Repo) List(ctx context.Context) ([]*model.{{.UpperModule}}, error) {
+	start := time.Now()
+	logger.Business.Infow("list {{.LowerModule}}")
+
+	var list []*model.{{.UpperModule}}
+{{- if .HasSoftDelete}}
+	err := r.db.WithContext(ctx).Where("{{.SoftDeleteCol}} = 0").Find(&list).Error
+{{- else}}
+	err := r.db.WithContext(ctx).Find(&list).Error
+{{- end}}
+	if err != nil {
+		logger.Business.Errorw("list {{.LowerModule}} failed", "error", err.Error())
+		logger.Error.Errorw("repository list error", "error", err.Error())
+		return nil, err
+	}
+
+	logger.Business.Infow("list {{.LowerModule}} success", "count", len(list), "duration", time.Since(start).String())
+	return list, nil
+}
+
+func (r *{{.UpperModule}}Repo) Update(ctx context.Context, m *model.{{.UpperModule}}) error {
+	start := time.Now()
+	logger.Business.Infow("update {{.LowerModule}}", "id", m.ID)
+
+	err := r.db.WithContext(ctx).Save(m).Error
+	if err != nil {
+		logger.Business.Errorw("update {{.LowerModule}} failed", "id", m.ID, "error", err.Error())
+		logger.Error.Errorw("repository update error", "id", m.ID, "error", err.Error())
+		return err
+	}
+
+	logger.Business.Infow("update {{.LowerModule}} success", "id", m.ID, "duration", time.Since(start).String())
+	return nil
+}
+
+func (r *{{.UpperModule}}Repo) Delete(ctx context.Context, id uint) error {
+	start := time.Now()
+	logger.Business.Infow("delete {{.LowerModule}}", "id", id)
+
+{{- if .HasSoftDelete}}
+	err := r.db.WithContext(ctx).Model(&model.{{.UpperModule}}{}).Where("id = ?", id).Update("{{.SoftDeleteCol}}", 1).Error
+{{- else}}
+	err := r.db.WithContext(ctx).Delete(&model.{{.UpperModule}}{}, id).Error
+{{- end}}
+	if err != nil {
+		logger.Business.Errorw("delete {{.LowerModule}} failed", "id", id, "error", err.Error())
+		logger.Error.Errorw("repository delete error", "id", id, "error", err.Error())
+		return err
+	}
+
+	logger.Business.Infow("delete {{.LowerModule}} success", "id", id, "duration", time.Since(start).String())
+	return nil
+}
+
+{{if .HasJoin}}
+// {{.JoinMethodName}} executes a {{.JoinType}} JOIN query and returns a single result.
+func (r *{{.UpperModule}}Repo) {{.JoinMethodName}}(ctx context.Context, id int64) (*model.{{.JoinModelName}}, error) {
+	start := time.Now()
+	logger.Business.Infow("join {{.LowerModule}}", "id", id)
+
+	var result model.{{.JoinModelName}}
+	err := r.db.WithContext(ctx).
+		Table("`{{.LeftTable}}` AS {{.LeftAlias}}").
+		Select("{{.SelectColumns}}").
+		Joins("{{.JoinType}} JOIN `{{.RightTable}}` AS {{.RightAlias}} ON {{.RightAlias}}.`{{.RightJoinField}}` = {{.LeftAlias}}.`{{.LeftJoinField}}`").
+		Where("{{.LeftAlias}}.`id` = ?", id).
+		Scan(&result).Error
+	if err != nil {
+		logger.Business.Errorw("join {{.LowerModule}} failed", "id", id, "error", err.Error())
+		logger.Error.Errorw("repository join error", "id", id, "error", err.Error())
+		return nil, fmt.Errorf("join query failed: %w", err)
+	}
+
+	logger.Business.Infow("join {{.LowerModule}} success", "id", id, "duration", time.Since(start).String())
+	return &result, nil
+}
+{{end}}

@@ -1,0 +1,69 @@
+package mq
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/apache/rocketmq-client-go/v2"
+	"github.com/apache/rocketmq-client-go/v2/primitive"
+	"{{.ProjectName}}/internal/model"
+)
+
+// RocketmqDelay 延迟消息支持
+type RocketmqDelay struct {
+	producer  rocketmq.Producer
+	topic     string
+	nameServer string
+}
+
+// NewRocketmqDelay 创建延迟消息生产者
+func NewRocketmqDelay(nameServer, topic string) (*RocketmqDelay, error) {
+	p, err := rocketmq.NewProducer(
+		rocketmq.WithNameServer(nameServer),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create delay producer: %w", err)
+	}
+
+	if err := p.Start(); err != nil {
+		return nil, fmt.Errorf("start delay producer: %w", err)
+	}
+
+	return &RocketmqDelay{
+		producer:  p,
+		topic:     topic,
+		nameServer: nameServer,
+	}, nil
+}
+
+// SendDelayed 发送延迟消息
+func (d *RocketmqDelay) SendDelayed(ctx context.Context, article *model.EbArticle, delay time.Duration) error {
+	data, err := json.Marshal(article)
+	if err != nil {
+		return fmt.Errorf("marshal article: %w", err)
+	}
+
+	msg := primitive.NewMessage(d.topic, data)
+	msg.WithDelay(delay)
+
+	_, err = d.producer.SendSync(ctx, msg)
+	if err != nil {
+		return fmt.Errorf("send delayed message: %w", err)
+	}
+
+	return nil
+}
+
+// IsHealthy 检查健康
+func (d *RocketmqDelay) IsHealthy() error {
+	if d.producer == nil {
+		return fmt.Errorf("delay producer not initialized")
+	}
+	return nil
+}
+
+// Shutdown 关闭
+func (d *RocketmqDelay) Shutdown() error {
+	return d.producer.Shutdown()
+}

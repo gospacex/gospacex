@@ -1,0 +1,82 @@
+package mq
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/streadway/amqp"
+	"{{.ProjectName}}/internal/model"
+)
+
+// MessageHandler 消息处理函数类型
+type MessageHandler func(*model.EbArticle) error
+
+// RabbitmqConsumer RabbitMQ 消费者
+type RabbitmqConsumer struct {
+	channel  *amqp.Channel
+	queue    string
+	exchange string
+}
+
+// NewRabbitmqConsumer 创建消费者
+func NewRabbitmqConsumer(channel *amqp.Channel, exchange, queue string) *RabbitmqConsumer {
+	return &RabbitmqConsumer{
+		channel:  channel,
+		queue:    queue,
+		exchange: exchange,
+	}
+}
+
+// Consume 开始消费
+func (c *RabbitmqConsumer) Consume(ctx context.Context, handler MessageHandler) error {
+	msgs, err := c.channel.Consume(
+		c.queue,  // queue
+		"",     // consumer
+		true,   // auto-ack
+		false,  // exclusive
+		false,  // no-local
+		false,  // no-wait
+		nil,    // args
+	)
+	if err != nil {
+		return fmt.Errorf("register consumer: %w", err)
+	}
+
+	go func() {
+		for msg := range msgs {
+			var article model.EbArticle
+			if err := json.Unmarshal(msg.Body, &article); err != nil {
+				fmt.Printf("Failed to unmarshal message: %v, skipping\n", err)
+				continue
+			}
+
+			if err := handler(&article); err != nil {
+				fmt.Printf("Failed to handle message: %v\n", err)
+				continue
+			}
+
+			fmt.Printf("Message processed successfully\n")
+		}
+	}()
+
+	<-ctx.Done()
+	fmt.Println("Shutting down consumer")
+	return nil
+}
+
+// IsHealthy 检查健康
+func (c *RabbitmqConsumer) IsHealthy() error {
+	if c.channel == nil {
+		return fmt.Errorf("channel not initialized")
+	}
+	return nil
+}
+
+// Close 关闭
+func (c *RabbitmqConsumer) Close() error {
+	if c.channel != nil {
+		return c.channel.Close()
+	}
+	return nil
+}

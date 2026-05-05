@@ -1,0 +1,27 @@
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: {{ .ServiceName }}-gateway
+  namespace: {{ .Namespace | default "default" }}
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "{{ .ServiceName }}.{{ .Domain | default "example.com" }}"
+    tls:
+      httpsRedirect: true
+  
+  - port:
+      number: 443
+      name: https
+      protocol: HTTPS
+    hosts:
+    - "{{ .ServiceName }}.{{ .Domain | default "example.com" }}"
+    tls:
+      mode: SIMPLE
+      credentialName: {{ .ServiceName }}-tls

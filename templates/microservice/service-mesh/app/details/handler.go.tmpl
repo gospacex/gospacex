@@ -1,0 +1,11 @@
+package main
+
+import "context"
+
+type Handler struct{}
+
+func NewHandler() *Handler { return &Handler{} }
+
+func (h *Handler) GetDetails(ctx context.Context, req interface{}) (interface{}, error) {
+	return map[string]interface{}{"details": "product details"}, nil
+}

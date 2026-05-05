@@ -1,0 +1,69 @@
+package mq
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/apache/rocketmq-client-go/v2"
+	"github.com/apache/rocketmq-client-go/v2/consumer"
+	"github.com/apache/rocketmq-client-go/v2/primitive"
+	"{{.ProjectName}}/internal/model"
+)
+
+// RocketmqOrdered 顺序消息支持
+type RocketmqOrdered struct {
+	consumer       consumer.PushConsumer
+	topic          string
+	consumerGroup string
+	nameServer    string
+}
+
+// NewRocketmqOrdered 创建顺序消费者
+func NewRocketmqOrdered(nameServer, topic, consumerGroup string, messageHandler func(*model.EbArticle) error) (*RocketmqOrdered, error) {
+	c, err := rocketmq.NewPushConsumer(
+		consumer.WithGroupName(consumerGroup),
+		consumer.WithNameServer(nameServer),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create ordered consumer: %w", err)
+	}
+
+	err = c.Subscribe(topic, consumer.MessageOrderlyListenerFunc(func(ctx context.Context, msg *primitive.MessageExt) (consumer.ConsumeResult, error) {
+		var article model.EbArticle
+		if err := json.Unmarshal(msg.Body, &article); err != nil {
+			fmt.Printf("Failed to unmarshal message: %v, skipping\n", err)
+			return consumer.ConsumeRetryLater, nil
+		}
+
+		if err := messageHandler(&article); err != nil {
+			fmt.Printf("Failed to handle message: %v\n", err)
+			return consumer.ConsumeRetryLater, err
+		}
+
+		return consumer.ConsumeSuccess, nil
+	}))
+	if err != nil {
+		return nil, fmt.Errorf("subscribe topic: %w", err)
+	}
+
+	return &RocketmqOrdered{
+		consumer:       c,
+		topic:          topic,
+		consumerGroup: consumerGroup,
+		nameServer:    nameServer,
+	}, nil
+}
+
+// Start 开始消费
+func (o *RocketmqOrdered) Start(ctx context.Context) error {
+	<-ctx.Done()
+	return o.consumer.Shutdown()
+}
+
+// IsHealthy 检查健康
+func (o *RocketmqOrdered) IsHealthy() error {
+	if o.consumer == nil {
+		return fmt.Errorf("ordered consumer not initialized")
+	}
+	return nil
+}

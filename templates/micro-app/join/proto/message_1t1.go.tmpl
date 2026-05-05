@@ -1,0 +1,17 @@
+syntax = "proto3";
+package {{.Module}};
+option go_package = "{{.AppName}}/common/kitexGen/{{.ProtoImportPath}}";
+
+service {{.UpperName}}Service {
+{{- range .JoinServices}}
+  rpc {{.MethodName}}({{.ReqType}}) returns ({{.RespType}});
+{{- end}}
+}
+
+// Join message definitions
+{{range .JoinMessages}}
+message {{.Name}} {
+{{- range .Fields}}
+  {{.Type}} {{.Name}} = {{.Number}};
+{{- end}}}
+{{end}}

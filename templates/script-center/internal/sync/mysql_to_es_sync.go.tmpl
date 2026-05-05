@@ -1,0 +1,225 @@
+package sync
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"time"
+
+	"{{.ProjectName}}/internal/repository"
+)
+
+// MySQLToESSync handles synchronization from MySQL to Elasticsearch
+type MySQLToESSync struct {
+	mysqlRepo    *repository.MySQLRepository
+	esRepo       *repository.ESRepository
+	batchSize    int
+	logger       *slog.Logger
+	totalCount   int64
+	indexedCount int64
+	errorCount   int
+{{- if .SyncFromMySQL }}
+	syncEnabled  bool
+{{- end }}
+}
+
+// SyncConfig holds synchronization configuration
+type SyncConfig struct {
+	BatchSize int
+	Logger    *slog.Logger
+{{- if .SyncFromMySQL }}
+	SyncEnabled bool
+{{- end }}
+}
+
+// DefaultSyncConfig returns default sync configuration
+func DefaultSyncConfig() SyncConfig {
+	return SyncConfig{
+		BatchSize: {{.BatchSize | default 1000 }},
+		Logger:    slog.Default(),
+{{- if .SyncFromMySQL }}
+		SyncEnabled: {{.SyncFromMySQL}},
+{{- end }}
+	}
+}
+
+// NewMySQLToESSync creates a new MySQL-to-ES sync instance
+func NewMySQLToESSync(mysqlRepo *repository.MySQLRepository, esRepo *repository.ESRepository, cfg SyncConfig) *MySQLToESSync {
+	return &MySQLToESSync{
+		mysqlRepo: mysqlRepo,
+		esRepo:    esRepo,
+		batchSize: cfg.BatchSize,
+		logger:    cfg.Logger,
+{{- if .SyncFromMySQL }}
+		syncEnabled: cfg.SyncEnabled,
+{{- end }}
+	}
+}
+
+// Sync performs full synchronization from MySQL to Elasticsearch
+func (s *MySQLToESSync) Sync(ctx context.Context) error {
+{{- if .SyncFromMySQL }}
+	if !s.syncEnabled {
+		s.logger.Info("MySQL-to-ES sync is disabled")
+		return nil
+	}
+{{- end }}
+	s.logger.Info("Starting MySQL to Elasticsearch synchronization")
+
+	// Create timeout context for entire sync operation
+	syncCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+	defer cancel()
+
+	// Get total count
+	total, err := s.mysqlRepo.Count(syncCtx)
+	if err != nil {
+		return fmt.Errorf("failed to get MySQL count: %w", err)
+	}
+	s.totalCount = total
+	s.logger.Info("MySQL total records", "count", total)
+
+	// Initialize counters
+	s.indexedCount = 0
+	s.errorCount = 0
+
+	// Process in batches
+	offset := 0
+	for {
+		select {
+		case <-syncCtx.Done():
+			return fmt.Errorf("sync cancelled: %w", syncCtx.Err())
+		default:
+		}
+
+		// Fetch batch from MySQL
+		entities, err := s.mysqlRepo.List(syncCtx, s.batchSize, offset)
+		if err != nil {
+			return fmt.Errorf("failed to fetch MySQL batch at offset %d: %w", offset, err)
+		}
+
+		if len(entities) == 0 {
+			s.logger.Info("No more records to sync")
+			break
+		}
+
+		// Transform and batch index to ES
+		bulkDocs := make([]repository.BulkDoc, 0, len(entities))
+		for _, entity := range entities {
+			doc := s.transformToESDoc(entity)
+			if doc == nil {
+				s.errorCount++
+				continue
+			}
+
+			// Extract ID for ES document
+			id := extractDocID(doc)
+			bulkDocs = append(bulkDocs, repository.BulkDoc{
+				ID:     id,
+				Action: "index",
+				Doc:    doc,
+			})
+		}
+
+		// Bulk index to ES
+		if len(bulkDocs) > 0 {
+			if err := s.esRepo.BulkIndex(bulkDocs); err != nil {
+				s.logger.Error("Failed to bulk index documents", "error", err, "batch_offset", offset)
+				s.errorCount += len(bulkDocs)
+			} else {
+				s.indexedCount += int64(len(bulkDocs))
+				s.logger.Info("Batch indexed",
+					"batch_size", len(bulkDocs),
+					"total_indexed", s.indexedCount,
+					"total", s.totalCount,
+					"progress", fmt.Sprintf("%.1f%%", float64(s.indexedCount)/float64(s.totalCount)*100))
+			}
+		}
+
+		// Move to next batch
+		offset += len(entities)
+
+		// If we got fewer records than batch size, we're done
+		if len(entities) < s.batchSize {
+			break
+		}
+	}
+
+	// Log final summary
+	s.logSummary()
+
+	if s.errorCount > 0 {
+		return fmt.Errorf("sync completed with %d errors", s.errorCount)
+	}
+
+	return nil
+}
+
+// transformToESDoc transforms MySQL entity to Elasticsearch document format
+// Handles type conversions and field mapping
+func (s *MySQLToESSync) transformToESDoc(mysqlEntity interface{}) map[string]interface{} {
+	// In a real implementation, this would use reflection to map fields
+	// For the template, we provide a simplified version
+
+	if mysqlEntity == nil {
+		return nil
+	}
+
+	// Simplified transformation - assumes entity is a map
+	// Production code should use proper struct tags and reflection
+	doc := make(map[string]interface{})
+
+	// Convert time.Time fields to RFC3339 strings
+	// This handles common timestamp fields like created_at, updated_at
+	for k, v := range mysqlEntity.(map[string]interface{}) {
+		if t, ok := v.(time.Time); ok {
+			doc[k] = t.Format(time.RFC3339)
+		} else {
+			doc[k] = v
+		}
+	}
+
+	return doc
+}
+
+// extractDocID extracts document ID from ES document
+// Returns entity ID or generates one from map keys
+func extractDocID(doc map[string]interface{}) string {
+	// Try common ID field names
+	idFields := []string{"id", "ID", "Id", "_id"}
+	for _, field := range idFields {
+		if id, ok := doc[field]; ok {
+			switch v := id.(type) {
+			case string:
+				return v
+			case int:
+				return fmt.Sprintf("%d", v)
+			case int64:
+				return fmt.Sprintf("%d", v)
+			case float64:
+				return fmt.Sprintf("%d", int64(v))
+			}
+		}
+	}
+
+	// Generate fallback ID
+	return fmt.Sprintf("doc_%d", time.Now().UnixNano())
+}
+
+// logSummary logs the final synchronization summary
+func (s *MySQLToESSync) logSummary() {
+	successRate := 0.0
+	if s.totalCount > 0 {
+		successRate = float64(s.indexedCount) / float64(s.totalCount) * 100
+	}
+
+	s.logger.Info("MySQL to Elasticsearch sync completed",
+		"total_records", s.totalCount,
+		"indexed", s.indexedCount,
+		"errors", s.errorCount,
+		"success_rate", fmt.Sprintf("%.1f%%", successRate))
+}
+
+// GetSyncStats returns current synchronization statistics
+func (s *MySQLToESSync) GetSyncStats() (indexed, total int64, errors int) {
+	return s.indexedCount, s.totalCount, s.errorCount
+}

@@ -1,0 +1,10 @@
+
+// GetJoin{{.LeftUpper}}{{.RightUpper}}List 获取一对多联表数据
+func (s *Join{{.LeftUpper}}{{.RightUpper}}Service) GetJoin{{.LeftUpper}}{{.RightUpper}}List(ctx context.Context, leftID uint) ([]*model.{{.RightUpper}}, error) {
+	return s.joinRepo.FindJoin{{.LeftUpper}}{{.RightUpper}}List(ctx, leftID)
+}
+
+// GetJoin{{.LeftUpper}}{{.RightUpper}}WithParent 获取一对多联表数据（含父记录）
+func (s *Join{{.LeftUpper}}{{.RightUpper}}Service) GetJoin{{.LeftUpper}}{{.RightUpper}}WithParent(ctx context.Context, leftID uint) (*model.{{.LeftUpper}}, []*model.{{.RightUpper}}, error) {
+	return s.joinRepo.FindJoin{{.LeftUpper}}{{.RightUpper}}WithParent(ctx, leftID)
+}

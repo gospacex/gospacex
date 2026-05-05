@@ -1,0 +1,63 @@
+package dal
+
+import (
+	"context"
+	"database/sql"
+	"time"
+
+	"{{.ModuleName}}/biz/model"
+)
+
+const articleTable = "articles"
+
+var (
+	ArticleFindByID    = "select * from " + articleTable + " where id = ?"
+	ArticleList      = "select * from " + articleTable + " order by id desc limit ?,?"
+	ArticleCreate   = "insert into " + articleTable + "(name, data, created_at, updated_at) values (?,?,?,?)"
+	ArticleUpdate  = "update " + articleTable + " set name=?, data=?, updated_at=? where id=?"
+	ArticleDelete   = "delete from " + articleTable + " where id = ?"
+)
+
+func ArticleFindByIDDB(ctx context.Context, id int64) (*model.Article, error) {
+	row := DB.QueryRowContext(ctx, ArticleFindByID, id)
+	var a model.Article
+	err := row.Scan(&a.ID, &a.Name, &a.Data, &a.CreatedAt, &a.UpdatedAt)
+	return &a, err
+}
+
+func ArticleListDB(ctx context.Context, offset, limit int) ([]*model.Article, int64, error) {
+	rows, err := DB.QueryContext(ctx, ArticleList, offset, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var articles []*model.Article
+	for rows.Next() {
+		var a model.Article
+		if err := rows.Scan(&a.ID, &a.Name, &a.Data, &a.CreatedAt, &a.UpdatedAt); err != nil {
+			continue
+		}
+		articles = append(articles, &a)
+	}
+	return articles, int64(len(articles)), nil
+}
+
+func ArticleCreateDB(ctx context.Context, a *model.Article) (int64, error) {
+	now := time.Now()
+	res, err := DB.ExecContext(ctx, ArticleCreate, a.Name, a.Data, now, now)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func ArticleUpdateDB(ctx context.Context, a *model.Article) error {
+	_, err := DB.ExecContext(ctx, ArticleUpdate, a.Name, a.Data, time.Now(), a.ID)
+	return err
+}
+
+func ArticleDeleteDB(ctx context.Context, id int64) error {
+	_, err := DB.ExecContext(ctx, ArticleDelete, id)
+	return err
+}

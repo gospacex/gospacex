@@ -1,0 +1,45 @@
+package service
+
+import (
+	"context"
+
+	"{{.ProjectName}}/internal/repository"
+)
+
+// PostgresService PostgreSQL service layer
+type PostgresService struct {
+	repo *repository.PostgresRepository
+}
+
+// NewPostgresService creates a new PostgreSQL service instance
+func NewPostgresService(repo *repository.PostgresRepository) *PostgresService {
+	return &PostgresService{repo: repo}
+}
+
+// Create creates a new entity
+func (s *PostgresService) Create(ctx context.Context, entity interface{}) error {
+	// Add business logic here (validation, logging, etc.)
+	return s.repo.Create(ctx, entity)
+}
+
+// GetByID retrieves an entity by ID
+func (s *PostgresService) GetByID(ctx context.Context, id int64) (interface{}, error) {
+	return s.repo.GetByID(ctx, id)
+}
+
+// Update updates an entity
+func (s *PostgresService) Update(ctx context.Context, entity interface{}) error {
+	// Add business logic here
+	return s.repo.Update(ctx, entity)
+}
+
+// Delete deletes an entity by ID
+func (s *PostgresService) Delete(ctx context.Context, id int64) error {
+	// Add business logic here (cascade deletes, etc.)
+	return s.repo.Delete(ctx, id)
+}
+
+// List retrieves a list of entities with pagination
+func (s *PostgresService) List(ctx context.Context, limit, offset int) ([]interface{}, error) {
+	return s.repo.List(ctx, limit, offset)
+}

@@ -1,0 +1,33 @@
+package handler
+
+import (
+	"context"
+	"github.com/dtm-labs/client/dtmcli"
+	"{{ .ModuleName }}/internal/dtm"
+)
+
+// CreateTCCTransfer 创建 TCC 分布式事务
+func CreateTCCTransfer(req *TransferRequest) error {
+	gid := dtmcli.MustGenGid(dtm.DtmClient)
+	
+	tcc := dtmcli.NewTccGid(dtm.DtmClient, gid)
+	
+	_, err := tcc.TccGlobalTransaction(req, func(tcc *dtmcli.Tcc) error {
+		return tcc.TccCall(
+			dtmcli.ReqBusi{
+				BusiServer: "http://{{ .ServiceName }}:8080",
+				BusiURL:    "/api/tcc/try",
+			},
+			dtmcli.ReqBusi{
+				BusiServer: "http://{{ .ServiceName }}:8080",
+				BusiURL:    "/api/tcc/confirm",
+			},
+			dtmcli.ReqBusi{
+				BusiServer: "http://{{ .ServiceName }}:8080",
+				BusiURL:    "/api/tcc/cancel",
+			},
+		)
+	})
+	
+	return err
+}

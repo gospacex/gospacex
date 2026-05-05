@@ -1,0 +1,46 @@
+package middleware
+
+import (
+	"{{.AppName}}/{{.BFFName}}/internal/middleware/jwt"
+	"{{.AppName}}/{{.BFFName}}/internal/middleware/ratelimit"
+	"{{.AppName}}/{{.BFFName}}/internal/middleware/blacklist"
+)
+
+type Middleware struct {
+	jwt        *jwt.JWTService
+	ratelimit  *ratelimit.TokenBucketLimiter
+	blacklist  *blacklist.IPBlacklist
+}
+
+type Config struct {
+	Order      []string
+	JWT        *jwt.Config
+	RateLimit  *ratelimit.Config
+	Blacklist  *blacklist.Config
+}
+
+func New(cfg *Config) (*Middleware, error) {
+	m := &Middleware{}
+
+	for _, name := range cfg.Order {
+		switch name {
+		case "jwt":
+			if cfg.JWT != nil {
+				m.jwt = jwt.New(cfg.JWT.Secret,
+					jwt.WithExpiry(cfg.JWT.Expiry),
+					jwt.WithIssuer(cfg.JWT.Issuer),
+				)
+			}
+		case "ratelimit":
+			if cfg.RateLimit != nil {
+				m.ratelimit = ratelimit.New(cfg.RateLimit.QPS, cfg.RateLimit.Burst)
+			}
+		case "blacklist":
+			if cfg.Blacklist != nil {
+				m.blacklist, _ = blacklist.New(cfg.Blacklist.IPs)
+			}
+		}
+	}
+
+	return m, nil
+}

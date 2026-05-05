@@ -1,0 +1,86 @@
+package service
+
+import (
+	"context"
+	"{{.ProjectName}}/internal/model"
+	"gorm.io/gorm"
+)
+
+// {{.EntityName}}Resp {{.EntityName}} 服务响应结构
+type {{.EntityName}}Resp struct {
+{{- range .Fields }}
+	{{.Name}} {{.Type}} ` + "`" + `json:"{{.JsonName}}"` + "`" + `
+{{- end }}
+}
+
+// {{.EntityName}}Service {{.EntityName}} 服务
+type {{.EntityName}}Service struct {
+	ctx context.Context
+	db  *gorm.DB
+}
+
+// New{{.EntityName}}Service creates new {{.EntityName}} service
+func New{{.EntityName}}Service(ctx context.Context, db *gorm.DB) *{{.EntityName}}Service {
+	return &{{.EntityName}}Service{
+		ctx: ctx,
+		db:  db,
+	}
+}
+
+// Create {{.EntityName}}
+func (s *{{.EntityName}}Service) Create(req *{{.EntityName}}Resp) (resp *{{.EntityName}}Resp, err error) {
+	entity := &model.{{.EntityName}}{
+{{- range .Fields }}
+		{{.Name}}: req.{{.Name}},
+{{- end }}
+	}
+	
+	if err = s.db.WithContext(s.ctx).Create(entity).Error; err != nil {
+		return nil, err
+	}
+	
+	resp = &{{.EntityName}}Resp{
+{{- range .Fields }}
+		{{.Name}}: entity.{{.Name}},
+{{- end }}
+	}
+	return resp, nil
+}
+
+// GetByID gets {{.EntityName}} by ID
+func (s *{{.EntityName}}Service) GetByID(id int64) (resp *{{.EntityName}}Resp, err error) {
+	var entity model.{{.EntityName}}
+	if err = s.db.WithContext(s.ctx).First(&entity, id).Error; err != nil {
+		return nil, err
+	}
+	
+	resp = &{{.EntityName}}Resp{
+{{- range .Fields }}
+		{{.Name}}: entity.{{.Name}},
+{{- end }}
+	}
+	return resp, nil
+}
+
+// List {{.EntityName}} with pagination
+func (s *{{.EntityName}}Service) List(page, pageSize int) (resp []*{{.EntityName}}Resp, total int64, err error) {
+	var entities []model.{{.EntityName}}
+	if err = s.db.WithContext(s.ctx).Model(&model.{{.EntityName}}{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	
+	offset := (page - 1) * pageSize
+	if err = s.db.WithContext(s.ctx).Offset(offset).Limit(pageSize).Find(&entities).Error; err != nil {
+		return nil, 0, err
+	}
+	
+	for _, e := range entities {
+		resp = append(resp, &{{.EntityName}}Resp{
+{{- range .Fields }}
+			{{.Name}}: e.{{.Name}},
+{{- end }}
+		})
+	}
+	
+	return resp, total, nil
+}

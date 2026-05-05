@@ -1,0 +1,103 @@
+package middleware
+
+import (
+	"context"
+	"fmt"
+	
+	"github.com/IBM/sarama"
+)
+
+// KafkaConfig Kafka 配置
+type KafkaConfig struct {
+	Enabled   bool     `yaml:"enabled" json:"enabled"`
+	Brokers   []string `yaml:"brokers" json:"brokers"`
+	Topic     string   `yaml:"topic" json:"topic"`
+	GroupName string   `yaml:"group_name" json:"group_name"`
+}
+
+// KafkaProducer Kafka 生产者
+type KafkaProducer struct {
+	producer sarama.SyncProducer
+}
+
+// NewKafkaProducer 创建 Kafka 生产者
+func NewKafkaProducer(cfg KafkaConfig) (*KafkaProducer, error) {
+	config := sarama.NewConfig()
+	config.Producer.Return.Successes = true
+	
+	producer, err := sarama.NewSyncProducer(cfg.Brokers, config)
+	if err != nil {
+		return nil, fmt.Errorf("create kafka producer failed: %w", err)
+	}
+	
+	return &KafkaProducer{
+		producer: producer,
+	}, nil
+}
+
+// SendMessage 发送消息
+func (p *KafkaProducer) SendMessage(ctx context.Context, key, value string) error {
+	msg := &sarama.ProducerMessage{
+		Topic: "topic",
+		Key:   sarama.StringEncoder(key),
+		Value: sarama.StringEncoder(value),
+	}
+	
+	_, _, err := p.producer.SendMessage(msg)
+	return err
+}
+
+// Close 关闭生产者
+func (p *KafkaProducer) Close() error {
+	return p.producer.Close()
+}
+
+// KafkaConsumer Kafka 消费者
+type KafkaConsumer struct {
+	consumer sarama.ConsumerGroup
+	handler  MessageHandler
+}
+
+// MessageHandler 消息处理器
+type MessageHandler interface {
+	Handle(ctx context.Context, msg string) error
+}
+
+// NewKafkaConsumer 创建 Kafka 消费者
+func NewKafkaConsumer(cfg KafkaConfig, handler MessageHandler) (*KafkaConsumer, error) {
+	config := sarama.NewConfig()
+	config.Consumer.Group.InitialOffset = sarama.OffsetOldest
+	
+	consumer, err := sarama.NewConsumerGroup(cfg.Brokers, cfg.GroupName, config)
+	if err != nil {
+		return nil, fmt.Errorf("create kafka consumer failed: %w", err)
+	}
+	
+	return &KafkaConsumer{
+		consumer: consumer,
+		handler:  handler,
+	}, nil
+}
+
+// Consume 消费消息
+func (c *KafkaConsumer) Consume(ctx context.Context) error {
+	return c.consumer.Consume(ctx, []string{"topic"}, &consumerHandler{
+		handler: c.handler,
+	})
+}
+
+type consumerHandler struct {
+	handler MessageHandler
+}
+
+func (h *consumerHandler) Setup(sarama.ConsumerGroupSession) error   { return nil }
+func (h *consumerHandler) Cleanup(sarama.ConsumerGroupSession) error { return nil }
+func (h *consumerHandler) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+	for msg := range claim.Messages() {
+		if err := h.handler.Handle(sess.Context(), string(msg.Value)); err != nil {
+			return err
+		}
+		sess.MarkMessage(msg, "")
+	}
+	return nil
+}

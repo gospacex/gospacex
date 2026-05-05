@@ -1,0 +1,137 @@
+package jwt
+
+import (
+	"errors"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+var (
+	ErrInvalidToken      = errors.New("invalid token")
+	ErrExpiredToken       = errors.New("token expired")
+	ErrInvalidRefreshToken = errors.New("invalid refresh token")
+	ErrTokenInBlacklist   = errors.New("token is in blacklist")
+)
+
+type JWTService struct {
+	secret     []byte
+	expiry     time.Duration
+	issuer     string
+	blacklist  *Blacklist
+}
+
+func New(secret string, opts ...Option) *JWTService {
+	s := &JWTService{
+		secret:    []byte(secret),
+		expiry:    24 * time.Hour,
+		issuer:    "app",
+		blacklist: NewBlacklist(),
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+// Generate 生成 JWT Token
+func (s *JWTService) Generate(claims *CustomClaims) (string, error) {
+	now := time.Now()
+	claims.ExpiresAt = jwt.NewNumericDate(now.Add(s.expiry))
+	claims.IssuedAt = jwt.NewNumericDate(now)
+	claims.NotBefore = jwt.NewNumericDate(now)
+	claims.Issuer = s.issuer
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(s.secret)
+}
+
+// Refresh 刷新 JWT Token（以旧换新，支持滑动过期）
+// oldToken: 旧token
+// useSlidingExpiry: 是否使用滑动过期（true: 从刷新时间开始算过期，false: 保持原有过期时间）
+func (s *JWTService) Refresh(oldToken string, useSlidingExpiry bool) (string, error) {
+	claims, err := s.Parse(oldToken)
+	if err != nil {
+		return "", ErrInvalidRefreshToken
+	}
+
+	// 将旧token加入黑名单
+	s.blacklist.Add(oldToken, claims.ExpiresAt.Time)
+
+	// 生成新token
+	var newExpiry time.Duration
+	if useSlidingExpiry {
+		newExpiry = s.expiry
+	} else {
+		// 保持原有过期时间
+		newExpiry = time.Until(claims.ExpiresAt.Time)
+		if newExpiry <= 0 {
+			return "", ErrExpiredToken
+		}
+	}
+
+	now := time.Now()
+	newClaims := &CustomClaims{
+		UserID:   claims.UserID,
+		Username: claims.Username,
+		Role:     claims.Role,
+		TokenID:  GenerateTokenID(),
+	}
+	newClaims.ExpiresAt = jwt.NewNumericDate(now.Add(newExpiry))
+	newClaims.IssuedAt = jwt.NewNumericDate(now)
+	newClaims.NotBefore = jwt.NewNumericDate(now)
+	newClaims.Issuer = s.issuer
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, newClaims)
+	return token.SignedString(s.secret)
+}
+
+// Parse 解析 JWT Token
+func (s *JWTService) Parse(tokenString string) (*CustomClaims, error) {
+	// 检查黑名单
+	if s.blacklist.IsInBlacklist(tokenString) {
+		return nil, ErrTokenInBlacklist
+	}
+
+	token, err := jwt.ParseWithClaims(tokenString, &CustomClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return s.secret, nil
+	})
+	if err != nil {
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return nil, ErrExpiredToken
+		}
+		return nil, ErrInvalidToken
+	}
+
+	claims, ok := token.Claims.(*CustomClaims)
+	if !ok || !token.Valid {
+		return nil, ErrInvalidToken
+	}
+
+	// 检查 NotBefore
+	if claims.NotBefore != nil && time.Now().Before(claims.NotBefore.Time) {
+		return nil, ErrInvalidToken
+	}
+
+	return claims, nil
+}
+
+// Invalidate 使 token 失效（加入黑名单）
+func (s *JWTService) Invalidate(tokenString string) error {
+	claims, err := s.Parse(tokenString)
+	if err != nil {
+		return err
+	}
+	s.blacklist.Add(tokenString, claims.ExpiresAt.Time)
+	return nil
+}
+
+// GetExpiry 获取配置的过期时间
+func (s *JWTService) GetExpiry() time.Duration {
+	return s.expiry
+}
+
+// BlacklistSize 获取黑名单大小
+func (s *JWTService) BlacklistSize() int {
+	return s.blacklist.Size()
+}

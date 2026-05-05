@@ -1,0 +1,26 @@
+package repository
+
+import (
+	"context"
+	"errors"
+
+	"{{.LeftImport}}"
+	"{{.RightImport}}"
+
+	"gorm.io/gorm"
+)
+
+// Join{{.LeftUpper}}2{{.RightUpper}} 联表查询结果（扁平结构）
+type Join{{.LeftUpper}}2{{.RightUpper}} struct {
+{{range .LeftColumns}}	{{.GoName}} {{.GoType}} `gorm:"column:{{.Name}}"`
+{{end}}{{range .RightColumns}}	{{.GoName}} {{.GoType}} `gorm:"column:{{.AliasName}}"`
+{{end}}}
+
+// Join{{.LeftUpper}}2{{.RightUpper}}Repo 联表查询 Repository
+type Join{{.LeftUpper}}2{{.RightUpper}}Repo struct {
+	db *gorm.DB
+}
+
+func NewJoin{{.LeftUpper}}2{{.RightUpper}}Repo(db *gorm.DB) *Join{{.LeftUpper}}2{{.RightUpper}}Repo {
+	return &Join{{.LeftUpper}}2{{.RightUpper}}Repo{db: db}
+}

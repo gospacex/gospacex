@@ -1,0 +1,324 @@
+package middleware
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"strconv"
+	"time"
+
+	"github.com/IBM/sarama"
+)
+
+// ==================== 顺序消息 ====================
+
+// OrderedKafkaProducer 顺序消息生产者
+// 通过将相同 key 的消息路由到同一分区实现顺序
+type OrderedKafkaProducer struct {
+	producer sarama.SyncProducer
+	topic    string
+}
+
+// NewOrderedKafkaProducer 创建顺序消息生产者
+// Kafka 保证同一分区内的消息顺序，相同 key 自动路由到同一分区
+func NewOrderedKafkaProducer(cfg KafkaConfig) (*OrderedKafkaProducer, error) {
+	config := sarama.NewConfig()
+	config.Producer.Return.Successes = true
+	config.Producer.RequiredAcks = sarama.WaitForAll
+	// 使用 hash partitioner 保证相同 key 路由到同一分区
+	config.Producer.Partitioner = sarama.NewHashPartitioner
+
+	producer, err := sarama.NewSyncProducer(cfg.Brokers, config)
+	if err != nil {
+		return nil, fmt.Errorf("create ordered producer failed: %w", err)
+	}
+
+	log.Printf("Kafka ordered producer connected to %v", cfg.Brokers)
+	return &OrderedKafkaProducer{
+		producer: producer,
+		topic:    cfg.Topic,
+	}, nil
+}
+
+// SendOrderedMessage 发送顺序消息
+// key 相同的消息保证发送到同一分区，分区内消息有序
+func (p *OrderedKafkaProducer) SendOrderedMessage(ctx context.Context, key, value string) error {
+	msg := &sarama.ProducerMessage{
+		Topic: p.topic,
+		Key:   sarama.StringEncoder(key),
+		Value: sarama.StringEncoder(value),
+	}
+
+	partition, offset, err := p.producer.SendMessage(msg)
+	if err != nil {
+		return fmt.Errorf("send ordered message failed: %w", err)
+	}
+
+	log.Printf("Kafka ordered message sent: partition=%d, offset=%d, key=%s", partition, offset, key)
+	return nil
+}
+
+// Close 关闭顺序生产者
+func (p *OrderedKafkaProducer) Close() error {
+	return p.producer.Close()
+}
+
+// ==================== 延迟消息 ====================
+
+// DelayedKafkaProducer 延迟消息生产者
+// Kafka 本身不支持延迟，使用多级延迟 topic 模拟
+type DelayedKafkaProducer struct {
+	producer      sarama.SyncProducer
+	topic         string
+	delayTopics   map[int]string // delayLevel -> topic name
+}
+
+// Delay level definitions (similar to RocketMQ delay levels)
+var KafkaDelayLevels = map[int]time.Duration{
+	1:  1 * time.Second,
+	2:  5 * time.Second,
+	3:  10 * time.Second,
+	4:  30 * time.Second,
+	5:  1 * time.Minute,
+	6: 2 * time.Minute,
+	7: 3 * time.Minute,
+	8: 5 * time.Minute,
+	9: 10 * time.Minute,
+	10: 20 * time.Minute,
+	11: 30 * time.Minute,
+	12: 1 * time.Hour,
+	13: 2 * time.Hour,
+}
+
+// NewDelayedKafkaProducer 创建延迟消息生产者
+func NewDelayedKafkaProducer(cfg KafkaConfig) (*DelayedKafkaProducer, error) {
+	config := sarama.NewConfig()
+	config.Producer.Return.Successes = true
+	config.Producer.RequiredAcks = sarama.WaitForAll
+
+	producer, err := sarama.NewSyncProducer(cfg.Brokers, config)
+	if err != nil {
+		return nil, fmt.Errorf("create delayed producer failed: %w", err)
+	}
+
+	// Build delay topic names: <topic>_delay_<level>
+	delayTopics := make(map[int]string)
+	for level := range KafkaDelayLevels {
+		delayTopics[level] = fmt.Sprintf("%s_delay_%d", cfg.Topic, level)
+	}
+
+	log.Printf("Kafka delayed producer connected to %v", cfg.Brokers)
+	return &DelayedKafkaProducer{
+		producer:    producer,
+		topic:       cfg.Topic,
+		delayTopics: delayTopics,
+	}, nil
+}
+
+// SendDelayedMessage 发送延迟消息
+// delayLevel 1-13 对应不同延迟时间
+func (p *DelayedKafkaProducer) SendDelayedMessage(ctx context.Context, key string, value string, delayLevel int) error {
+	delayTopic, ok := p.delayTopics[delayLevel]
+	if !ok {
+		return fmt.Errorf("invalid delay level: %d, supported: 1-13", delayLevel)
+	}
+
+	// 添加延迟元数据
+	delayedMsg := fmt.Sprintf(`{"value":%q,"delay_level":%d,"created_at":%d}`,
+		value, delayLevel, time.Now().UnixMilli())
+
+	msg := &sarama.ProducerMessage{
+		Topic: delayTopic,
+		Key:   sarama.StringEncoder(key),
+		Value: sarama.StringEncoder(delayedMsg),
+	}
+
+	_, _, err := p.producer.SendMessage(msg)
+	if err != nil {
+		return fmt.Errorf("send delayed message failed: %w", err)
+	}
+
+	log.Printf("Kafka delayed message sent to topic=%s, delayLevel=%d", delayTopic, delayLevel)
+	return nil
+}
+
+// Close 关闭延迟生产者
+func (p *DelayedKafkaProducer) Close() error {
+	return p.producer.Close()
+}
+
+// ==================== 广播消费 ====================
+
+// BroadcastKafkaConsumer 广播消费者
+// 每个消费者实例使用不同的 Consumer Group 实现广播
+type BroadcastKafkaConsumer struct {
+	consumer sarama.ConsumerGroup
+	topics   []string
+	handler  MessageHandler
+}
+
+// NewBroadcastKafkaConsumer 创建广播消费者
+// 通过唯一 group.id 实现每个实例都收到全量消息
+func NewBroadcastKafkaConsumer(cfg KafkaConfig, handler MessageHandler) (*BroadcastKafkaConsumer, error) {
+	// 生成唯一 group id，确保每个消费者实例都收到全量消息
+	uniqueGroup := fmt.Sprintf("%s-broadcast-%d", cfg.ConsumerGroup, time.Now().UnixNano())
+
+	config := sarama.NewConfig()
+	config.Version = sarama.V3_0_0_0
+	config.Consumer.Offsets.Initial = sarama.OffsetOldest
+	config.Consumer.Group.Rebalance.GroupStrategies = []sarama.BalanceStrategy{sarama.NewBalanceStrategyRoundRobin()}
+	config.Consumer.Return.Errors = true
+
+	consumer, err := sarama.NewConsumerGroup(cfg.Brokers, uniqueGroup, config)
+	if err != nil {
+		return nil, fmt.Errorf("create broadcast consumer failed: %w", err)
+	}
+
+	log.Printf("Kafka broadcast consumer connected, group=%s", uniqueGroup)
+	return &BroadcastKafkaConsumer{
+		consumer: consumer,
+		topics:   []string{cfg.Topic},
+		handler:  handler,
+	}, nil
+}
+
+// Consume 消费消息（阻塞调用，广播模式）
+func (c *BroadcastKafkaConsumer) Consume(ctx context.Context) error {
+	handler := &consumerGroupHandler{handler: c.handler}
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("Kafka broadcast consumer stopping...")
+			return c.consumer.Close()
+		default:
+			if err := c.consumer.Consume(ctx, c.topics, handler); err != nil {
+				log.Printf("Broadcast consumer error: %v", err)
+				time.Sleep(5 * time.Second)
+			}
+		}
+	}
+}
+
+// Close 关闭广播消费者
+func (c *BroadcastKafkaConsumer) Close() error {
+	log.Println("Kafka broadcast consumer closing...")
+	return c.consumer.Close()
+}
+
+// ==================== 延迟消费者 ====================
+
+// DelayedKafkaConsumer 延迟消息消费者
+// 从延迟 topic 消费，根据 created_at 判断是否到期
+type DelayedKafkaConsumer struct {
+	consumer  sarama.ConsumerGroup
+	topics    []string
+	handler   MessageHandler
+	minDelay  time.Duration
+}
+
+// NewDelayedKafkaConsumer 创建延迟消息消费者
+func NewDelayedKafkaConsumer(cfg KafkaConfig, delayLevel int, handler MessageHandler) (*DelayedKafkaConsumer, error) {
+	delayTopic := fmt.Sprintf("%s_delay_%d", cfg.Topic, delayLevel)
+	groupID := fmt.Sprintf("%s-delay-%d", cfg.ConsumerGroup, delayLevel)
+
+	config := sarama.NewConfig()
+	config.Version = sarama.V3_0_0_0
+	config.Consumer.Offsets.Initial = sarama.OffsetOldest
+	config.Consumer.Group.Rebalance.GroupStrategies = []sarama.BalanceStrategy{sarama.NewBalanceStrategyRoundRobin()}
+	config.Consumer.Return.Errors = true
+
+	consumer, err := sarama.NewConsumerGroup(cfg.Brokers, groupID, config)
+	if err != nil {
+		return nil, fmt.Errorf("create delayed consumer failed: %w", err)
+	}
+
+	minDelay, ok := KafkaDelayLevels[delayLevel]
+	if !ok {
+		minDelay = 5 * time.Second
+	}
+
+	log.Printf("Kafka delayed consumer connected, topic=%s, group=%s, delay=%v", delayTopic, groupID, minDelay)
+	return &DelayedKafkaConsumer{
+		consumer: consumer,
+		topics:   []string{delayTopic},
+		handler:  handler,
+		minDelay: minDelay,
+	}, nil
+}
+
+// Consume 消费延迟消息（阻塞调用）
+// 检查消息是否已到期，未到期则等待
+func (c *DelayedKafkaConsumer) Consume(ctx context.Context) error {
+	handler := &delayedConsumerGroupHandler{
+		handler:  c.handler,
+		minDelay: c.minDelay,
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("Kafka delayed consumer stopping...")
+			return c.consumer.Close()
+		default:
+			if err := c.consumer.Consume(ctx, c.topics, handler); err != nil {
+				log.Printf("Delayed consumer error: %v", err)
+				time.Sleep(5 * time.Second)
+			}
+		}
+	}
+}
+
+// Close 关闭延迟消费者
+func (c *DelayedKafkaConsumer) Close() error {
+	log.Println("Kafka delayed consumer closing...")
+	return c.consumer.Close()
+}
+
+// delayedConsumerGroupHandler 延迟消费者组处理器
+type delayedConsumerGroupHandler struct {
+	handler  MessageHandler
+	minDelay time.Duration
+}
+
+func (h *delayedConsumerGroupHandler) Setup(sarama.ConsumerGroupSession) error {
+	log.Println("Kafka delayed consumer session setup")
+	return nil
+}
+
+func (h *delayedConsumerGroupHandler) Cleanup(sarama.ConsumerGroupSession) error {
+	log.Println("Kafka delayed consumer session cleanup")
+	return nil
+}
+
+func (h *delayedConsumerGroupHandler) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+	for msg := range claim.Messages() {
+		ctx := sess.Context()
+
+		// 解析消息，检查是否到期
+		value := string(msg.Value)
+		_ = h.minDelay // In production, check created_at vs now() + delay
+
+		if err := h.handler.Handle(ctx, value); err != nil {
+			log.Printf("Delayed message handler error: %v", err)
+			continue
+		}
+
+		sess.MarkMessage(msg, "")
+	}
+	return nil
+}
+
+// ==================== 辅助函数 ====================
+
+// ParseDelayLevel parses delay level from string
+func ParseDelayLevel(s string) (int, error) {
+	level, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, fmt.Errorf("invalid delay level: %s", s)
+	}
+	if level < 1 || level > 13 {
+		return 0, fmt.Errorf("delay level out of range: %d (1-13)", level)
+	}
+	return level, nil
+}

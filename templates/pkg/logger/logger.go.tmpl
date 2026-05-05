@@ -1,0 +1,127 @@
+package logger
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+)
+
+type Logger struct {
+	Business *BusinessLogger
+	Access   *AccessLogger
+	Error    *ErrorLogger
+	Audit    *AuditLogger
+	cleaner  *Cleaner
+}
+
+var (
+	Business *BusinessLogger
+	Access   *AccessLogger
+	Error    *ErrorLogger
+	Audit    *AuditLogger
+)
+
+func NewLogger(cfg *Config) (*Logger, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
+	level, _ := zapcore.ParseLevel(cfg.Level)
+
+	encoderConfig := zap.NewProductionEncoderConfig()
+	encoderConfig.TimeKey = "time"
+	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	encoderConfig.EncodeLevel = zapcore.CapitalLevelEncoder
+
+	var encoder zapcore.Encoder
+	if cfg.Env == "dev" {
+		encoder = zapcore.NewConsoleEncoder(encoderConfig)
+	} else {
+		encoder = zapcore.NewJSONEncoder(encoderConfig)
+	}
+
+	var ws []zapcore.WriteSyncer
+
+	dir := "./logs"
+	baseName := "app"
+	if cfg.Output.File != "" {
+		dir = filepath.Dir(cfg.Output.File)
+		baseName = strings.TrimSuffix(filepath.Base(cfg.Output.File), ".log")
+	}
+
+	if cfg.Rotation.Enabled {
+		rotation, err := NewRotationWriter(dir, baseName)
+		if err != nil {
+			return nil, err
+		}
+		ws = append(ws, zapcore.AddSync(rotation))
+	} else {
+		filePath := cfg.Output.File
+		if filePath == "" {
+			filePath = "./logs/app.log"
+		}
+		if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+			return nil, err
+		}
+		file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			return nil, err
+		}
+		ws = append(ws, zapcore.AddSync(file))
+	}
+
+	if cfg.Output.Stdout {
+		ws = append(ws, zapcore.AddSync(os.Stdout))
+	}
+
+	wsCore := zapcore.NewCore(encoder, zapcore.NewMultiWriteSyncer(ws...), level)
+
+	samplerCfg := SamplerConfig{
+		Initial:    cfg.Sampling.Initial,
+		Thereafter: cfg.Sampling.Thereafter,
+		Tick:       cfg.Sampling.Tick,
+	}
+	sampledCore := NewSamplerCore(wsCore, samplerCfg)
+
+	var finalCore zapcore.Core = sampledCore
+
+	if cfg.Prometheus.Enabled {
+		metrics := NewMetrics(cfg.Prometheus.Namespace, cfg.Prometheus.Subsystem)
+		finalCore = WrapWithMetrics(sampledCore, metrics)
+	}
+
+	logger := zap.New(finalCore, zap.AddCaller(), zap.AddCallerSkip(1))
+
+	var cleaner *Cleaner
+	if cfg.Rotation.Enabled && cfg.Rotation.MaxAgeDays > 0 {
+		cleaner = NewCleaner(dir, baseName, cfg.Rotation.MaxAgeDays, 6*time.Hour)
+		go cleaner.Run()
+	}
+
+	Business = NewBusinessLogger(logger)
+	Access = NewAccessLogger(logger)
+	Error = NewErrorLogger(logger)
+	Audit = NewAuditLogger(logger)
+
+	return &Logger{
+		Business: Business,
+		Access:   Access,
+		Error:    Error,
+		Audit:    Audit,
+		cleaner:  cleaner,
+	}, nil
+}
+
+func (l *Logger) Sync() error {
+	return nil
+}
+
+func (l *Logger) Stop() {
+	if l.cleaner != nil {
+		l.cleaner.Stop()
+	}
+}

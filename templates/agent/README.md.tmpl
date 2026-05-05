@@ -1,0 +1,57 @@
+# {{ .AgentName }} - AI Agent
+
+基于 CloudWeGo Eino 框架的 AI Agent 应用。
+
+## 项目结构
+
+```
+{{ .AgentName }}/
+├── cmd/
+│   └── agent/           # Agent 入口
+├── internal/
+│   ├── agent/           # Agent 核心逻辑
+│   ├── llm/             # LLM 集成
+│   ├── tools/           # 工具函数
+│   └── memory/          # 记忆管理
+├── configs/
+│   └── agent.yaml       # 配置文件
+├── Makefile
+└── go.mod
+```
+
+## 快速开始
+
+### 构建
+
+```bash
+make build
+```
+
+### 运行
+
+```bash
+make run
+```
+
+### 测试
+
+```bash
+make test
+```
+
+## 技术栈
+
+- **Agent 框架**: CloudWeGo Eino v0.1.0
+- **配置**: Viper v1.18.0
+- **日志**: Zap v1.26.0
+
+## 功能
+
+- ✅ LLM 对话
+- ✅ 工具调用
+- ✅ 记忆管理
+- ✅ 流式响应
+
+## License
+
+Apache License 2.0

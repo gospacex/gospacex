@@ -1,0 +1,95 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"log"
+	"net/http"
+
+	"{{.AppName}}/pkg/config"
+	"{{.AppName}}/pkg/logger"
+	"{{.AppName}}/{{.BffDirName}}/internal/router"
+{{if .Otel}}
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/jaeger"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
+{{end}}
+)
+
+var confPath string
+
+func init() {
+	flag.StringVar(&confPath, "config", "configs/config.yaml", "config file")
+}
+
+func main() {
+	flag.Parse()
+	cfg, err := config.Load(confPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if cfg == nil {
+		log.Fatal("Config is nil - check if config file exists: " + confPath)
+	}
+
+	logCfg, err := logger.LoadConfig(confPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	l, err := logger.NewLogger(logCfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer l.Sync()
+{{if .Otel}}
+	var tp *sdktrace.TracerProvider
+	if cfg.Tracing.Enabled {
+		exp, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(cfg.Tracing.Endpoint)))
+		if err != nil {
+			log.Fatal(err)
+		}
+		tp = sdktrace.NewTracerProvider(
+			sdktrace.WithBatcher(exp),
+			sdktrace.WithResource(resource.NewWithAttributes(
+				semconv.SchemaURL,
+				semconv.ServiceNameKey.String(cfg.Tracing.ServiceName),
+			)),
+		)
+		otel.SetTracerProvider(tp)
+		otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+			propagation.TraceContext{},
+			propagation.Baggage{},
+		))
+		defer func() {
+			if err := tp.Shutdown(nil); err != nil {
+				log.Printf("Error shutting down tracer provider: %v", err)
+			}
+		}()
+		logger.Business.Info("Tracing initialized")
+	}
+{{end}}
+	logger.Business.Infow("BFF 服务启动", "host", cfg.Server.Host, "port", cfg.Server.Port)
+
+	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
+	logger.Business.Infow("BFF listening", "addr", addr)
+
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: router.NewRouter(),
+	}
+{{if .Otel}}
+	if cfg.Tracing.Enabled {
+		logger.Business.Info("Tracing middleware enabled")
+	}
+{{end}}
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error.Errorw("listen error", "error", err.Error())
+		}
+	}()
+
+	select {}
+}

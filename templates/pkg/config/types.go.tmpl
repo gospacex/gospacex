@@ -1,0 +1,168 @@
+package config
+
+import (
+	"fmt"
+	"time"
+)
+
+// NacosConfig Nacos 配置
+type NacosConfig struct {
+	ServerAddr string        `yaml:"server_addr" mapstructure:"server_addr"`
+	Port       int           `yaml:"port" mapstructure:"port"`
+	Namespace string        `yaml:"namespace" mapstructure:"namespace"`
+	Group      string        `yaml:"group" mapstructure:"group"`
+	DataID     string        `yaml:"data_id" mapstructure:"data_id"`
+	Username   string        `yaml:"username" mapstructure:"username"`
+	Password   string        `yaml:"password" mapstructure:"password"`
+	LogLevel   string        `yaml:"log_level" mapstructure:"log_level"`
+	Timeout    time.Duration `yaml:"timeout" mapstructure:"timeout"`
+	CacheDir   string        `yaml:"cache_dir" mapstructure:"cache_dir"`
+	LogDir     string        `yaml:"log_dir" mapstructure:"log_dir"`
+}
+
+// ConsulConfig Consul 配置
+type ConsulConfig struct {
+	Address string `yaml:"address" mapstructure:"address"`
+	Token   string `yaml:"token" mapstructure:"token"`
+	Scheme  string `yaml:"scheme" mapstructure:"scheme"`
+}
+
+// EtcdConfig etcd 配置
+type EtcdConfig struct {
+	Endpoints   []string      `yaml:"endpoints" mapstructure:"endpoints"`
+	DialTimeout time.Duration `yaml:"dial_timeout" mapstructure:"dial_timeout"`
+}
+
+// MySQLConfig MySQL 数据库配置
+type MySQLConfig struct {
+	Host     string `yaml:"host" mapstructure:"host"`
+	Port     int    `yaml:"port" mapstructure:"port"`
+	User     string `yaml:"user" mapstructure:"user"`
+	Password string `yaml:"password" mapstructure:"password"`
+	Database string `yaml:"database" mapstructure:"database"`
+	Table    string `yaml:"table" mapstructure:"table"` // 用于 CRUD 生成的表名
+}
+
+// GetDSN returns MySQL DSN connection string
+func (c *MySQLConfig) GetDSN() string {
+	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+		c.User, c.Password, c.Host, c.Port, c.Database)
+}
+
+// PostgreSQLConfig PostgreSQL 数据库配置
+type PostgreSQLConfig struct {
+	Host     string `yaml:"host" mapstructure:"host"`
+	Port     int    `yaml:"port" mapstructure:"port"`
+	User     string `yaml:"user" mapstructure:"user"`
+	Password string `yaml:"password" mapstructure:"password"`
+	Database string `yaml:"database" mapstructure:"database"`
+	Schema   string `yaml:"schema" mapstructure:"schema"`   // PostgreSQL schema
+	Table    string `yaml:"table" mapstructure:"table"`    // 用于 CRUD 生成的表名
+}
+
+// GetDSN returns PostgreSQL DSN connection string
+func (c *PostgreSQLConfig) GetDSN() string {
+	return fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=UTC",
+		c.Host, c.User, c.Password, c.Database, c.Port)
+}
+
+// RedisConfig Redis 缓存配置
+type RedisConfig struct {
+	Addr     string `yaml:"addr" mapstructure:"addr"`
+	Password string `yaml:"password" mapstructure:"password"`
+	DB       int    `yaml:"db" mapstructure:"db"`
+	PoolSize int    `yaml:"pool_size" mapstructure:"pool_size"`
+}
+
+// MongoDBConfig MongoDB 数据库配置
+type MongoDBConfig struct {
+	URI        string `yaml:"uri" mapstructure:"uri"`
+	Database   string `yaml:"database" mapstructure:"database"`
+	Collection string `yaml:"collection" mapstructure:"collection"`
+}
+
+// ElasticsearchConfig Elasticsearch 搜索配置
+type ElasticsearchConfig struct {
+	Addresses    []string `yaml:"addresses" mapstructure:"addresses"`
+	Username     string   `yaml:"username" mapstructure:"username"`
+	Password     string   `yaml:"password" mapstructure:"password"`
+	Index        string   `yaml:"index" mapstructure:"index"`
+	SyncFromMySQL bool    `yaml:"sync_from_mysql" mapstructure:"sync_from_mysql"`
+	// MySQL 连接信息（用于数据同步）
+	MySQLHost     string `yaml:"mysql_host" mapstructure:"mysql_host"`
+	MySQLPort     int    `yaml:"mysql_port" mapstructure:"mysql_port"`
+	MySQLUser     string `yaml:"mysql_user" mapstructure:"mysql_user"`
+	MySQLPassword string `yaml:"mysql_password" mapstructure:"mysql_password"`
+	MySQLDatabase string `yaml:"mysql_database" mapstructure:"mysql_database"`
+	MySQLTable    string `yaml:"mysql_table" mapstructure:"mysql_table"`
+}
+
+// AppConfig 应用基础配置
+type AppConfig struct {
+	Name        string `yaml:"name" mapstructure:"name"`
+	Environment string `yaml:"environment" mapstructure:"environment"`
+}
+
+// LogConfig 日志配置
+type LogConfig struct {
+	Level      string `yaml:"level" mapstructure:"level"`
+	Format     string `yaml:"format" mapstructure:"format"`
+	Output     string `yaml:"output" mapstructure:"output"`
+	Path       string `yaml:"path" mapstructure:"path"`
+	MaxSize    int    `yaml:"max_size" mapstructure:"max_size"`
+	MaxBackups int    `yaml:"max_backups" mapstructure:"max_backups"`
+	MaxAge     int    `yaml:"max_age" mapstructure:"max_age"`
+	Compress   bool   `yaml:"compress" mapstructure:"compress"`
+}
+
+// RateLimitConfig 限流配置
+type RateLimitConfig struct {
+	Enabled bool    `yaml:"enabled" mapstructure:"enabled"`
+	QPS     float64 `yaml:"qps" mapstructure:"qps"`
+}
+
+// AuthConfig 认证配置
+type AuthConfig struct {
+	Enabled bool   `yaml:"enabled" mapstructure:"enabled"`
+	JWTSecret string `yaml:"jwt_secret" mapstructure:"jwt_secret"`
+}
+
+// ServerConfig 服务端配置
+type ServerConfig struct {
+	Port             int             `yaml:"port" mapstructure:"port"`
+	ShutdownTimeout  time.Duration   `yaml:"shutdown_timeout" mapstructure:"shutdown_timeout"`
+	RateLimit        RateLimitConfig  `yaml:"rate_limit" mapstructure:"rate_limit"`
+}
+
+// BFFConfig BFF 配置
+type BFFConfig struct {
+	Port             int           `yaml:"port" mapstructure:"port"`
+	ShutdownTimeout  time.Duration `yaml:"shutdown_timeout" mapstructure:"shutdown_timeout"`
+}
+
+// TracingConfig 分布式追踪配置
+type TracingConfig struct {
+	Enabled   bool   `yaml:"enabled" mapstructure:"enabled"`
+	Endpoint  string `yaml:"endpoint" mapstructure:"endpoint"`
+	ServiceName string `yaml:"service_name" mapstructure:"service_name"`
+	Sampler   string `yaml:"sampler" mapstructure:"sampler"` // const, rate, jaeger
+	SamplerParam float64 `yaml:"sampler_param" mapstructure:"sampler_param"`
+}
+
+// Config 完整配置结构
+type Config struct {
+	App           AppConfig           `yaml:"app" mapstructure:"app"`
+	Log           LogConfig           `yaml:"log" mapstructure:"log"`
+	Server        ServerConfig        `yaml:"server" mapstructure:"server"`
+	BFF           *BFFConfig          `yaml:"bff" mapstructure:"bff"`
+	Auth          AuthConfig          `yaml:"auth" mapstructure:"auth"`
+	MySQL         MySQLConfig         `yaml:"mysql" mapstructure:"mysql"`
+	PostgreSQL    PostgreSQLConfig    `yaml:"postgresql" mapstructure:"postgresql"`
+	Redis         RedisConfig         `yaml:"redis" mapstructure:"redis"`
+	MongoDB       MongoDBConfig       `yaml:"mongodb" mapstructure:"mongodb"`
+	Elasticsearch ElasticsearchConfig `yaml:"elasticsearch" mapstructure:"elasticsearch"`
+	Etcd          EtcdConfig          `yaml:"etcd" mapstructure:"etcd"`
+	Nacos         NacosConfig         `yaml:"nacos" mapstructure:"nacos"`
+	Consul        ConsulConfig        `yaml:"consul" mapstructure:"consul"`
+	Tracing       TracingConfig       `yaml:"tracing" mapstructure:"tracing"`
+}

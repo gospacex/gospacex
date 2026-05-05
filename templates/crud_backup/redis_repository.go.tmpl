@@ -1,0 +1,114 @@
+package repository
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+)
+
+// {{.StructName}}Repository Redis {{.StructName}} 仓储
+type {{.StructName}}Repository struct {
+	client *redis.Client
+	prefix string
+	ttl    time.Duration
+}
+
+// New{{.StructName}}Repository creates new {{.StructName}} repository
+func New{{.StructName}}Repository(client *redis.Client, ttl time.Duration) *{{.StructName}}Repository {
+	return &{{.StructName}}Repository{
+		client: client,
+		prefix: "{{.LowerName}}:",
+		ttl:    ttl,
+	}
+}
+
+// Set sets {{.StructName}} to Redis
+func (r *{{.StructName}}Repository) Set(ctx context.Context, id string, entity *{{.StructName}}) error {
+	key := r.prefix + id
+	data, err := json.Marshal(entity)
+	if err != nil {
+		return err
+	}
+	return r.client.Set(ctx, key, data, r.ttl).Err()
+}
+
+// Get gets {{.StructName}} from Redis by ID
+func (r *{{.StructName}}Repository) Get(ctx context.Context, id string) (*{{.StructName}}, error) {
+	key := r.prefix + id
+	data, err := r.client.Get(ctx, key).Bytes()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, fmt.Errorf("{{.LowerName}} not found")
+		}
+		return nil, err
+	}
+
+	var entity {{.StructName}}
+	if err := json.Unmarshal(data, &entity); err != nil {
+		return nil, err
+	}
+	return &entity, nil
+}
+
+// Del deletes {{.StructName}} from Redis
+func (r *{{.StructName}}Repository) Del(ctx context.Context, id string) error {
+	key := r.prefix + id
+	return r.client.Del(ctx, key).Err()
+}
+
+// Exists checks if {{.StructName}} exists in Redis
+func (r *{{.StructName}}Repository) Exists(ctx context.Context, id string) (bool, error) {
+	key := r.prefix + id
+	n, err := r.client.Exists(ctx, key).Result()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+// TTL gets TTL of {{.StructName}} from Redis
+func (r *{{.StructName}}Repository) TTL(ctx context.Context, id string) (time.Duration, error) {
+	key := r.prefix + id
+	return r.client.TTL(ctx, key).Result()
+}
+
+// Expire sets expiration for {{.StructName}} in Redis
+func (r *{{.StructName}}Repository) Expire(ctx context.Context, id string, ttl time.Duration) error {
+	key := r.prefix + id
+	return r.client.Expire(ctx, key, ttl).Err()
+}
+
+// Keys gets keys matching pattern
+func (r *{{.StructName}}Repository) Keys(ctx context.Context, pattern string) ([]string, error) {
+	pattern = r.prefix + pattern
+	return r.client.Keys(ctx, pattern).Result()
+}
+
+// GetKeys gets all keys for this entity type
+func (r *{{.StructName}}Repository) GetKeys(ctx context.Context) ([]string, error) {
+	return r.Keys(ctx, "*")
+}
+
+// Count counts {{.StructName}} in Redis
+func (r *{{.StructName}}Repository) Count(ctx context.Context) (int64, error) {
+	keys, err := r.GetKeys(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return int64(len(keys)), nil
+}
+
+// Clear clears all {{.StructName}} from Redis
+func (r *{{.StructName}}Repository) Clear(ctx context.Context) error {
+	keys, err := r.GetKeys(ctx)
+	if err != nil {
+		return err
+	}
+	if len(keys) > 0 {
+		return r.client.Del(ctx, keys...).Err()
+	}
+	return nil
+}

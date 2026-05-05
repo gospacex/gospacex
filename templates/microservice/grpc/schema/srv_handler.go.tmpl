@@ -1,0 +1,142 @@
+package handler
+
+import (
+	"context"
+	"time"
+
+	"github.com/jinzhu/copier"
+	pb "{{.AppName}}/common/kitexGen/{{.ProtoImportPath}}"
+	"{{.AppName}}/pkg/logger"
+	"{{.AppName}}/{{.SrvDirName}}/internal/model"
+	"{{.AppName}}/{{.SrvDirName}}/internal/repository"
+	"{{.AppName}}/{{.SrvDirName}}/internal/service"
+	"{{.AppName}}/pkg/utils"
+
+	"gorm.io/gorm"
+)
+
+type {{.UpperEntityName}}Handler struct {
+	pb.Unimplemented{{.UpperEntityName}}ServiceServer
+	svc *service.{{.UpperEntityName}}Service
+}
+
+func New{{.UpperEntityName}}Handler(db *gorm.DB) *{{.UpperEntityName}}Handler {
+	logger.Business.Infow("{{.UpperEntityName}}Handler initializing")
+	return &{{.UpperEntityName}}Handler{
+		svc: service.New{{.UpperEntityName}}Service(
+			{{.RepoInitCode}},
+		),
+	}
+}
+
+func (h *{{.UpperEntityName}}Handler) Create(ctx context.Context, req *pb.Create{{.UpperEntityName}}Req) (*pb.Create{{.UpperEntityName}}Resp, error) {
+	start := time.Now()
+	logger.Business.Infow("handle create {{.Module}}")
+
+	m := &model.{{.UpperEntityName}}{}
+	if err := copier.Copy(m, req); err != nil {
+		logger.Business.Errorw("copy request to model failed", "error", err.Error())
+		return nil, err
+	}
+
+	if err := h.svc.Create(ctx, m); err != nil {
+		logger.Business.Errorw("create {{.Module}} failed", "error", err.Error())
+		return nil, err
+	}
+
+	logger.Business.Infow("create {{.Module}} success", "id", m.Id, "duration", time.Since(start).String())
+	return &pb.Create{{.UpperEntityName}}Resp{ {{.PKProtoGoName}}: {{.PKRespConvert}} }, nil
+}
+
+func (h *{{.UpperEntityName}}Handler) Get(ctx context.Context, req *pb.Get{{.UpperEntityName}}Req) (*pb.Get{{.UpperEntityName}}Resp, error) {
+	start := time.Now()
+	logger.Business.Infow("handle get {{.Module}}", "id", req.{{.PKProtoGoName}})
+
+	m, err := h.svc.Get(ctx, {{.PKReqConvert}})
+	if err != nil {
+		logger.Business.Errorw("get {{.Module}} failed", "error", err.Error())
+		return nil, err
+	}
+
+	logger.Business.Infow("get {{.Module}} success", "id", m.Id, "duration", time.Since(start).String())
+	resp := &pb.Get{{.UpperEntityName}}Resp{}
+	copier.Copy(resp, m)
+	return resp, nil
+}
+
+{{if .HasJoin}}
+func (h *{{.UpperEntityName}}Handler) {{.JoinHandlerMethodName}}(ctx context.Context, req *pb.{{.JoinReqTypeName}}) (*pb.{{.JoinRespTypeName}}, error) {
+	start := time.Now()
+	logger.Business.Infow("handle {{.JoinHandlerMethodName}}", "{{.PKProtoGoName}}", req.{{.PKProtoGoName}})
+
+	result, err := h.svc.{{.JoinRepoMethodName}}(ctx, {{.PKReqConvert}})
+	if err != nil {
+		logger.Business.Errorw("{{.JoinHandlerMethodName}} failed", "error", err.Error())
+		return nil, err
+	}
+
+	resp := &pb.{{.JoinRespTypeName}}{}
+	copier.Copy(resp, result)
+
+	logger.Business.Infow("{{.JoinHandlerMethodName}} success", "{{.PKProtoGoName}}", req.{{.PKProtoGoName}}, "duration", time.Since(start).String())
+	return resp, nil
+}
+{{end}}
+
+func (h *{{.UpperEntityName}}Handler) List(ctx context.Context, req *pb.List{{.UpperEntityName}}Req) (*pb.List{{.UpperEntityName}}Resp, error) {
+	start := time.Now()
+	logger.Business.Infow("handle list {{.Module}}")
+
+	list, err := h.svc.ListWithFilter(ctx, req)
+	if err != nil {
+		logger.Business.Errorw("list {{.Module}} failed", "error", err.Error())
+		return nil, err
+	}
+
+	var items []*pb.{{.UpperEntityName}}Item
+	for _, m := range list {
+		item := &pb.{{.UpperEntityName}}Item{}
+		copier.Copy(item, m)
+		items = append(items, item)
+	}
+
+	logger.Business.Infow("list {{.Module}} success", "count", len(list), "duration", time.Since(start).String())
+	return &pb.List{{.UpperEntityName}}Resp{Items: items}, nil
+}
+
+func (h *{{.UpperEntityName}}Handler) Update(ctx context.Context, req *pb.Update{{.UpperEntityName}}Req) (*pb.Update{{.UpperEntityName}}Resp, error) {
+	start := time.Now()
+	logger.Business.Infow("handle update {{.Module}}", "id", req.{{.PKProtoGoName}})
+
+	m, err := h.svc.Get(ctx, {{.PKUpdateReqConvert}})
+	if err != nil {
+		logger.Business.Errorw("get {{.Module}} for update failed", "error", err.Error())
+		return nil, err
+	}
+
+	if err := utils.PartialUpdate(m, req); err != nil {
+		logger.Business.Errorw("partial update failed", "error", err.Error())
+		return nil, err
+	}
+
+	if err := h.svc.Update(ctx, m); err != nil {
+		logger.Business.Errorw("update {{.Module}} failed", "error", err.Error())
+		return nil, err
+	}
+
+	logger.Business.Infow("update {{.Module}} success", "id", req.{{.PKProtoGoName}}, "duration", time.Since(start).String())
+	return &pb.Update{{.UpperEntityName}}Resp{Success: true}, nil
+}
+
+func (h *{{.UpperEntityName}}Handler) Delete(ctx context.Context, req *pb.Delete{{.UpperEntityName}}Req) (*pb.Delete{{.UpperEntityName}}Resp, error) {
+	start := time.Now()
+	logger.Business.Infow("handle delete {{.Module}}", "id", req.{{.PKProtoGoName}})
+
+	if err := h.svc.Delete(ctx, {{.PKDeleteReqConvert}}); err != nil {
+		logger.Business.Errorw("delete {{.Module}} failed", "error", err.Error())
+		return nil, err
+	}
+
+	logger.Business.Infow("delete {{.Module}} success", "id", req.{{.PKProtoGoName}}, "duration", time.Since(start).String())
+	return &pb.Delete{{.UpperEntityName}}Resp{Success: true}, nil
+}

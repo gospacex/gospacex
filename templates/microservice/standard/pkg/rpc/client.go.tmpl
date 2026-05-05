@@ -1,0 +1,151 @@
+package rpc
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	{{- if .NacosEnabled}}
+	"github.com/nacos-group/nacos-sdk-go/v2/common/logger"
+	{{- end}}
+	"github.com/cloudwego/kitex/client"
+	"github.com/cloudwego/kitex/pkg/rpcinfo"
+	"github.com/cloudwego/kitex/pkg/transmeta"
+	"github.com/cloudwego/kitex/transport"
+)
+
+// Client 通用 RPC 客户端封装
+type Client struct {
+	serviceName string
+	client      client.Client
+	options     []client.Option
+	done        chan struct{}
+	once        sync.Once
+}
+
+// NewClient 创建一个新的 RPC 客户端
+func NewClient(serviceName string, opts ...client.Option) *Client {
+	defaultOpts := []client.Option{
+		client.WithTransportProtocol(transport.Framed),
+		client.WithMetaHandler(transmeta.ClientTTHeaderHandler),
+		client.WithRPCTimeout(3 * time.Second),
+		client.WithConnectTimeout(5 * time.Second),
+	}
+
+	// 合并用户自定义选项
+	defaultOpts = append(defaultOpts, opts...)
+
+	return &Client{
+		serviceName: serviceName,
+		options:     defaultOpts,
+		done:        make(chan struct{}),
+	}
+}
+
+// ServiceName 返回服务名称
+func (c *Client) ServiceName() string {
+	return c.serviceName
+}
+
+// Client 返回底层 Kitex client
+func (c *Client) Client() client.Client {
+	return c.client
+}
+
+// Close 关闭客户端
+func (c *Client) Close() {
+	c.once.Do(func() {
+		close(c.done)
+		if c.client != nil {
+			c.client.Close()
+		}
+	})
+}
+
+// Done 返回关闭信号通道
+func (c *Client) Done() <-chan struct{} {
+	return c.done
+}
+
+// Option 客户端选项
+type Option func(*Client)
+
+// WithRPCTimeout 设置 RPC 超时
+func WithRPCTimeout(d time.Duration) Option {
+	return func(c *Client) {
+		c.options = append(c.options, client.WithRPCTimeout(d))
+	}
+}
+
+// WithConnectTimeout 设置连接超时
+func WithConnectTimeout(d time.Duration) Option {
+	return func(c *Client) {
+		c.options = append(c.options, client.WithConnectTimeout(d))
+	}
+}
+
+// WithMiddleware 添加中间件
+func WithMiddleware(mw rpcinfo.Middleware) Option {
+	return func(c *Client) {
+		c.options = append(c.options, client.WithMiddleware(mw))
+	}
+}
+
+// ClientConfig 客户端配置
+type ClientConfig struct {
+	ServiceName    string        `json:"service_name" yaml:"service_name"`
+	TargetAddr     string        `json:"target_addr" yaml:"target_addr"` // 直接地址，不需要服务发现
+	RegistryType   string        `json:"registry_type" yaml:"registry_type"` // nacos/consul/etcd
+	DialTimeout    time.Duration `json:"dial_timeout" yaml:"dial_timeout"`
+	RPCTimeout     time.Duration `json:"rpc_timeout" yaml:"rpc_timeout"`
+	EnableCircuit  bool          `json:"enable_circuit" yaml:"enable_circuit"`
+	EnableLB       bool          `json:"enable_lb" yaml:"enable_lb"`
+}
+
+// NewClientFromConfig 从配置创建客户端
+func NewClientFromConfig(cfg *ClientConfig, opts ...client.Option) (*Client, error) {
+	var options []client.Option
+
+	// 服务发现
+	if cfg.RegistryType != "" && cfg.RegistryType != "static" {
+		disc, err := NewDiscovery(cfg.RegistryType, cfg.ServiceName)
+		if err != nil {
+			return nil, fmt.Errorf("new discovery: %w", err)
+		}
+		options = append(options, client.WithResolver(disc))
+	}
+
+	// 负载均衡
+	if cfg.EnableLB {
+		lb := NewRoundRobinLoadBalancer()
+		options = append(options, client.WithLoadBalancer(lb))
+	}
+
+	// 熔断器
+	if cfg.EnableCircuit {
+		cb := NewDefaultCircuitBreaker()
+		options = append(options, client.WithCircuitBreaker(cb))
+	}
+
+	// 超时配置
+	if cfg.DialTimeout > 0 {
+		options = append(options, client.WithConnectTimeout(cfg.DialTimeout))
+	}
+	if cfg.RPCTimeout > 0 {
+		options = append(options, client.WithRPCTimeout(cfg.RPCTimeout))
+	}
+
+	options = append(options, opts...)
+
+	return NewClient(cfg.ServiceName, options...), nil
+}
+
+// MustNewClientFromConfig 必须创建成功，否则 panic
+func MustNewClientFromConfig(cfg *ClientConfig, opts ...client.Option) *Client {
+	c, err := NewClientFromConfig(cfg, opts...)
+	if err != nil {
+		panic(fmt.Sprintf("create rpc client failed: %v", err))
+	}
+	return c
+}

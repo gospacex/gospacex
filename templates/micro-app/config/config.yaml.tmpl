@@ -1,0 +1,133 @@
+# ================================================
+# GPX Micro-App 配置文件模板
+# 生成项目: configs/config.yaml
+# ================================================
+# 说明: 本配置文件为本地默认配置，服务可独立启动无需依赖 Nacos 配置中心。
+#       当 registry.type 为 nacos 时，系统会优先从 Nacos 加载配置进行覆盖。
+
+# ----------------------------------------
+# 服务基础配置
+# ----------------------------------------
+server:
+  # 服务监听地址
+  host: "0.0.0.0"
+  # 服务监听端口
+  port: 8080
+
+# ----------------------------------------
+# 数据库配置
+# ----------------------------------------
+database:
+  # 数据库主机地址
+  host: "127.0.0.1"
+  # 数据库端口
+  port: 3306
+  # 数据库用户名
+  user: "root"
+  # 数据库密码
+  password: "root123"
+  # 数据库名称
+  database: "gpx_db"
+  # 最大打开连接数 (0 表示使用默认值)
+  max_open_conns: 100
+  # 最大空闲连接数
+  max_idle_conns: 10
+  # 连接最大生命周期 (单位: 秒, 0 表示使用默认值)
+  conn_max_lifetime: 3600
+
+# ----------------------------------------
+# 注册中心配置
+# ----------------------------------------
+# type 可选值: consul / etcd / nacos / none
+# none 表示不启用服务注册与发现
+registry:
+  # 注册中心类型
+  type: "none"
+  # 注册中心地址 (Type 为 none 时可留空)
+  address: ""
+
+# ----------------------------------------
+# Elasticsearch 配置
+# ----------------------------------------
+elasticsearch:
+  # ES 服务器地址列表 (支持多个)
+  addresses:
+    - "http://127.0.0.1:9200"
+  # ES 用户名 (无认证时可留空)
+  username: ""
+  # ES 密码
+  password: ""
+  # 默认索引名称
+  index: "gpx-logs"
+  # 跳过 TLS 证书验证 (生产环境建议关闭)
+  insecure_skip_verify: true
+
+# ----------------------------------------
+# 消息队列配置
+# ----------------------------------------
+# type 可选值: kafka / rabbitmq / rocketmq / none
+mq:
+  # 消息队列类型
+  type: "none"
+  # Broker 地址列表
+  brokers: []
+  # 默认 Topic
+  topic: ""
+  # 消费者组
+  group: ""
+  # 用户名 (无认证时可留空)
+  username: ""
+  # 密码
+  password: ""
+
+# ----------------------------------------
+# 链路追踪配置
+# ----------------------------------------
+# type 可选值: jaeger / zipkin / skywalking
+tracing:
+  # 是否启用链路追踪
+  enabled: false
+  # 追踪后端类型
+  type: "jaeger"
+  # Collector 端点地址
+  endpoint: "http://127.0.0.1:14268/api/traces"
+  # 服务名称 (在追踪系统中显示的服务名)
+  service_name: "gpx-service"
+
+# ----------------------------------------
+# 中间件配置
+# ----------------------------------------
+middleware:
+  # JWT 认证配置
+  jwt:
+    # JWT 签名密钥 (生产环境请使用复杂密钥)
+    secret: "your-secret-key-change-in-production"
+    # Token 过期时间 (单位: 秒)
+    expire: 86400
+  # 限流配置
+  ratelimit:
+    # 是否启用限流
+    enabled: false
+    # 每秒最大 QPS
+    qps: 1000
+  # 黑名单配置
+  blacklist:
+    # 是否启用黑名单
+    enabled: false
+
+# ----------------------------------------
+# Nacos 配置中心 (可选)
+# ----------------------------------------
+# 当 registry.type 为 nacos 时，系统会从此处读取 Nacos 连接信息
+# 并从 Nacos 加载完整配置覆盖本地配置
+nacos:
+  # Nacos 服务器地址
+  server_addr: "127.0.0.1"
+  # Nacos 端口
+  port: 8848
+  # 命名空间 ID (留空表示使用 public)
+  namespace: ""
+  # 配置分组
+  group: "DEFAULT_GROUP"
+  # 配置 data_id
+  data_id: "gpx-app-config"

@@ -1,0 +1,42 @@
+package middleware
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
+
+func TestTokenBucket_AllowWithinCapacity(t *testing.T) {
+	// 容量 10，速率 10 QPS
+	tb := NewTokenBucket(10, 10)
+
+	// 一开始桶满，10次都允许
+	for i := 0; i < 10; i++ {
+		assert.True(t, tb.Allow())
+	}
+
+	// 第 11 次不允许
+	assert.False(t, tb.Allow())
+}
+
+func TestTokenBucket_RefillOverTime(t *testing.T) {
+	tb := NewTokenBucket(2, 1) // 容量 2，每秒新增 1 个
+
+	// 用掉两个
+	assert.True(t, tb.Allow())
+	assert.True(t, tb.Allow())
+	assert.False(t, tb.Allow()) // 桶空了
+
+	// 等待大约 1 秒，应该新增一个
+	// 这里测试睡 1.1 秒
+	<-time.After(1100 * time.Millisecond)
+
+	assert.True(t, tb.Allow()) // 有一个了
+	assert.False(t, tb.Allow()) // 用完又空了
+}
+
+func TestTokenBucket_ZeroRate(t *testing.T) {
+	tb := NewTokenBucket(1, 0) // 零速率
+	assert.True(t, tb.Allow())  // 初始容量允许
+	assert.False(t, tb.Allow()) // 之后再也不会补充了
+}

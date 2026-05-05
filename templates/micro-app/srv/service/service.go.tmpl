@@ -1,0 +1,59 @@
+package service
+
+import (
+	"context"
+
+	"{{.AppName}}/common/kitexGen/{{.Module}}"
+	"{{.AppName}}/{{.SrvDirName}}/internal/model"
+	"{{.AppName}}/{{.SrvDirName}}/internal/repository"
+)
+
+type {{.UpperModule}}Service struct{ repo *repository.{{.UpperModule}}Repo }
+
+func New{{.UpperModule}}Service(repo *repository.{{.UpperModule}}Repo) *{{.UpperModule}}Service {
+	return &{{.UpperModule}}Service{repo: repo}
+}
+
+func (s *{{.UpperModule}}Service) Create(ctx context.Context, req *{{.Module}}.Create{{.UpperModule}}Req) (*{{.Module}}.Create{{.UpperModule}}Resp, error) {
+	m := &model.{{.UpperModule}}{Name: req.Name}
+	return &{{.Module}}.Create{{.UpperModule}}Resp{Id: int64(m.ID)}, s.repo.Create(ctx, m)
+}
+func (s *{{.UpperModule}}Service) Get(ctx context.Context, req *{{.Module}}.Get{{.UpperModule}}Req) (*{{.Module}}.Get{{.UpperModule}}Resp, error) {
+	m, err := s.repo.GetByID(ctx, uint(req.Id))
+	if err != nil {
+		return nil, err
+	}
+	return &{{.Module}}.Get{{.UpperModule}}Resp{Id: int64(m.ID), Name: m.Name, Status: int32(m.Status)}, nil
+}
+func (s *{{.UpperModule}}Service) List(ctx context.Context, req *{{.Module}}.List{{.UpperModule}}Req) (*{{.Module}}.List{{.UpperModule}}Resp, error) {
+	list, err := s.repo.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var items []*{{.Module}}.{{.UpperModule}}Item
+	for _, m := range list {
+		items = append(items, &{{.Module}}.{{.UpperModule}}Item{Id: int64(m.ID), Name: m.Name, Status: int32(m.Status)})
+	}
+	return &{{.Module}}.List{{.UpperModule}}Resp{Items: items}, nil
+}
+func (s *{{.UpperModule}}Service) Update(ctx context.Context, req *{{.Module}}.Update{{.UpperModule}}Req) (*{{.Module}}.Update{{.UpperModule}}Resp, error) {
+	m, err := s.repo.GetByID(ctx, uint(req.Id))
+	if err != nil {
+		return nil, err
+	}
+	if req.Name != "" {
+		m.Name = req.Name
+	}
+	return &{{.Module}}.Update{{.UpperModule}}Resp{Success: true}, s.repo.Update(ctx, m)
+}
+func (s *{{.UpperModule}}Service) Delete(ctx context.Context, req *{{.Module}}.Delete{{.UpperModule}}Req) (*{{.Module}}.Delete{{.UpperModule}}Resp, error) {
+	return &{{.Module}}.Delete{{.UpperModule}}Resp{Success: true}, s.repo.Delete(ctx, uint(req.Id))
+}
+{{if .HasJoin}}
+// {{.JoinServiceMethodName}} 获取联表数据
+func (s *{{.UpperModule}}Service) {{.JoinServiceMethodName}}(ctx context.Context, id int64) (*model.{{.JoinModelName}}, error) {
+	var m *model.{{.JoinModelName}}
+	m, _ = s.repo.{{.JoinRepoMethodName}}(ctx, id)
+	return m, nil
+}
+{{end}}

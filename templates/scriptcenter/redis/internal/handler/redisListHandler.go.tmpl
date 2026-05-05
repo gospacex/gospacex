@@ -1,0 +1,51 @@
+package handler
+
+import (
+	"context"
+
+	"github.com/redis/go-redis/v9"
+)
+
+type ListHandler struct {
+	client *redis.Client
+}
+
+func NewListHandler(client *redis.Client) *ListHandler {
+	return &ListHandler{client: client}
+}
+
+func (h *ListHandler) LPush(ctx context.Context, key string, values ...interface{}) error {
+	return h.client.LPush(ctx, key, values...).Err()
+}
+
+func (h *ListHandler) RPush(ctx context.Context, key string, values ...interface{}) error {
+	return h.client.RPush(ctx, key, values...).Err()
+}
+
+func (h *ListHandler) LPop(ctx context.Context, key string) (string, error) {
+	return h.client.LPop(ctx, key).Result()
+}
+
+func (h *ListHandler) RPop(ctx context.Context, key string) (string, error) {
+	return h.client.RPop(ctx, key).Result()
+}
+
+func (h *ListHandler) LRange(ctx context.Context, key string, start, stop int64) ([]string, error) {
+	return h.client.LRange(ctx, key, start, stop).Result()
+}
+
+func (h *ListHandler) LLen(ctx context.Context, key string) (int64, error) {
+	return h.client.LLen(ctx, key).Result()
+}
+
+func (h *ListHandler) LRem(ctx context.Context, key string, count int64, value string) error {
+	return h.client.LRem(ctx, key, count, value).Err()
+}
+
+func (h *ListHandler) LSet(ctx context.Context, key string, index int64, value string) error {
+	return h.client.LSet(ctx, key, index, value).Err()
+}
+
+func (h *ListHandler) LTrim(ctx context.Context, key string, start, stop int64) error {
+	return h.client.LTrim(ctx, key, start, stop).Err()
+}

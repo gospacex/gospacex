@@ -1,0 +1,100 @@
+package valueobject
+
+import (
+	"testing"
+)
+
+func TestNewMoney(t *testing.T) {
+	tests := []struct {
+		name     string
+		amount   int64
+		currency string
+		wantErr  bool
+	}{
+		{"valid", 100, "CNY", false},
+		{"negative amount", -100, "CNY", true},
+		{"empty currency", 100, "", true},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			money, err := NewMoney(tt.amount, tt.currency)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("NewMoney() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err == nil && money == nil {
+				t.Fatal("money should not be nil")
+			}
+		})
+	}
+}
+
+func TestMoney_Add(t *testing.T) {
+	m1, _ := NewMoney(100, "CNY")
+	m2, _ := NewMoney(50, "CNY")
+	
+	result, err := m1.Add(m2)
+	if err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+	
+	if result.Amount() != 150 {
+		t.Errorf("Amount = %v, want 150", result.Amount())
+	}
+	
+	if result.Currency() != "CNY" {
+		t.Errorf("Currency = %v, want CNY", result.Currency())
+	}
+}
+
+func TestMoney_Add_CurrencyMismatch(t *testing.T) {
+	m1, _ := NewMoney(100, "CNY")
+	m2, _ := NewMoney(50, "USD")
+	
+	_, err := m1.Add(m2)
+	if err == nil {
+		t.Error("Add should fail for different currencies")
+	}
+}
+
+func TestMoney_Subtract(t *testing.T) {
+	m1, _ := NewMoney(100, "CNY")
+	m2, _ := NewMoney(50, "CNY")
+	
+	result, err := m1.Subtract(m2)
+	if err != nil {
+		t.Fatalf("Subtract failed: %v", err)
+	}
+	
+	if result.Amount() != 50 {
+		t.Errorf("Amount = %v, want 50", result.Amount())
+	}
+}
+
+func TestMoney_Equals(t *testing.T) {
+	m1, _ := NewMoney(100, "CNY")
+	m2, _ := NewMoney(100, "CNY")
+	m3, _ := NewMoney(50, "CNY")
+	
+	if !m1.Equals(m2) {
+		t.Error("m1 should equal m2")
+	}
+	
+	if m1.Equals(m3) {
+		t.Error("m1 should not equal m3")
+	}
+}
+
+func TestMoney_GreaterThan(t *testing.T) {
+	m1, _ := NewMoney(100, "CNY")
+	m2, _ := NewMoney(50, "CNY")
+	
+	greater, err := m1.GreaterThan(m2)
+	if err != nil {
+		t.Fatalf("GreaterThan failed: %v", err)
+	}
+	
+	if !greater {
+		t.Error("m1 should be greater than m2")
+	}
+}

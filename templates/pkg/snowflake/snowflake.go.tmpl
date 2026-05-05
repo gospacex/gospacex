@@ -1,0 +1,170 @@
+package snowflake
+
+import (
+	"errors"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/bwmarrin/snowflake"
+)
+
+// Config Snowflake 配置
+type Config struct {
+	NodeID int64     // 节点ID (0-1023)
+	Epoch  time.Time // 自定义起始时间（可选，默认为 Twitter Epoch: 2010-11-04）
+}
+
+// Generator Snowflake ID 生成器
+type Generator struct {
+	node *snowflake.Node
+	mu   sync.RWMutex
+}
+
+// NewGenerator 创建一个新的 ID 生成器
+func NewGenerator(cfg Config) (*Generator, error) {
+	if cfg.NodeID < 0 || cfg.NodeID > 1023 {
+		return nil, fmt.Errorf("node ID must be between 0 and 1023, got %d", cfg.NodeID)
+	}
+
+	// Epoch 不能是未来时间
+	if cfg.Epoch.After(time.Now()) {
+		return nil, errors.New("epoch cannot be in the future")
+	}
+
+	// 如果提供了自定义 Epoch，则设置全局 Epoch
+	if !cfg.Epoch.IsZero() {
+		epochMs := cfg.Epoch.UnixNano() / int64(time.Millisecond)
+		snowflake.Epoch = epochMs
+	} else {
+		// 默认使用 Twitter Epoch
+		snowflake.Epoch = 1288834974657
+	}
+
+	node, err := snowflake.NewNode(cfg.NodeID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create snowflake node: %w", err)
+	}
+
+	return &Generator{node: node}, nil
+}
+
+// Generate 生成一个新的 Snowflake ID（int64）
+func (g *Generator) Generate() (int64, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	if g.node == nil {
+		return 0, fmt.Errorf("snowflake node is not initialized")
+	}
+	return g.node.Generate().Int64(), nil
+}
+
+// GenerateString 生成字符串格式的 Snowflake ID
+func (g *Generator) GenerateString() (string, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	if g.node == nil {
+		return "", fmt.Errorf("snowflake node is not initialized")
+	}
+	return g.node.Generate().String(), nil
+}
+
+// GenerateBase64 生成 Base64 格式的 Snowflake ID
+func (g *Generator) GenerateBase64() (string, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	if g.node == nil {
+		return "", fmt.Errorf("snowflake node is not initialized")
+	}
+	return g.node.Generate().Base64(), nil
+}
+
+// MustGenerate 生成 ID，失败则 panic
+func (g *Generator) MustGenerate() int64 {
+	id, err := g.Generate()
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
+// MustGenerateString 生成字符串 ID，失败则 panic
+func (g *Generator) MustGenerateString() string {
+	id, err := g.GenerateString()
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
+// GetNodeID 获取当前节点 ID
+func (g *Generator) GetNodeID() int64 {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	if g.node == nil {
+		return -1
+	}
+	return g.node.Generate().Node()
+}
+
+// SetNodeID 动态更新节点 ID（会重建内部节点）
+func (g *Generator) SetNodeID(nodeID int64) error {
+	if nodeID < 0 || nodeID > 1023 {
+		return fmt.Errorf("node ID must be between 0 and 1023, got %d", nodeID)
+	}
+
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	node, err := snowflake.NewNode(nodeID)
+	if err != nil {
+		return fmt.Errorf("failed to create snowflake node: %w", err)
+	}
+	g.node = node
+	return nil
+}
+
+// DefaultGenerator 默认的全局生成器实例
+var (
+	DefaultGenerator *Generator
+	defaultOnce      sync.Once
+	defaultErr       error
+)
+
+// InitDefault 初始化默认生成器（线程安全，仅执行一次）
+func InitDefault(nodeID int64) error {
+	defaultOnce.Do(func() {
+		DefaultGenerator, defaultErr = NewGenerator(Config{NodeID: nodeID})
+	})
+	return defaultErr
+}
+
+// GenerateDefault 使用默认生成器生成 ID
+func GenerateDefault() (int64, error) {
+	if DefaultGenerator == nil {
+		if err := InitDefault(1); err != nil {
+			return 0, err
+		}
+	}
+	return DefaultGenerator.Generate()
+}
+
+// ParseTime 从 Snowflake ID 中解析出生成时间
+// 有效的 Snowflake ID 必须 >= 2^22（~4百万）
+func ParseTime(id int64) (time.Time, error) {
+	if id < (1 << 22) {
+		return time.Time{}, fmt.Errorf("invalid snowflake id: %d", id)
+	}
+	timestamp := id >> 22
+	epoch := GetEpoch()
+	return epoch.Add(time.Duration(timestamp) * time.Millisecond), nil
+}
+
+// GetEpoch 返回当前使用的 Snowflake 纪元时间
+func GetEpoch() time.Time {
+	return time.Unix(0, snowflake.Epoch*int64(time.Millisecond))
+}

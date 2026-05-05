@@ -1,0 +1,52 @@
+package database
+
+import (
+	"fmt"
+	"time"
+
+	"{{.ProjectName}}/pkg/config"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+)
+
+var MySQLDB *gorm.DB
+
+// InitMySQL initializes MySQL connection with connection pooling
+func InitMySQL(cfg config.Config) error {
+	var dsn string
+
+	if cfg.MySQL.Host != "" {
+		fmt.Printf("Using MySQL config: host=%s, port=%d, database=%s\n", cfg.MySQL.Host, cfg.MySQL.Port, cfg.MySQL.Database)
+		dsn = cfg.MySQL.GetDSN()
+	} else {
+		return fmt.Errorf("MySQL configuration is required")
+	}
+
+	var gormLogger logger.Interface
+	if cfg.App.Environment == "development" {
+		gormLogger = logger.Default.LogMode(logger.Info)
+	} else {
+		gormLogger = logger.Default.LogMode(logger.Silent)
+	}
+
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
+		Logger: gormLogger,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to open MySQL connection: %w", err)
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("failed to get underlying dB object: %w", err)
+	}
+
+	// Set connection pool
+	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetMaxOpenConns(100)
+	sqlDB.SetConnMaxLifetime(time.Hour)
+
+	MySQLDB = db
+	return nil
+}

@@ -1,0 +1,111 @@
+package main
+
+import (
+	"context"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"{{.GoModuleName}}/cmd/bff/handler"
+	"{{.GoModuleName}}/pkg/config"
+	"{{.GoModuleName}}/pkg/logger"
+	"{{.GoModuleName}}/pkg/rpc"
+
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/app/server"
+	"github.com/cloudwego/hertz/pkg/common/utils"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
+)
+
+func main() {
+	// 加载配置
+	cfg := config.Get()
+
+	// 初始化日志
+	log := logger.NewLogger(&cfg.Log)
+	defer log.Sync()
+
+	// 初始化所有 RPC 客户端（调用后端微服务）
+	if err := rpc.InitAllClients(); err != nil {
+		log.Fatalf("Failed to init RPC clients: %v", err)
+	}
+
+	// 初始化 BFF 聚合处理器
+	bffHandler := handler.NewBFFHandler()
+
+	// 创建 Hertz 服务器
+	hzn := server.Default(
+		server.WithHostPorts(getAddr(cfg)),
+	)
+
+	// 注册中间件
+	hzn.Use(
+		logger.HertzLogger(),
+	// 可以添加会话认证、CORS 等
+	)
+
+	// 注册路由
+	registerRoutes(hzn, bffHandler)
+
+	// 启动服务
+	go func() {
+		hzn.Start()
+	}()
+
+	// 等待退出信号
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Info("Shutting down BFF server...")
+
+	// 优雅关闭
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
+	defer cancel()
+
+	if err := hzn.Shutdown(ctx); err != nil {
+		log.Fatalf("BFF server forced to shutdown: %v", err)
+	}
+
+	// 关闭 RPC 客户端
+	rpc.CloseAllClients()
+
+	log.Info("BFF exited")
+}
+
+func getAddr(cfg *config.Config) string {
+	// BFF 默认使用 8081 端口
+	port := 8081
+	if cfg.BFF != nil && cfg.BFF.Port != 0 {
+		port = cfg.BFF.Port
+	}
+	return "0.0.0.0:" + itoa(port)
+}
+
+func itoa(i int) string {
+	if i == 0 {
+		return "0"
+	}
+	res := ""
+	for i > 0 {
+		res = string(rune(i%10+'0')) + res
+		i /= 10
+	}
+	return res
+}
+
+func registerRoutes(hzn *server.Hertz, h *handler.BFFHandler) {
+	// 健康检查
+	hzn.GET("/health", func(c context.Context, ctx *app.RequestContext) {
+		ctx.JSON(consts.StatusOK, utils.H{
+			"status": "ok",
+		})
+	})
+
+	// BFF 路由分组
+	v1 := hzn.Group("/bff/v1")
+	{
+		h.Register(v1)
+	}
+}

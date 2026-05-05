@@ -1,0 +1,43 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"{{.ProjectName}}/internal/kv"
+)
+
+// EtcdService etcd service layer for KV operations
+type EtcdService struct {
+	kv *kv.EtcdKV
+}
+
+// NewEtcdService creates a new etcd service instance
+func NewEtcdService() *EtcdService {
+	return &EtcdService{kv: kv.NewEtcdKV()}
+}
+
+// RegisterService registers a service with etcd
+func (s *EtcdService) RegisterService(ctx context.Context, serviceName, endpoint string, ttlSeconds int64) error {
+	key := fmt.Sprintf("/services/%s/%s", serviceName, endpoint)
+	// 这里可以存储 JSON 格式的服务信息
+	serviceInfo := map[string]string{
+		"endpoint": endpoint,
+		"status":   "healthy",
+	}
+	data, _ := json.Marshal(serviceInfo)
+	return s.kv.Put(ctx, key, string(data), ttlSeconds)
+}
+
+// UnregisterService removes a service from etcd
+func (s *EtcdService) UnregisterService(ctx context.Context, serviceName, endpoint string) error {
+	key := fmt.Sprintf("/services/%s/%s", serviceName, endpoint)
+	return s.kv.Delete(ctx, key)
+}
+
+// GetService gets service information by key
+func (s *EtcdService) GetService(ctx context.Context, serviceName string) ([]string, error) {
+	// 简单实现，实际应该使用 discovery 包的 Watch 功能
+	return []string{}, nil
+}

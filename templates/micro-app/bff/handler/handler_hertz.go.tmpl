@@ -1,0 +1,164 @@
+package handler
+
+import (
+	"context"
+	"time"
+
+	"{{.AppName}}/pkg/logger"
+	"{{.AppName}}/{{.BffDirName}}/internal/rpcClient"
+	pb "{{.AppName}}/common/kitexGen/{{.ProtoImportPath}}"
+
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
+)
+
+type {{.UpperModule}}Handler struct {
+	client *rpcclient.{{.UpperModule}}Client
+}
+
+func New{{.UpperModule}}Handler() *{{.UpperModule}}Handler {
+	cli, err := rpcclient.New{{.UpperModule}}Client("127.0.0.1:{{.SrvPort}}")
+	if err != nil {
+		logger.Business.Errorw("failed to create {{.LowerModule}} client", "error", err.Error())
+		panic("failed to create {{.LowerModule}} client: " + err.Error())
+	}
+	logger.Business.Infow("{{.UpperModule}}Handler initialized", "addr", "127.0.0.1:{{.SrvPort}}")
+	return &{{.UpperModule}}Handler{client: cli}
+}
+
+func (h *{{.UpperModule}}Handler) Create(ctx context.Context, c *app.RequestContext) {
+	start := time.Now()
+	requestID := c.Response.Header.Get("X-Request-ID")
+
+	logger.Access.Infow("create request start", "method", string(c.Request.Method), "path", string(c.Request.URI().Path()), "requestID", requestID)
+	logger.Business.Infow("create business start", "resource", "{{.LowerModule}}", "requestID", requestID)
+
+	var req pb.Create{{.UpperModule}}Request
+	if err := c.Bind(&req); err != nil {
+		logger.Access.Errorw("create request bind failed", "error", err.Error(), "requestID", requestID)
+		c.JSON(consts.StatusBadRequest, map[string]interface{}{"error": err.Error()})
+		return
+	}
+
+	resp, err := h.client.Create(ctx, &req)
+	if err != nil {
+		logger.Access.Errorw("create RPC failed", "error", err.Error(), "requestID", requestID)
+		logger.Business.Errorw("create {{.LowerModule}} failed", "error", err.Error(), "requestID", requestID)
+		logger.Audit.Errorw("audit: create {{.LowerModule}} failed", "error", err.Error(), "requestID", requestID)
+		c.JSON(consts.StatusInternalServerError, map[string]interface{}{"error": err.Error()})
+		return
+	}
+
+	logger.Access.Infow("create request success", "requestID", requestID, "duration", time.Since(start).String())
+	logger.Business.Infow("create {{.LowerModule}} success", "id", resp.Id, "requestID", requestID, "duration", time.Since(start).String())
+	logger.Audit.Infow("audit: create {{.LowerModule}} success", "id", resp.Id, "requestID", requestID)
+
+	c.JSON(consts.StatusOK, resp)
+}
+
+func (h *{{.UpperModule}}Handler) List(ctx context.Context, c *app.RequestContext) {
+	start := time.Now()
+	requestID := c.Response.Header.Get("X-Request-ID")
+
+	logger.Access.Infow("list request start", "method", string(c.Request.Method), "path", string(c.Request.URI().Path()), "requestID", requestID)
+	logger.Business.Infow("list business start", "resource", "{{.LowerModule}}", "requestID", requestID)
+
+	var req pb.List{{.UpperModule}}Request
+	if err := c.Bind(&req); err != nil {
+		logger.Access.Errorw("list request bind failed", "error", err.Error(), "requestID", requestID)
+		c.JSON(consts.StatusBadRequest, map[string]interface{}{"error": err.Error()})
+		return
+	}
+
+	resp, err := h.client.List(ctx, &req)
+	if err != nil {
+		logger.Access.Errorw("list RPC failed", "error", err.Error(), "requestID", requestID)
+		logger.Business.Errorw("list {{.LowerModule}} failed", "error", err.Error(), "requestID", requestID)
+		c.JSON(consts.StatusInternalServerError, map[string]interface{}{"error": err.Error()})
+		return
+	}
+
+	logger.Access.Infow("list request success", "requestID", requestID, "count", len(resp.Items), "duration", time.Since(start).String())
+	logger.Business.Infow("list {{.LowerModule}} success", "count", len(resp.Items), "requestID", requestID, "duration", time.Since(start).String())
+
+	c.JSON(consts.StatusOK, resp)
+}
+
+func (h *{{.UpperModule}}Handler) Get(ctx context.Context, c *app.RequestContext) {
+	start := time.Now()
+	requestID := c.Response.Header.Get("X-Request-ID")
+	id := c.Param("id")
+
+	logger.Access.Infow("get request start", "method", string(c.Request.Method), "path", string(c.Request.URI().Path()), "requestID", requestID)
+	logger.Business.Infow("get business start", "resource", "{{.LowerModule}}", "id", id, "requestID", requestID)
+
+	req := &pb.Get{{.UpperModule}}Request{Id: id}
+	resp, err := h.client.Get(ctx, req)
+	if err != nil {
+		logger.Access.Errorw("get RPC failed", "error", err.Error(), "requestID", requestID)
+		logger.Business.Errorw("get {{.LowerModule}} failed", "id", id, "error", err.Error(), "requestID", requestID)
+		c.JSON(consts.StatusInternalServerError, map[string]interface{}{"error": err.Error()})
+		return
+	}
+
+	logger.Access.Infow("get request success", "id", id, "requestID", requestID, "duration", time.Since(start).String())
+	logger.Business.Infow("get {{.LowerModule}} success", "id", id, "requestID", requestID, "duration", time.Since(start).String())
+
+	c.JSON(consts.StatusOK, resp)
+}
+
+func (h *{{.UpperModule}}Handler) Update(ctx context.Context, c *app.RequestContext) {
+	start := time.Now()
+	requestID := c.Response.Header.Get("X-Request-ID")
+	id := c.Param("id")
+
+	logger.Access.Infow("update request start", "method", string(c.Request.Method), "path", string(c.Request.URI().Path()), "requestID", requestID)
+	logger.Business.Infow("update business start", "resource", "{{.LowerModule}}", "id", id, "requestID", requestID)
+
+	var req pb.Update{{.UpperModule}}Request
+	if err := c.Bind(&req); err != nil {
+		logger.Access.Errorw("update request bind failed", "error", err.Error(), "requestID", requestID)
+		c.JSON(consts.StatusBadRequest, map[string]interface{}{"error": err.Error()})
+		return
+	}
+
+	resp, err := h.client.Update(ctx, &req)
+	if err != nil {
+		logger.Access.Errorw("update RPC failed", "error", err.Error(), "requestID", requestID)
+		logger.Business.Errorw("update {{.LowerModule}} failed", "id", id, "error", err.Error(), "requestID", requestID)
+		logger.Audit.Errorw("audit: update {{.LowerModule}} failed", "id", id, "error", err.Error(), "requestID", requestID)
+		c.JSON(consts.StatusInternalServerError, map[string]interface{}{"error": err.Error()})
+		return
+	}
+
+	logger.Access.Infow("update request success", "id", id, "requestID", requestID, "duration", time.Since(start).String())
+	logger.Business.Infow("update {{.LowerModule}} success", "id", id, "requestID", requestID, "duration", time.Since(start).String())
+	logger.Audit.Infow("audit: update {{.LowerModule}} success", "id", id, "requestID", requestID)
+
+	c.JSON(consts.StatusOK, resp)
+}
+
+func (h *{{.UpperModule}}Handler) Delete(ctx context.Context, c *app.RequestContext) {
+	start := time.Now()
+	requestID := c.Response.Header.Get("X-Request-ID")
+	id := c.Param("id")
+
+	logger.Access.Infow("delete request start", "method", string(c.Request.Method), "path", string(c.Request.URI().Path()), "requestID", requestID)
+	logger.Business.Infow("delete business start", "resource", "{{.LowerModule}}", "id", id, "requestID", requestID)
+
+	req := &pb.Delete{{.UpperModule}}Request{Id: id}
+	resp, err := h.client.Delete(ctx, req)
+	if err != nil {
+		logger.Access.Errorw("delete RPC failed", "error", err.Error(), "requestID", requestID)
+		logger.Business.Errorw("delete {{.LowerModule}} failed", "id", id, "error", err.Error(), "requestID", requestID)
+		logger.Audit.Errorw("audit: delete {{.LowerModule}} failed", "id", id, "error", err.Error(), "requestID", requestID)
+		c.JSON(consts.StatusInternalServerError, map[string]interface{}{"error": err.Error()})
+		return
+	}
+
+	logger.Access.Infow("delete request success", "id", id, "requestID", requestID, "duration", time.Since(start).String())
+	logger.Business.Infow("delete {{.LowerModule}} success", "id", id, "requestID", requestID, "duration", time.Since(start).String())
+	logger.Audit.Infow("audit: delete {{.LowerModule}} success", "id", id, "requestID", requestID)
+
+	c.JSON(consts.StatusOK, resp)
+}

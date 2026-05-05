@@ -1,0 +1,40 @@
+package logger
+
+import (
+	"context"
+
+	"go.uber.org/zap"
+	"go.opentelemetry.io/otel/trace"
+)
+
+type ContextKey string
+
+const (
+	loggerKey ContextKey = "logger"
+	traceIDKey ContextKey = "trace_id"
+)
+
+func WithContext(ctx context.Context, logger *zap.Logger) context.Context {
+	return context.WithValue(ctx, loggerKey, logger)
+}
+
+func FromContext(ctx context.Context) *zap.Logger {
+	if logger, ok := ctx.Value(loggerKey).(*zap.Logger); ok {
+		return logger
+	}
+	return zap.NewNop()
+}
+
+func WithTraceID(ctx context.Context, traceID string) context.Context {
+	return context.WithValue(ctx, traceIDKey, traceID)
+}
+
+func getTraceID(ctx context.Context) string {
+	if span := trace.SpanContextFromContext(ctx); span.IsValid() {
+		return span.TraceID().String()
+	}
+	if traceID, ok := ctx.Value(traceIDKey).(string); ok {
+		return traceID
+	}
+	return ""
+}

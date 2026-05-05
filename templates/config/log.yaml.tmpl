@@ -1,0 +1,16 @@
+env: {{.Env}}
+level: info
+sampling:
+  initial: 100
+  thereafter: 200
+  tick: 1s
+rotation:
+  enabled: true
+  max_age_days: 7
+output:
+  file: ./logs/app.log
+  stdout: true
+prometheus:
+  enabled: true
+  namespace: app
+  subsystem: log

@@ -1,0 +1,70 @@
+package rpcclient
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"{{.ModuleName}}/common/kitexGen/{{.ProtoImportPath}}"
+
+	clientv3 "go.etcd.io/etcd/client/v3"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+)
+
+type {{.UpperName}}Client struct {
+	conn *grpc.ClientConn
+	client {{.ProtoImportPath}}.{{.UpperName}}ServiceClient
+}
+
+func New{{.UpperName}}Client() (*{{.UpperName}}Client, error) {
+	endpoints := []string{"127.0.0.1:2379"}
+	registryAddr := "{{.RegistryAddr}}"
+	if registryAddr != "" {
+		endpoints = []string{registryAddr}
+	}
+	etcdClient, err := clientv3.New(clientv3.Config{
+		Endpoints:   endpoints,
+		DialTimeout: 5 * time.Second,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("connect to etcd failed: %w", err)
+	}
+	ctx := context.Background()
+	resp, err := etcdClient.Get(ctx, "/services/{{.AppName}}/", clientv3.WithPrefix())
+	if err != nil || len(resp.Kvs) == 0 {
+		return nil, fmt.Errorf("service %s not found in etcd", "{{.AppName}}")
+	}
+	srvAddr := string(resp.Kvs[0].Value)
+
+	conn, err := grpc.Dial(srvAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, err
+	}
+	return &{{.UpperName}}Client{conn: conn, client: {{.ProtoImportPath}}.New{{.UpperName}}ServiceClient(conn)}, nil
+}
+
+func (c *{{.UpperName}}Client) Create(ctx context.Context, req *{{.ProtoImportPath}}.Create{{.UpperName}}Req) (*{{.ProtoImportPath}}.Create{{.UpperName}}Resp, error) {
+	return c.client.Create(ctx, req)
+}
+
+func (c *{{.UpperName}}Client) Get(ctx context.Context, req *{{.ProtoImportPath}}.Get{{.UpperName}}Req) (*{{.ProtoImportPath}}.Get{{.UpperName}}Resp, error) {
+	return c.client.Get(ctx, req)
+}
+
+func (c *{{.UpperName}}Client) List(ctx context.Context, req *{{.ProtoImportPath}}.List{{.UpperName}}Req) (*{{.ProtoImportPath}}.List{{.UpperName}}Resp, error) {
+	return c.client.List(ctx, req)
+}
+
+func (c *{{.UpperName}}Client) Update(ctx context.Context, req *{{.ProtoImportPath}}.Update{{.UpperName}}Req) (*{{.ProtoImportPath}}.Update{{.UpperName}}Resp, error) {
+	return c.client.Update(ctx, req)
+}
+{{range .JoinTables}}
+func (c *{{.UpperName}}Client) GetWith{{.RightUpper}}(ctx context.Context, req *{{.ProtoImportPath}}.Get{{.UpperName}}With{{.RightUpper}}Req) (*{{.ProtoImportPath}}.Get{{.UpperName}}With{{.RightUpper}}Resp, error) {
+	return c.client.GetWith{{.RightUpper}}(ctx, req)
+}
+{{end}}
+
+func (c *{{.UpperName}}Client) Delete(ctx context.Context, req *{{.ProtoImportPath}}.Delete{{.UpperName}}Req) (*{{.ProtoImportPath}}.Delete{{.UpperName}}Resp, error) {
+	return c.client.Delete(ctx, req)
+}

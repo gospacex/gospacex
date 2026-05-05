@@ -1,0 +1,50 @@
+package interceptor
+
+import (
+	"context"
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+type retryConfig struct {
+	maxAttempts int
+	backoff    time.Duration
+}
+
+func (i *Interceptor) retryInterceptor() grpc.UnaryServerInterceptor {
+	cfg := &retryConfig{maxAttempts: 3, backoff: 100 * time.Millisecond}
+
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		var lastErr error
+		for attempt := 0; attempt < cfg.maxAttempts; attempt++ {
+			if attempt > 0 {
+				time.Sleep(cfg.backoff * time.Duration(attempt))
+			}
+			resp, err := handler(ctx, req)
+			if err == nil {
+				return resp, nil
+			}
+			if !isRetryable(err) {
+				return nil, err
+			}
+			lastErr = err
+		}
+		return nil, lastErr
+	}
+}
+
+func isRetryable(err error) bool {
+	st, ok := status.FromError(err)
+	if !ok {
+		return false
+	}
+	switch st.Code() {
+	case codes.Unavailable, codes.DeadlineExceeded, codes.Aborted:
+		return true
+	default:
+		return false
+	}
+}

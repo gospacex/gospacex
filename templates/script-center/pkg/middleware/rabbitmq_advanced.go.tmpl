@@ -1,0 +1,223 @@
+package middleware
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/rabbitmq/amqp091-go"
+)
+
+// ==================== 延迟队列 ====================
+
+// DelayedRabbitMQConfig RabbitMQ 延迟队列配置
+type DelayedRabbitMQConfig struct {
+	Enabled       bool   `yaml:"enabled" json:"enabled"`
+	URL           string `yaml:"url" json:"url"`
+	Queue         string `yaml:"queue" json:"queue"`
+	DelayedQueue  string `yaml:"delayed_queue" json:"delayed_queue"`
+	Exchange      string `yaml:"exchange" json:"exchange"`
+	DelayedExchange string `yaml:"delayed_exchange" json:"delayed_exchange"`
+	TTL           int64  `yaml:"ttl" json:"ttl"` // 毫秒
+}
+
+// DelayedRabbitMQClient 延迟队列客户端
+// 使用 TTL + 死信队列实现延迟投递
+func NewDelayedRabbitMQClient(cfg DelayedRabbitMQConfig) (*RabbitMQClient, error) {
+	conn, err := amqp091.Dial(cfg.URL)
+	if err != nil {
+		return nil, err
+	}
+
+	ch, err := conn.Channel()
+	if err != nil {
+		return nil, err
+	}
+
+	// 声明死信交换机
+	if err := ch.ExchangeDeclare(
+		cfg.DelayedExchange,
+		"direct",
+		true, false, false, false, nil,
+	); err != nil {
+		return nil, err
+	}
+
+	// 声明延迟队列（设置 TTL 和死信）
+	args := amqp091.Table{
+		"x-message-ttl":             cfg.TTL,
+		"x-dead-letter-exchange":    cfg.Exchange,
+		"x-dead-letter-routing-key": cfg.Queue,
+	}
+
+	if _, err := ch.QueueDeclare(
+		cfg.DelayedQueue,
+		true, false, false, false, args,
+	); err != nil {
+		return nil, err
+	}
+
+	// 绑定延迟队列到死信交换机
+	if err := ch.QueueBind(
+		cfg.DelayedQueue, "", cfg.DelayedExchange, false, nil,
+	); err != nil {
+		return nil, err
+	}
+
+	return &RabbitMQClient{
+		conn:    conn,
+		channel: ch,
+	}, nil
+}
+
+// SendDelayedMessage 发送延迟消息
+func (c *RabbitMQClient) SendDelayedMessage(cfg DelayedRabbitMQConfig, body []byte) error {
+	return c.channel.PublishWithContext(
+		context.Background(),
+		cfg.DelayedExchange,
+		"",
+		false, false,
+		amqp091.Publishing{
+			ContentType: "application/json",
+			Body:        body,
+			Timestamp:   time.Now(),
+		},
+	)
+}
+
+// ==================== 发布/订阅 ====================
+
+// PubSubRabbitMQClient 发布订阅客户端
+type PubSubRabbitMQClient struct {
+	conn     *amqp091.Connection
+	channel  *amqp091.Channel
+	exchange string
+}
+
+// NewPubSubRabbitMQClient 创建发布订阅客户端
+// exchangeType: "fanout"(广播), "topic"(主题订阅)
+func NewPubSubRabbitMQClient(url, exchange, exchangeType string) (*PubSubRabbitMQClient, error) {
+	conn, err := amqp091.Dial(url)
+	if err != nil {
+		return nil, err
+	}
+
+	ch, err := conn.Channel()
+	if err != nil {
+		return nil, err
+	}
+
+	// 声明交换机
+	if err := ch.ExchangeDeclare(
+		exchange,
+		exchangeType,
+		true, false, false, false, nil,
+	); err != nil {
+		return nil, err
+	}
+
+	return &PubSubRabbitMQClient{
+		conn:     conn,
+		channel:  ch,
+		exchange: exchange,
+	}, nil
+}
+
+// Publish 发布消息到交换机
+func (c *PubSubRabbitMQClient) Publish(ctx context.Context, routingKey string, body []byte) error {
+	return c.channel.PublishWithContext(
+		ctx,
+		c.exchange,
+		routingKey,
+		false, false,
+		amqp091.Publishing{
+			ContentType: "application/json",
+			Body:        body,
+			Timestamp:   time.Now(),
+		},
+	)
+}
+
+// Subscribe 订阅消息
+// routingKey: topic 模式下使用，fanout 模式可为空
+func (c *PubSubRabbitMQClient) Subscribe(routingKey string) (amqp091.Delivery, error) {
+	// 每个订阅者创建独立临时队列
+	q, err := c.channel.QueueDeclare(
+		"",    // 随机队列名
+		false, // non-durable
+		true,  // auto-delete
+		true,  // exclusive
+		false, nil,
+	)
+	if err != nil {
+		return amqp091.Delivery{}, err
+	}
+
+	// 绑定队列到交换机
+	if err := c.channel.QueueBind(
+		q.Name, routingKey, c.exchange, false, nil,
+	); err != nil {
+		return amqp091.Delivery{}, err
+	}
+
+	msgs, err := c.channel.Consume(q.Name, "", false, true, false, false, nil)
+	if err != nil {
+		return amqp091.Delivery{}, err
+	}
+
+	return <-msgs, nil
+}
+
+// ==================== 顺序消费 ====================
+
+// OrderedRabbitMQClient 顺序消费客户端
+// 单队列单消费者串行消费保证顺序
+func NewOrderedRabbitMQClient(url, queue string) (*RabbitMQClient, error) {
+	conn, err := amqp091.Dial(url)
+	if err != nil {
+		return nil, err
+	}
+
+	ch, err := conn.Channel()
+	if err != nil {
+		return nil, err
+	}
+
+	// 设置 QoS=1 实现单条消费
+	if err := ch.Qos(1, 0, false); err != nil {
+		return nil, err
+	}
+
+	// 声明队列
+	q, err := ch.QueueDeclare(
+		queue, true, false, false, false, nil,
+	); err != nil {
+		return nil, err
+	}
+
+	return &RabbitMQClient{
+		conn:    conn,
+		channel: ch,
+		queue:   q,
+	}, nil
+}
+
+// ConsumeOrdered 顺序消费消息
+func (c *RabbitMQClient) ConsumeOrdered(handler func([]byte) error) error {
+	msgs, err := c.channel.Consume(
+		c.queue.Name, "", false, false, false, false, nil,
+	)
+	if err != nil {
+		return err
+	}
+
+	for msg := range msgs {
+		if err := handler(msg.Body); err != nil {
+			return err
+		}
+		// 确认消费后投递下一条
+		msg.Ack(false)
+	}
+
+	return nil
+}

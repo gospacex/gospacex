@@ -1,0 +1,16 @@
+{{ if .Env }}
+# 环境: {{ .Env }}
+{{ end }}
+
+server:
+  host: {{ .Server.Host | default "0.0.0.0" }}
+  port: {{ .Server.Port | default 8888 }}
+
+redis:
+  host: {{ .Redis.Host | default "localhost" }}
+  port: {{ .Redis.Port | default 6379 }}
+  password: {{ .Redis.Password | default "" }}
+  db: {{ .Redis.DB | default 0 }}
+
+logger:
+  level: {{ .Logger.Level | default "info" }}

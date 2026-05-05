@@ -1,0 +1,267 @@
+package config_test
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/{{.ProjectName}}/pkg/config"
+)
+
+// TestScriptCenterConfig_Validation tests script center config validation
+func TestScriptCenterConfig_Validation(t *testing.T) {
+	tests := []struct {
+		name    string
+		yamlCfg string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid_minimal_config",
+			yamlCfg: `
+server:
+  port: 8080
+  mode: debug
+mysql:
+  host: localhost
+  port: 3306
+  user: root
+  password: root
+  dbname: script
+`,
+			wantErr: false,
+		},
+		{
+			name: "valid_full_config",
+			yamlCfg: `
+server:
+  port: 8080
+  mode: release
+mysql:
+  host: localhost
+  port: 3306
+  user: root
+  password: secret
+  dbname: script
+  max_idle_conns: 10
+  max_open_conns: 100
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+  pool_size: 100
+log:
+  level: info
+  format: json
+scheduler:
+  enabled: true
+  location: Local
+  max_concurrent: 10
+`,
+			wantErr: false,
+		},
+		{
+			name: "valid_with_optional_databases",
+			yamlCfg: `
+server:
+  port: 8080
+mysql:
+  host: localhost
+  port: 3306
+  user: root
+  password: root
+  dbname: script
+postgresql:
+  enabled: true
+  host: localhost
+  port: 5432
+  user: postgres
+  password: secret
+  dbname: script
+elasticsearch:
+  enabled: true
+  addresses:
+    - http://localhost:9200
+  index: orders
+  sync_from_mysql: true
+`,
+			wantErr: false,
+		},
+		{
+			name: "invalid_mysql_port",
+			yamlCfg: `
+server:
+  port: 8080
+mysql:
+  host: localhost
+  port: 99999
+  user: root
+  dbname: test
+`,
+			wantErr: true,
+			errMsg:  "port",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := config.LoadFromString(tt.yamlCfg)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, cfg)
+			}
+		})
+	}
+}
+
+// TestScriptCenterConfig_MySQLDSN tests MySQL DSN generation
+func TestScriptCenterConfig_MySQLDSN(t *testing.T) {
+	yamlCfg := `
+server:
+  port: 8080
+mysql:
+  host: localhost
+  port: 3306
+  user: root
+  password: secret
+  dbname: script
+`
+
+	cfg, err := config.LoadFromString(yamlCfg)
+	assert.NoError(t, err)
+	
+	dsn := cfg.MySQL.GetDSN()
+	assert.Contains(t, dsn, "root:secret@tcp(localhost:3306)/script")
+	assert.Contains(t, dsn, "charset=utf8mb4")
+	assert.Contains(t, dsn, "parseTime=True")
+}
+
+// TestScriptCenterConfig_Scheduler tests scheduler configuration
+func TestScriptCenterConfig_Scheduler(t *testing.T) {
+	yamlCfg := `
+server:
+  port: 8080
+mysql:
+  host: localhost
+  port: 3306
+  user: root
+  password: root
+  dbname: test
+scheduler:
+  enabled: true
+  location: Asia/Shanghai
+  max_concurrent: 20
+`
+
+	cfg, err := config.LoadFromString(yamlCfg)
+	assert.NoError(t, err)
+	assert.NotNil(t, cfg)
+	assert.True(t, cfg.Scheduler.Enabled)
+	assert.Equal(t, "Asia/Shanghai", cfg.Scheduler.Location)
+	assert.Equal(t, 20, cfg.Scheduler.MaxConcurrent)
+}
+
+// TestScriptCenterConfig_OptionalDatabases tests optional database configs
+func TestScriptCenterConfig_OptionalDatabases(t *testing.T) {
+	yamlCfg := `
+server:
+  port: 8080
+mysql:
+  host: localhost
+  port: 3306
+  user: root
+  password: root
+  dbname: test
+postgresql:
+  enabled: true
+  host: localhost
+  port: 5432
+  user: postgres
+  password: secret
+  dbname: test
+mongodb:
+  enabled: true
+  uri: mongodb://localhost:27017
+  database: test
+elasticsearch:
+  enabled: true
+  addresses:
+    - http://localhost:9200
+  index: orders
+etcd:
+  enabled: true
+  endpoints:
+    - localhost:2379
+`
+
+	cfg, err := config.LoadFromString(yamlCfg)
+	assert.NoError(t, err)
+	
+	assert.True(t, cfg.PostgreSQL.Enabled)
+	assert.True(t, cfg.MongoDB.Enabled)
+	assert.True(t, cfg.Elasticsearch.Enabled)
+	assert.True(t, cfg.Etcd.Enabled)
+	
+	assert.Equal(t, "localhost", cfg.PostgreSQL.Host)
+	assert.Equal(t, 5432, cfg.PostgreSQL.Port)
+	assert.Len(t, cfg.Elasticsearch.Addresses, 1)
+	assert.Equal(t, "http://localhost:9200", cfg.Elasticsearch.Addresses[0])
+}
+
+// TestScriptCenterConfig_GetRedisAddr tests Redis address generation
+func TestScriptCenterConfig_GetRedisAddr(t *testing.T) {
+	yamlCfg := `
+server:
+  port: 8080
+mysql:
+  host: localhost
+  port: 3306
+  user: root
+  password: root
+  dbname: test
+redis:
+  host: localhost
+  port: 6379
+  password: secret
+  db: 1
+`
+
+	cfg, err := config.LoadFromString(yamlCfg)
+	assert.NoError(t, err)
+	
+	addr := cfg.Redis.GetAddr()
+	assert.Equal(t, "localhost:6379", addr)
+}
+
+// TestScriptCenterConfig_Defaults tests default values
+func TestScriptCenterConfig_Defaults(t *testing.T) {
+	yamlCfg := `
+server:
+  port: 8080
+  mode: debug
+mysql:
+  host: localhost
+  port: 3306
+  user: root
+  password: root
+  dbname: test
+`
+
+	cfg, err := config.LoadFromString(yamlCfg)
+	assert.NoError(t, err)
+	
+	// Check defaults
+	assert.Equal(t, 10, cfg.MySQL.MaxIdleConns)
+	assert.Equal(t, 100, cfg.MySQL.MaxOpenConns)
+	assert.Equal(t, 100, cfg.Redis.PoolSize)
+	assert.Equal(t, "info", cfg.Log.Level)
+	assert.Equal(t, "json", cfg.Log.Format)
+	assert.True(t, cfg.Scheduler.Enabled)
+	assert.Equal(t, "Local", cfg.Scheduler.Location)
+	assert.Equal(t, 10, cfg.Scheduler.MaxConcurrent)
+}

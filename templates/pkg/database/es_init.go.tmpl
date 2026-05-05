@@ -1,0 +1,37 @@
+package database
+
+import (
+	"fmt"
+
+	"github.com/{{.ProjectName}}/pkg/config"
+	"github.com/elastic/go-elasticsearch/v8"
+)
+
+// ESClient Elasticsearch client
+var ESClient *elasticsearch.Client
+
+// InitElasticsearch initializes Elasticsearch connection
+func InitElasticsearch() {
+	cfg := config.Get()
+
+	addr := "http://localhost:9200"
+	if cfg.Elasticsearch.Addr != "" {
+		addr = cfg.Elasticsearch.Addr
+	}
+
+	esCfg := elasticsearch.Config{
+		Addresses: []string{addr},
+		Username:  cfg.Elasticsearch.Username,
+		Password:  cfg.Elasticsearch.Password,
+	}
+
+	fmt.Printf("Connecting to Elasticsearch at %s\n", addr)
+
+	var err error
+	ESClient, err = elasticsearch.NewClient(esCfg)
+	if err != nil {
+		panic(fmt.Sprintf("Error creating Elasticsearch client: %s", err))
+	}
+
+	fmt.Println("Elasticsearch connection initialized")
+}

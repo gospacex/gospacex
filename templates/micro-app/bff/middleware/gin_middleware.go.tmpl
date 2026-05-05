@@ -1,0 +1,119 @@
+package middleware
+
+import (
+	"time"
+
+	"{{.AppName}}/pkg/logger"
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+{{if .Otel}}
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+{{end}}
+)
+
+func Logger() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		requestID := c.GetHeader("X-Request-ID")
+		if requestID == "" {
+			requestID = uuid.New().String()
+		}
+		c.Set("requestID", requestID)
+		c.Header("X-Request-ID", requestID)
+{{if .Otel}}
+		span := trace.SpanContextFromContext(c.Request.Context())
+		if span.IsValid() {
+			c.Set("trace_id", span.TraceID().String())
+			c.Header("X-Trace-ID", span.TraceID().String())
+		}
+{{end}}
+		c.Next()
+
+		latency := time.Since(start)
+		statusCode := c.Writer.Status()
+		method := c.Request.Method
+		path := c.Request.URL.Path
+		clientIP := c.ClientIP()
+		userAgent := c.Request.UserAgent()
+{{if .Otel}}
+		logger.Access.LogWithContext(c.Request.Context(), method, path, clientIP, userAgent, requestID, statusCode, latency.Milliseconds())
+
+		if statusCode >= 500 {
+			logger.Error.WithContext(c.Request.Context()).Errorw("error request",
+				"method", method,
+				"path", path,
+				"status", statusCode,
+				"latency", latency.String(),
+				"requestID", requestID,
+			)
+		}
+{{else}}
+		logger.Access.Log(method, path, clientIP, userAgent, requestID, statusCode, latency.Milliseconds())
+
+		if statusCode >= 500 {
+			logger.Error.Infow("error request",
+				"method", method,
+				"path", path,
+				"status", statusCode,
+				"latency", latency.String(),
+				"requestID", requestID,
+			)
+		}
+{{end}}
+	}
+}
+{{if .Otel}}
+func Tracing(serviceName string) gin.HandlerFunc {
+	propagator := otel.GetTextMapPropagator()
+	return func(c *gin.Context) {
+		ctx := propagator.Extract(c.Request.Context(), propagation.HeaderCarrier(c.Request.Header))
+		spanName := c.Request.Method + " " + c.FullPath()
+		if spanName == " " {
+			spanName = c.Request.URL.Path
+		}
+		_, span := otel.Tracer(serviceName).Start(ctx, spanName)
+		defer span.End()
+		c.Request = c.Request.WithContext(span.Context())
+		c.Next()
+	}
+}
+{{end}}
+func Recovery() gin.HandlerFunc {
+	return gin.CustomRecovery(func(c *gin.Context, err interface{}) {
+		requestID, _ := c.Get("requestID")
+		traceId, _ := c.Get("traceId")
+		c.JSON(500, gin.H{
+			"code":      5001,
+			"subCode":   "SYSTEM_ERROR",
+			"message":   "Internal Server Error",
+			"traceId":   traceId,
+			"requestId": requestID,
+		})
+		c.Abort()
+	})
+}
+
+func CORS() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, X-Request-ID, traceparent")
+		c.Header("Access-Control-Max-Age", "86400")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+
+		c.Next()
+	}
+}
+
+func RateLimit(maxRequests int) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		_ = maxRequests
+		c.Next()
+	}
+}

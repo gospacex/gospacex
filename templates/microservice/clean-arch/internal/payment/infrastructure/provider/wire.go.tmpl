@@ -1,0 +1,14 @@
+package provider
+
+import (
+	"github.com/google/wire"
+	"{{.ModuleName}}/internal/payment/usecase"
+)
+
+func InitializePaymentUseCase() (usecase.PaymentUseCase, error) {
+	wire.Build(
+		NewOrderRepository,
+		usecase.NewPaymentUseCase,
+	)
+	return nil, nil
+}

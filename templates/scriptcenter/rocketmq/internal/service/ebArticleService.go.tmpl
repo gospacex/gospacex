@@ -1,0 +1,80 @@
+package service
+
+import (
+	"context"
+
+	"{{.ProjectName}}/internal/model"
+	"{{.ProjectName}}/internal/repository"
+	"{{.ProjectName}}/internal/mq"
+)
+
+// EbArticleService 文章服务接口
+type EbArticleService interface {
+	Create(ctx context.Context, article *model.EbArticle) error
+	GetByID(ctx context.Context, id int64) (*model.EbArticle, error)
+	Store(ctx context.Context, article *model.EbArticle) error
+	List(ctx context.Context, page, size int) ([]*model.EbArticle, int64, error)
+	Update(ctx context.Context, article *model.EbArticle) error
+	Delete(ctx context.Context, id int64) error
+}
+
+type ebArticleService struct {
+	repo    repository.EbArticleRepository
+	producer *mq.RocketmqProducer
+}
+
+// NewEbArticleService 创建服务
+func NewEbArticleService() *ebArticleService {
+	return &ebArticleService{}
+}
+
+// Create creates and publishes article to RocketMQ
+func (s *ebArticleService) Create(ctx context.Context, article *model.EbArticle) error {
+	if err := s.repo.Create(ctx, article); err != nil {
+		return err
+	}
+
+	if s.producer != nil {
+		if err := s.producer.Send(ctx, article); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// GetByID gets article by ID
+func (s *ebArticleService) GetByID(ctx context.Context, id int64) (*model.EbArticle, error) {
+	return s.repo.GetByID(ctx, id)
+}
+
+// Store stores article from RocketMQ consumer
+func (s *ebArticleService) Store(ctx context.Context, article *model.EbArticle) error {
+	return s.repo.Create(ctx, article)
+}
+
+// List lists articles
+func (s *ebArticleService) List(ctx context.Context, page, size int) ([]*model.EbArticle, int64, error) {
+	offset := (page - 1) * size
+	return s.repo.List(ctx, offset, size)
+}
+
+// Update updates article
+func (s *ebArticleService) Update(ctx context.Context, article *model.EbArticle) error {
+	return s.repo.Update(ctx, article)
+}
+
+// Delete deletes article
+func (s *ebArticleService) Delete(ctx context.Context, id int64) error {
+	return s.repo.Delete(ctx, id)
+}
+
+// CheckConsumerHealth checks consumer health
+func CheckConsumerHealth() error {
+	return nil
+}
+
+// CheckProducerHealth checks producer health
+func CheckProducerHealth() error {
+	return nil
+}

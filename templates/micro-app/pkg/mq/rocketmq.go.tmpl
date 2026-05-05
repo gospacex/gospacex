@@ -1,0 +1,58 @@
+package mq
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/apache/rocketmq-client-go/v2"
+	"github.com/apache/rocketmq-client-go/v2/primitive"
+	"github.com/apache/rocketmq-client-go/v2/producer"
+)
+
+type RocketMQConfig struct {
+	Endpoint  string `yaml:"endpoint"`
+	Topic     string `yaml:"topic"`
+	Group     string `yaml:"group"`
+	AccessKey string `yaml:"accessKey"`
+	SecretKey string `yaml:"secretKey"`
+}
+
+type RocketMQClient struct {
+	config  RocketMQConfig
+	p       producer.Producer
+}
+
+func NewRocketMQClient(cfg RocketMQConfig) (*RocketMQClient, error) {
+	p, err := rocketmq.NewProducer(
+		producer.WithEndpoint(cfg.Endpoint),
+		producer.WithCredentials(primitive.Credentials{
+			AccessKey: cfg.AccessKey,
+			SecretKey: cfg.SecretKey,
+		}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create rocketmq producer failed: %w", err)
+	}
+	return &RocketMQClient{config: cfg, p: p}, nil
+}
+
+func (r *RocketMQClient) SendMessage(ctx context.Context, topic string, body interface{}) error {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal body failed: %w", err)
+	}
+	msg := &primitive.Message{
+		Topic: topic,
+		Body:  data,
+	}
+	_, err = r.p.SendSync(ctx, msg)
+	return err
+}
+
+func (r *RocketMQClient) Close() error {
+	if r.p != nil {
+		return r.p.Shutdown()
+	}
+	return nil
+}

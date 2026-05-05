@@ -1,0 +1,20 @@
+package config
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
+
+func TestRemoteLoader_Source(t *testing.T) {
+	loader := NewNacosLoader("localhost:8848", "config.yaml", "DEFAULT_GROUP")
+	assert.Equal(t, SourceRemote, loader.Source())
+}
+
+func TestNewNacosLoader(t *testing.T) {
+	loader := NewNacosLoader("localhost:8848", "my-config", "DEFAULT_GROUP")
+	assert.Equal(t, "nacos", loader.provider)
+	assert.Equal(t, "localhost:8848", loader.endpoint)
+	assert.Equal(t, "my-config", loader.dataID)
+	assert.Equal(t, "DEFAULT_GROUP", loader.group)
+}

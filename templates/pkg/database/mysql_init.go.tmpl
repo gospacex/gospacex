@@ -1,0 +1,43 @@
+package database
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/{{.ProjectName}}/pkg/config"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+)
+
+// InitMySQL initializes MySQL connection
+func InitMySQL() {
+	cfg := config.Get()
+	var dsn string
+
+	if cfg.MySQL.Host != "" {
+		fmt.Printf("Using MySQL config: host=%s, port=%s, database=%s\n", cfg.MySQL.Host, cfg.MySQL.Port, cfg.MySQL.Database)
+		dsn = cfg.MySQL.GetDSN()
+	} else {
+		panic("MySQL configuration is required")
+	}
+
+	var gormLogger logger.Interface
+	if cfg.App.Environment == "development" {
+		gormLogger = logger.Default.LogMode(logger.Info)
+	} else {
+		gormLogger = logger.Default.LogMode(logger.Silent)
+	}
+
+	var err error
+	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{
+		Logger: gormLogger,
+	})
+	if err != nil {
+		panic(err)
+	}
+	sqlDB, _ := DB.DB()
+	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetMaxOpenConns(100)
+	sqlDB.SetConnMaxLifetime(time.Hour)
+}

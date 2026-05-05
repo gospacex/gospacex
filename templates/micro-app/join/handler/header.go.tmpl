@@ -1,0 +1,23 @@
+package handler
+
+import (
+	"net/http"
+	"strconv"
+
+	"{{.AppName}}/{{.BffDirName}}/internal/rpcClient"
+
+	"github.com/gin-gonic/gin"
+)
+
+// Join{{.LeftUpper}}{{.RightUpper}}Handler 联表查询 Handler
+type Join{{.LeftUpper}}{{.RightUpper}}Handler struct {
+	{{.LeftVarName}}Client *rpcclient.{{.LeftUpper}}Client
+	{{.RightVarName}}Client *rpcclient.{{.RightUpper}}Client
+}
+
+func NewJoin{{.LeftUpper}}{{.RightUpper}}Handler({{.LeftVarName}}Client *rpcclient.{{.LeftUpper}}Client, {{.RightVarName}}Client *rpcclient.{{.RightUpper}}Client) *Join{{.LeftUpper}}{{.RightUpper}}Handler {
+	return &Join{{.LeftUpper}}{{.RightUpper}}Handler{
+		{{.LeftVarName}}Client: {{.LeftVarName}}Client,
+		{{.RightVarName}}Client: {{.RightVarName}}Client,
+	}
+}

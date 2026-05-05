@@ -1,0 +1,34 @@
+package interceptor
+
+import (
+	"context"
+	"time"
+
+	"{{.AppName}}/pkg/logger"
+	"github.com/cloudwego/kitex/server"
+)
+
+// KitexInterceptor Kitex 服务端拦截器
+func KitexInterceptor(ctx context.Context, req interface{}, info *server.ServiceInfo, handler func(ctx context.Context, req interface{}) (interface{}, error)) (interface{}, error) {
+	start := time.Now()
+
+	resp, err := handler(ctx, req)
+
+	latency := time.Since(start)
+	if err != nil {
+		logger.Error.Errorw("kitex error",
+			"service", info.ServiceName,
+			"method", info.Method,
+			"error", err.Error(),
+			"latency", latency.String(),
+		)
+	} else {
+		logger.Access.Infow("kitex call",
+			"service", info.ServiceName,
+			"method", info.Method,
+			"latency", latency.String(),
+		)
+	}
+
+	return resp, err
+}

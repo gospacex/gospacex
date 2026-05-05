@@ -1,0 +1,17 @@
+package interceptor
+
+import (
+	"{{.AppName}}/pkg/ratelimit"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+func (i *Interceptor) ratelimitInterceptor() grpc.UnaryServerInterceptor {
+	return func(ctx interface{}, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		if i.ratelimit != nil && !i.ratelimit.Allow() {
+			return nil, status.Error(codes.ResourceExhausted, "rate limit exceeded")
+		}
+		return handler(ctx, req)
+	}
+}

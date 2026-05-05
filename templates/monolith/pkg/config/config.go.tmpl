@@ -1,0 +1,168 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"sync"
+
+	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
+)
+
+// Config 完整配置结构（单体项目版）
+type Config struct {
+	App      AppConfig      `yaml:"app"`
+	Server   ServerConfig   `yaml:"server"`
+	Database DatabaseConfig `yaml:"database"`
+	Log      LogConfig      `yaml:"log"`
+}
+
+// AppConfig 应用配置
+type AppConfig struct {
+	Name        string `yaml:"name"`
+	Environment string `yaml:"environment"`
+}
+
+// ServerConfig 服务器配置
+type ServerConfig struct {
+	Host string `yaml:"host"`
+	Port string `yaml:"port"`
+}
+
+// DatabaseConfig 数据库配置
+type DatabaseConfig struct {
+	MySQL MySQLPoolConfig `yaml:"mysql"`
+}
+
+// MySQLPoolConfig MySQL 连接池配置
+type MySQLPoolConfig struct {
+	Enabled     bool   `yaml:"enabled"`
+	DSN         string `yaml:"dsn"`
+	MaxIdleConns int    `yaml:"max_idle_conns"`
+	MaxOpenConns int    `yaml:"max_open_conns"`
+}
+
+// LogConfig 日志配置
+type LogConfig struct {
+	Level  string `yaml:"level"`
+	Format string `yaml:"format"`
+	Output string `yaml:"output"`
+}
+
+var (
+	globalConfig *Config
+	configMu     sync.RWMutex
+)
+
+// Load 从文件加载配置
+func Load(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("error reading config file: %w", err)
+	}
+
+	return LoadFromString(string(data))
+}
+
+// LoadFromString 从 YAML 字符串加载配置
+func LoadFromString(content string) (*Config, error) {
+	cfg := &Config{}
+	if err := yaml.Unmarshal([]byte(content), cfg); err != nil {
+		return nil, fmt.Errorf("error unmarshaling config: %w", err)
+	}
+
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("config validation failed: %w", err)
+	}
+
+	configMu.Lock()
+	globalConfig = cfg
+	configMu.Unlock()
+
+	return cfg, nil
+}
+
+// Get 获取全局配置
+func Get() *Config {
+	configMu.RLock()
+	defer configMu.RUnlock()
+
+	if globalConfig == nil {
+		// 尝试从默认路径加载
+		cfg, err := Load("configs/server.yaml")
+		if err != nil {
+			globalConfig = defaultConfig()
+		} else {
+			globalConfig = cfg
+		}
+	}
+	return globalConfig
+}
+
+// Set 设置全局配置（测试用）
+func Set(cfg *Config) {
+	configMu.Lock()
+	defer configMu.Unlock()
+	globalConfig = cfg
+}
+
+// Validate validates the configuration
+func (c *Config) Validate() error {
+	if c.App.Name == "" {
+		return fmt.Errorf("app.name is required")
+	}
+	if c.Server.Port == "" {
+		return fmt.Errorf("server.port is required")
+	}
+	if c.Log.Level == "" {
+		c.Log.Level = "info"
+	}
+	return nil
+}
+
+// defaultConfig returns default monolith configuration
+func defaultConfig() *Config {
+	return &Config{
+		App: AppConfig{
+			Name:        "monolith-service",
+			Environment: "development",
+		},
+		Server: ServerConfig{
+			Host: "0.0.0.0",
+			Port: "8080",
+		},
+		Log: LogConfig{
+			Level:  "info",
+			Format: "json",
+			Output: "stdout",
+		},
+	}
+}
+
+// LoadWithViper loads config using Viper
+func LoadWithViper(path string) (*Config, error) {
+	v := viper.New()
+	v.SetConfigFile(path)
+	v.SetConfigType("yaml")
+
+	// 设置默认值
+	v.SetDefault("app.name", "monolith-service")
+	v.SetDefault("app.environment", "development")
+	v.SetDefault("server.host", "0.0.0.0")
+	v.SetDefault("server.port", "8080")
+	v.SetDefault("log.level", "info")
+	v.SetDefault("log.format", "json")
+
+	v.AutomaticEnv()
+
+	if err := v.ReadInConfig(); err != nil {
+		return nil, fmt.Errorf("error reading config: %w", err)
+	}
+
+	var cfg Config
+	if err := v.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("error unmarshaling config: %w", err)
+	}
+
+	return &cfg, nil
+}

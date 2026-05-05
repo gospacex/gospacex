@@ -1,0 +1,11 @@
+{{.JoinRespType}} // 联表查询响应消息（左表字段 + 右表字段）
+message {{.JoinRespType}} {
+  // 左表字段 ({{.JoinLeftEntityUpper}})
+{{- range .JoinLeftColumns}}
+  {{.ProtoType}} {{.Name}} = {{.Number}};  // {{.Comment}}
+{{- end}}
+  // 右表字段 ({{.JoinRightEntityUpper}})
+{{- range .JoinRightColumns}}
+  {{.ProtoType}} {{.Name}} = {{.Number}};  // {{.Comment}}
+{{- end}}
+}

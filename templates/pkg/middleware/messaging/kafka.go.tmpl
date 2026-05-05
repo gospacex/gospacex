@@ -1,0 +1,257 @@
+package middleware
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/IBM/sarama"
+)
+
+// KafkaConfig Kafka 配置
+type KafkaConfig struct {
+	Enabled   bool     `yaml:"enabled" json:"enabled"`
+	Brokers   []string `yaml:"brokers" json:"brokers"`
+	Topic     string   `yaml:"topic" json:"topic"`
+	GroupName string   `yaml:"group_name" json:"group_name"`
+	// Retry configuration
+	MaxRetries int `yaml:"max_retries" json:"max_retries"`
+	// Dead Letter Queue configuration
+	DLQTopic string `yaml:"dlq_topic" json:"dlq_topic"`
+}
+
+// KafkaProducer Kafka 生产者
+type KafkaProducer struct {
+	producer  sarama.SyncProducer
+	dlqProducer sarama.SyncProducer
+	config    KafkaConfig
+}
+
+// NewKafkaProducer 创建 Kafka 生产者
+func NewKafkaProducer(cfg KafkaConfig) (*KafkaProducer, error) {
+	config := sarama.NewConfig()
+	config.Producer.Return.Successes = true
+
+	producer, err := sarama.NewSyncProducer(cfg.Brokers, config)
+	if err != nil {
+		return nil, fmt.Errorf("create kafka producer failed: %w", err)
+	}
+
+	kp := &KafkaProducer{
+		producer: producer,
+		config:   cfg,
+	}
+
+	// Setup DLQ producer if DLQTopic is configured
+	if cfg.DLQTopic != "" {
+		if err := kp.SetupDLQProducer(); err != nil {
+			log.Printf("warning: failed to setup DLQ producer: %v", err)
+		}
+	}
+
+	return kp, nil
+}
+
+// SetupDLQProducer 设置死信队列生产者
+func (p *KafkaProducer) SetupDLQProducer() error {
+	config := sarama.NewConfig()
+	config.Producer.Return.Successes = true
+
+	dlqProducer, err := sarama.NewSyncProducer(p.config.Brokers, config)
+	if err != nil {
+		return fmt.Errorf("create dlq producer failed: %w", err)
+	}
+
+	p.dlqProducer = dlqProducer
+	return nil
+}
+
+// SendMessage 发送消息
+func (p *KafkaProducer) SendMessage(ctx context.Context, key, value string) error {
+	msg := &sarama.ProducerMessage{
+		Topic: p.config.Topic,
+		Key:   sarama.StringEncoder(key),
+		Value: sarama.StringEncoder(value),
+	}
+
+	_, _, err := p.producer.SendMessage(msg)
+	return err
+}
+
+// SendMessageWithRetry 带重试的消息发送（指数退避）
+func (p *KafkaProducer) SendMessageWithRetry(ctx context.Context, topic, key, value string, maxRetries int) error {
+	var lastErr error
+	baseDelay := 100 * time.Millisecond
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		msg := &sarama.ProducerMessage{
+			Topic: topic,
+			Key:   sarama.StringEncoder(key),
+			Value: sarama.StringEncoder(value),
+		}
+
+		_, _, err := p.producer.SendMessage(msg)
+		if err == nil {
+			return nil
+		}
+
+		lastErr = err
+		log.Printf("send message failed (attempt %d/%d): %v", attempt+1, maxRetries, err)
+
+		// Exponential backoff
+		delay := baseDelay * time.Duration(1<<uint(attempt))
+		select {
+		case <-time.After(delay):
+			// Continue to next retry
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	return fmt.Errorf("failed after %d retries: %w", maxRetries, lastErr)
+}
+
+// MoveToDLQ 将失败消息移动到死信队列
+func (p *KafkaProducer) MoveToDLQ(msg *sarama.ProducerMessage) error {
+	if p.dlqProducer == nil {
+		return fmt.Errorf("dlq producer not initialized")
+	}
+
+	dlqMsg := &sarama.ProducerMessage{
+		Topic: p.config.DLQTopic,
+		Key:   msg.Key,
+		Value: msg.Value,
+		Headers: []sarama.RecordHeader{
+			{
+				Key:   []byte("original-topic"),
+				Value: []byte(msg.Topic),
+			},
+			{
+				Key:   []byte("failure-time"),
+				Value: []byte(time.Now().Format(time.RFC3339)),
+			},
+		},
+	}
+
+	_, _, err := p.dlqProducer.SendMessage(dlqMsg)
+	if err != nil {
+		return fmt.Errorf("move to dlq failed: %w", err)
+	}
+
+	log.Printf("message moved to DLQ: %s", p.config.DLQTopic)
+	return nil
+}
+
+// Close 关闭生产者
+func (p *KafkaProducer) Close() error {
+	var err error
+	if p.dlqProducer != nil {
+		if closeErr := p.dlqProducer.Close(); closeErr != nil {
+			err = closeErr
+		}
+	}
+	if closeErr := p.producer.Close(); closeErr != nil {
+		err = closeErr
+	}
+	return err
+}
+
+// KafkaConsumer Kafka 消费者
+type KafkaConsumer struct {
+	consumer sarama.ConsumerGroup
+	handler  MessageHandler
+	config   KafkaConfig
+}
+
+// MessageHandler 消息处理器
+type MessageHandler interface {
+	Handle(ctx context.Context, msg string) error
+}
+
+// RetryMessageHandler 支持重试的消息处理器
+type RetryMessageHandler interface {
+	MessageHandler
+	OnMaxRetriesReached(ctx context.Context, msg string) error
+}
+
+// NewKafkaConsumer 创建 Kafka 消费者
+func NewKafkaConsumer(cfg KafkaConfig, handler MessageHandler) (*KafkaConsumer, error) {
+	config := sarama.NewConfig()
+	config.Consumer.Group.InitialOffset = sarama.OffsetOldest
+
+	consumer, err := sarama.NewConsumerGroup(cfg.Brokers, cfg.GroupName, config)
+	if err != nil {
+		return nil, fmt.Errorf("create kafka consumer failed: %w", err)
+	}
+
+	return &KafkaConsumer{
+		consumer: consumer,
+		handler:  handler,
+		config:   cfg,
+	}, nil
+}
+
+// Consume 消费消息
+func (c *KafkaConsumer) Consume(ctx context.Context) error {
+	return c.consumer.Consume(ctx, []string{c.config.Topic}, &consumerHandler{
+		handler: c.handler,
+		config:  c.config,
+	})
+}
+
+type consumerHandler struct {
+	handler MessageHandler
+	config  KafkaConfig
+}
+
+func (h *consumerHandler) Setup(sarama.ConsumerGroupSession) error   { return nil }
+func (h *consumerHandler) Cleanup(sarama.ConsumerGroupSession) error { return nil }
+func (h *consumerHandler) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+	for msg := range claim.Messages() {
+		ctx := sess.Context()
+		
+		// Try to handle with retry
+		var lastErr error
+		maxRetries := h.config.MaxRetries
+		if maxRetries == 0 {
+			maxRetries = 3 // Default retries
+		}
+
+		for attempt := 0; attempt < maxRetries; attempt++ {
+			if err := h.handler.Handle(ctx, string(msg.Value)); err == nil {
+				sess.MarkMessage(msg, "")
+				break
+			} else {
+				lastErr = err
+				log.Printf("message handle failed (attempt %d/%d): %v", attempt+1, maxRetries, err)
+				
+				if attempt == maxRetries-1 {
+					// Max retries reached
+					if retryHandler, ok := h.handler.(RetryMessageHandler); ok {
+						if dlqErr := retryHandler.OnMaxRetriesReached(ctx, string(msg.Value)); dlqErr != nil {
+							log.Printf("failed to handle max retries: %v", dlqErr)
+						}
+					}
+					log.Printf("message failed after %d attempts, moving to DLQ: %s", maxRetries, h.config.DLQTopic)
+				}
+				
+				// Exponential backoff before retry
+				if attempt < maxRetries-1 {
+					delay := 100 * time.Millisecond * time.Duration(1<<uint(attempt))
+					select {
+					case <-time.After(delay):
+						// Continue retry
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+				}
+			}
+		}
+
+		if lastErr != nil {
+			log.Printf("message permanently failed: %v", lastErr)
+		}
+	}
+	return nil
+}

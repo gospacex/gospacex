@@ -1,0 +1,63 @@
+package service
+
+import (
+	"context"
+
+	"{{.ModuleName}}/internal/model"
+	"{{.ModuleName}}/internal/repository"
+	"{{.ModuleName}}/internal/search"
+)
+
+// EbArticleService 文章服务接口
+type EbArticleService interface {
+	Index(ctx context.Context, article *model.EbArticle) error
+	GetByID(ctx context.Context, id int64) (*model.EbArticle, error)
+	Search(ctx context.Context, keyword string) ([]*model.EbArticle, int64, error)
+	List(ctx context.Context, page, size int) ([]*model.EbArticle, int64, error)
+	Update(ctx context.Context, article *model.EbArticle) error
+	Delete(ctx context.Context, id int64) error
+}
+
+type ebArticleServiceImpl struct {
+	repo *repository.EbArticleRepository
+	esClient *search.ESClient
+}
+
+// NewEbArticleService 创建服务
+func NewEbArticleService(repo *repository.EbArticleRepository, esClient *search.ESClient) EbArticleService {
+	return &ebArticleServiceImpl{
+		repo:      repo,
+		esClient: esClient,
+	}
+}
+
+// Index 索引文章到 Elasticsearch
+func (s *ebArticleServiceImpl) Index(ctx context.Context, article *model.EbArticle) error {
+	return s.repo.Create(ctx, article)
+}
+
+// GetByID 获取文章
+func (s *ebArticleServiceImpl) GetByID(ctx context.Context, id int64) (*model.EbArticle, error) {
+	return s.repo.GetByID(ctx, id)
+}
+
+// Search 搜索文章
+func (s *ebArticleServiceImpl) Search(ctx context.Context, keyword string) ([]*model.EbArticle, int64, error) {
+	return s.repo.Search(ctx, keyword)
+}
+
+// List 列出文章
+func (s *ebArticleServiceImpl) List(ctx context.Context, page, size int) ([]*model.EbArticle, int64, error) {
+	offset := (page - 1) * size
+	return s.repo.List(ctx, offset, size)
+}
+
+// Update 更新文章
+func (s *ebArticleServiceImpl) Update(ctx context.Context, article *model.EbArticle) error {
+	return s.repo.Update(ctx, article)
+}
+
+// Delete 删除文章
+func (s *ebArticleServiceImpl) Delete(ctx context.Context, id int64) error {
+	return s.repo.Delete(ctx, id)
+}

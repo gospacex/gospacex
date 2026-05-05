@@ -1,0 +1,86 @@
+package consumer
+
+import (
+	"context"
+	"encoding/json"
+	"log"
+
+	"{{.ProjectName}}/pkg/middleware"
+)
+
+// OrderEventHandler 订单事件处理器
+type OrderEventHandler struct {
+	// 可以注入 service 来处理业务逻辑
+	// orderService *service.OrderService
+}
+
+// NewOrderEventHandler 创建订单事件处理器
+func NewOrderEventHandler() *OrderEventHandler {
+	return &OrderEventHandler{}
+}
+
+// Handle 处理消息 (实现 MessageHandler 接口)
+func (h *OrderEventHandler) Handle(ctx context.Context, msg string) error {
+	log.Printf("Received order message: %s", msg)
+
+	// 解析消息
+	var event struct {
+		Event   string          `json:"event"`
+		OrderID int64           `json:"order_id"`
+		Data    json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(msg), &event); err != nil {
+		log.Printf("Failed to parse message: %v", err)
+		return err
+	}
+
+	// 根据事件类型处理
+	switch event.Event {
+	case "order.created":
+		return h.handleOrderCreated(ctx, event.OrderID, event.Data)
+	case "order.updated":
+		return h.handleOrderUpdated(ctx, event.OrderID, event.Data)
+	case "order.deleted":
+		return h.handleOrderDeleted(ctx, event.OrderID)
+	default:
+		log.Printf("Unknown event type: %s", event.Event)
+	}
+
+	return nil
+}
+
+func (h *OrderEventHandler) handleOrderCreated(ctx context.Context, orderID int64, data json.RawMessage) error {
+	log.Printf("Handling order.created: orderID=%d", orderID)
+	// 实现订单创建逻辑
+	// 例如：更新 ES 索引、发送通知等
+	return nil
+}
+
+func (h *OrderEventHandler) handleOrderUpdated(ctx context.Context, orderID int64, data json.RawMessage) error {
+	log.Printf("Handling order.updated: orderID=%d", orderID)
+	// 实现订单更新逻辑
+	return nil
+}
+
+func (h *OrderEventHandler) handleOrderDeleted(ctx context.Context, orderID int64) error {
+	log.Printf("Handling order.deleted: orderID=%d", orderID)
+	// 实现订单删除逻辑
+	return nil
+}
+
+// StartKafkaConsumer 启动 Kafka 消费者
+func StartKafkaConsumer(cfg middleware.KafkaConfig, handler middleware.MessageHandler) (*middleware.KafkaConsumer, error) {
+	consumer, err := middleware.NewKafkaConsumer(cfg, handler)
+	if err != nil {
+		return nil, err
+	}
+
+	go func() {
+		if err := consumer.Consume(context.Background()); err != nil {
+			log.Printf("Consumer error: %v", err)
+		}
+	}()
+
+	log.Println("Kafka consumer started")
+	return consumer, nil
+}

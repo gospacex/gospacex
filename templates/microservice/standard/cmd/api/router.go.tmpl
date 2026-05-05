@@ -1,0 +1,25 @@
+package main
+
+import (
+	"{{.GoModuleName}}/internal/handler"
+
+	"github.com/cloudwego/hertz/pkg/app/server"
+)
+
+// Router 路由注册接口
+type Router interface {
+	Register(hzn *server.Hertz)
+}
+
+// RegisterRoutes 注册所有路由
+func RegisterRoutes(hzn *server.Hertz, h *handler.Handler) {
+	// API v1 分组
+	v1 := hzn.Group("/api/v1")
+	{
+		// TODO: 根据业务注册具体路由
+		// v1.GET("/users/:id", h.GetUser)
+		// v1.POST("/users", h.CreateUser)
+		// v1.PUT("/users/:id", h.UpdateUser)
+		// v1.DELETE("/users/:id", h.DeleteUser)
+	}
+}

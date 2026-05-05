@@ -1,0 +1,232 @@
+package elasticsearch
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+)
+
+// AggregateClient 聚合查询客户端
+type AggregateClient struct {
+	client *Client
+	agg    map[string]interface{}
+}
+
+// Build 构建聚合查询
+func (c *AggregateClient) Build(agg map[string]interface{}) *AggregateClient {
+	c.agg = agg
+	return c
+}
+
+// AddAgg 添加聚合
+func (c *AggregateClient) AddAgg(name string, aggType string, field string, opts map[string]interface{}) *AggregateClient {
+	if c.agg == nil {
+		c.agg = make(map[string]interface{})
+	}
+
+	aggDef := map[string]interface{}{
+		"terms": map[string]interface{}{
+			"field": field,
+		},
+	}
+
+	// 合并可选参数
+	for k, v := range opts {
+		aggDef["terms"].(map[string]interface{})[k] = v
+	}
+
+	c.agg[name] = aggDef
+	return c
+}
+
+// AddNestedAgg 添加嵌套聚合
+func (c *AggregateClient) AddNestedAgg(name string, agg map[string]interface{}) *AggregateClient {
+	if c.agg == nil {
+		c.agg = make(map[string]interface{})
+	}
+	c.agg[name] = agg
+	return c
+}
+
+// AvgAgg 平均聚合
+func (c *AggregateClient) AvgAgg(name string, field string) *AggregateClient {
+	if c.agg == nil {
+		c.agg = make(map[string]interface{})
+	}
+	c.agg[name] = map[string]interface{}{
+		"avg": map[string]interface{}{
+			"field": field,
+		},
+	}
+	return c
+}
+
+// SumAgg 求和聚合
+func (c *AggregateClient) SumAgg(name string, field string) *AggregateClient {
+	if c.agg == nil {
+		c.agg = make(map[string]interface{})
+	}
+	c.agg[name] = map[string]interface{}{
+		"sum": map[string]interface{}{
+			"field": field,
+		},
+	}
+	return c
+}
+
+// MinAgg 最小值聚合
+func (c *AggregateClient) MinAgg(name string, field string) *AggregateClient {
+	if c.agg == nil {
+		c.agg = make(map[string]interface{})
+	}
+	c.agg[name] = map[string]interface{}{
+		"min": map[string]interface{}{
+			"field": field,
+		},
+	}
+	return c
+}
+
+// MaxAgg 最大值聚合
+func (c *AggregateClient) MaxAgg(name string, field string) *AggregateClient {
+	if c.agg == nil {
+		c.agg = make(map[string]interface{})
+	}
+	c.agg[name] = map[string]interface{}{
+		"max": map[string]interface{}{
+			"field": field,
+		},
+	}
+	return c
+}
+
+// CardinalityAgg 去重计数聚合
+func (c *AggregateClient) CardinalityAgg(name string, field string) *AggregateClient {
+	if c.agg == nil {
+		c.agg = make(map[string]interface{})
+	}
+	c.agg[name] = map[string]interface{}{
+		"cardinality": map[string]interface{}{
+			"field": field,
+		},
+	}
+	return c
+}
+
+// HistogramAgg 直方图聚合
+func (c *AggregateClient) HistogramAgg(name string, field string, interval string) *AggregateClient {
+	if c.agg == nil {
+		c.agg = make(map[string]interface{})
+	}
+	c.agg[name] = map[string]interface{}{
+		"histogram": map[string]interface{}{
+			"field":    field,
+			"interval": interval,
+		},
+	}
+	return c
+}
+
+// DateHistogramAgg 日期直方图聚合
+func (c *AggregateClient) DateHistogramAgg(name string, field string, interval string) *AggregateClient {
+	if c.agg == nil {
+		c.agg = make(map[string]interface{})
+	}
+	c.agg[name] = map[string]interface{}{
+		"date_histogram": map[string]interface{}{
+			"field":    field,
+			"interval": interval,
+		},
+	}
+	return c
+}
+
+// Execute 执行聚合查询
+func (c *AggregateClient) Execute(ctx context.Context, index string, query map[string]interface{}) (*AggregateResult, error) {
+	if c.agg == nil {
+		return nil, fmt.Errorf("aggregation is required")
+	}
+
+	// 构建请求体
+	req := map[string]interface{}{
+		"aggs": c.agg,
+	}
+
+	if query != nil {
+		req["query"] = query
+	}
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(req); err != nil {
+		return nil, fmt.Errorf("encode query: %w", err)
+	}
+
+	res, err := c.client.es.Search(
+		c.client.es.Search.WithContext(ctx),
+		c.client.es.Search.WithIndex(index),
+		c.client.es.Search.WithBody(&buf),
+		c.client.es.Search.WithSize(0), // 聚合查询不需要返回文档
+		c.client.es.Search.WithTrackTotalHits(true),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("aggregate search: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, fmt.Errorf("aggregate search error: %s", res.String())
+	}
+
+	var response map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&response); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	result := &AggregateResult{}
+
+	if aggs, ok := response["aggregations"].(map[string]interface{}); ok {
+		result.Aggregations = aggs
+	}
+
+	return result, nil
+}
+
+// ExecuteRaw 执行原始聚合查询
+func (c *AggregateClient) ExecuteRaw(ctx context.Context, index string, query map[string]interface{}) (map[string]interface{}, error) {
+	if c.agg == nil {
+		return nil, fmt.Errorf("aggregation is required")
+	}
+
+	// 直接使用 agg 作为请求体
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(c.agg); err != nil {
+		return nil, fmt.Errorf("encode aggregation: %w", err)
+	}
+
+	res, err := c.client.es.Search(
+		c.client.es.Search.WithContext(ctx),
+		c.client.es.Search.WithIndex(index),
+		c.client.es.Search.WithBody(&buf),
+		c.client.es.Search.WithSize(0),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("aggregate search: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, fmt.Errorf("aggregate search error: %s", res.String())
+	}
+
+	var response map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&response); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	if aggs, ok := response["aggregations"].(map[string]interface{}); ok {
+		return aggs, nil
+	}
+
+	return nil, fmt.Errorf("aggregations not found in response")
+}

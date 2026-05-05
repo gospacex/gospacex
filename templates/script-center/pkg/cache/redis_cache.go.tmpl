@@ -1,0 +1,128 @@
+// Package cache provides Redis cache operations with TTL support
+package cache
+
+import (
+	"context"
+	"encoding/json"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+)
+
+// RedisCache Redis 缓存操作实现
+type RedisCache struct {
+	client *redis.Client
+}
+
+// NewRedisCache creates a new Redis cache instance
+// client: Redis client from InitRedis
+func NewRedisCache(client *redis.Client) *RedisCache {
+	return &RedisCache{
+		client: client,
+	}
+}
+
+// Set sets a value in Redis with expiration
+// ctx: context for cancellation
+// key: cache key
+// value: value to cache (will be JSON marshaled)
+// expiration: TTL for the key
+// Returns error if operation fails
+func (c *RedisCache) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
+	// Marshal value to JSON
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+
+	// Set with expiration
+	return c.client.Set(ctx, key, data, expiration).Err()
+}
+
+// Get gets a value from Redis by key
+// ctx: context for cancellation
+// key: cache key
+// Returns raw bytes (caller decodes) or error
+func (c *RedisCache) Get(ctx context.Context, key string) ([]byte, error) {
+	return c.client.Get(ctx, key).Bytes()
+}
+
+// Delete deletes a key from Redis
+// ctx: context for cancellation
+// key: cache key to delete
+// Returns error if operation fails
+func (c *RedisCache) Delete(ctx context.Context, key string) error {
+	return c.client.Del(ctx, key).Err()
+}
+
+// Exists checks if a key exists in Redis
+// ctx: context for cancellation
+// key: cache key to check
+// Returns true if key exists, false otherwise
+func (c *RedisCache) Exists(ctx context.Context, key string) (bool, error) {
+	n, err := c.client.Exists(ctx, key).Result()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+// GetWithUnmarshal gets a value and unmarshals it into a struct
+// ctx: context for cancellation
+// key: cache key
+// dest: pointer to struct to unmarshal into
+// Returns error if operation fails
+func (c *RedisCache) GetWithUnmarshal(ctx context.Context, key string, dest interface{}) error {
+	data, err := c.Get(ctx, key)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, dest)
+}
+
+// SetNX sets a key only if it does not exist
+// ctx: context for cancellation
+// key: cache key
+// value: value to set
+// expiration: TTL for the key
+// Returns true if key was set, false if key already existed
+func (c *RedisCache) SetNX(ctx context.Context, key string, value interface{}, expiration time.Duration) (bool, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return false, err
+	}
+	return c.client.SetNX(ctx, key, data, expiration).Result()
+}
+
+// Incr increments a key's integer value
+// ctx: context for cancellation
+// key: cache key
+// Returns new value or error
+func (c *RedisCache) Incr(ctx context.Context, key string) (int64, error) {
+	return c.client.Incr(ctx, key).Result()
+}
+
+// Decr decrements a key's integer value
+// ctx: context for cancellation
+// key: cache key
+// Returns new value or error
+func (c *RedisCache) Decr(ctx context.Context, key string) (int64, error) {
+	return c.client.Decr(ctx, key).Result()
+}
+
+// Expire sets expiration on an existing key
+// ctx: context for cancellation
+// key: cache key
+// expiration: new TTL
+// Returns error if operation fails
+func (c *RedisCache) Expire(ctx context.Context, key string, expiration time.Duration) error {
+	return c.client.Expire(ctx, key, expiration).Err()
+}
+
+// TTL gets the remaining time to live of a key
+// ctx: context for cancellation
+// key: cache key
+// Returns TTL duration or error
+func (c *RedisCache) TTL(ctx context.Context, key string) (time.Duration, error) {
+	return c.client.TTL(ctx, key).Result()
+}

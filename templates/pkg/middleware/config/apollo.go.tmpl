@@ -1,0 +1,159 @@
+package middleware
+
+import (
+	"fmt"
+
+	"github.com/apolloconfig/agollo/v4"
+	"github.com/apolloconfig/agollo/v4/env/config"
+)
+
+// ApolloConfig Apollo 配置中心配置
+//
+// YAML configuration example:
+// ```yaml
+// middleware:
+//   config:
+//     apollo:
+//       enabled: true
+//       endpoint: "http://localhost:8080"
+//       app_id: "myapp"
+//       cluster: "default"
+//       namespace: "application"
+// ```
+type ApolloConfig struct {
+	// Enabled 是否启用 Apollo 配置中心
+	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// Endpoint Apollo 服务器地址
+	Endpoint string `yaml:"endpoint" json:"endpoint"`
+
+	// AppID 应用 ID
+	AppID string `yaml:"app_id" json:"app_id"`
+
+	// Cluster 集群名称 (默认：default)
+	Cluster string `yaml:"cluster" json:"cluster"`
+
+	// NamespaceName 命名空间名称 (默认：application)
+	NamespaceName string `yaml:"namespace" json:"namespace"`
+}
+
+// ApolloClient Apollo 配置中心客户端
+type ApolloClient struct {
+	config       *ApolloConfig
+	agolloClient agollo.Client
+}
+
+// ConfigChangeListener 配置变更监听器接口
+type ConfigChangeListener interface {
+	// OnChange 配置变更回调
+	// namespace: 命名空间
+	// key: 配置键
+	// oldValue: 旧值
+	// newValue: 新值
+	OnChange(namespace string, key string, oldValue interface{}, newValue interface{})
+}
+
+// NewApolloClient 创建 Apollo 配置中心客户端
+func NewApolloClient(cfg ApolloConfig) (*ApolloClient, error) {
+	if !cfg.Enabled {
+		return nil, fmt.Errorf("apollo config is disabled")
+	}
+
+	// 设置 Apollo 配置
+	apolloConfig := &config.AppConfig{
+		AppID:         cfg.AppID,
+		Cluster:       cfg.Cluster,
+		NamespaceName: cfg.NamespaceName,
+		IP:            cfg.Endpoint,
+	}
+
+	// 初始化 agollo
+	err := agollo.InitWithConfig(apolloConfig)
+	if err != nil {
+		return nil, fmt.Errorf("init apollo failed: %w", err)
+	}
+
+	// 启动 agollo
+	err = agollo.Start()
+	if err != nil {
+		return nil, fmt.Errorf("start apollo failed: %w", err)
+	}
+
+	return &ApolloClient{
+		config:       &cfg,
+		agolloClient: agollo.GetClient(),
+	}, nil
+}
+
+// GetConfigValue 获取配置值 (通用类型)
+func (c *ApolloClient) GetConfigValue(key string, defaultValue interface{}) interface{} {
+	config := c.agolloClient.GetConfig(c.config.NamespaceName)
+	if config == nil {
+		return defaultValue
+	}
+	return config.GetValue(key, defaultValue)
+}
+
+// GetConfigStringValue 获取字符串类型配置值
+func (c *ApolloClient) GetConfigStringValue(key string, defaultValue string) string {
+	config := c.agolloClient.GetConfig(c.config.NamespaceName)
+	if config == nil {
+		return defaultValue
+	}
+	return config.GetStringValue(key, defaultValue)
+}
+
+// GetConfigIntValue 获取整数类型配置值
+func (c *ApolloClient) GetConfigIntValue(key string, defaultValue int) int {
+	config := c.agolloClient.GetConfig(c.config.NamespaceName)
+	if config == nil {
+		return defaultValue
+	}
+	return config.GetIntValue(key, defaultValue)
+}
+
+// GetConfigFloatValue 获取浮点数类型配置值
+func (c *ApolloClient) GetConfigFloatValue(key string, defaultValue float64) float64 {
+	config := c.agolloClient.GetConfig(c.config.NamespaceName)
+	if config == nil {
+		return defaultValue
+	}
+	return config.GetFloatValue(key, defaultValue)
+}
+
+// GetConfigBoolValue 获取布尔类型配置值
+func (c *ApolloClient) GetConfigBoolValue(key string, defaultValue bool) bool {
+	config := c.agolloClient.GetConfig(c.config.NamespaceName)
+	if config == nil {
+		return defaultValue
+	}
+	return config.GetBoolValue(key, defaultValue)
+}
+
+// AddChangeListener 添加配置变更监听器
+func (c *ApolloClient) AddChangeListener(listener ConfigChangeListener, namespace string) error {
+	if namespace == "" {
+		namespace = c.config.NamespaceName
+	}
+
+	agollo.ListenTo(namespace, func(event *agollo.ChangeEvent) {
+		if event == nil {
+			return
+		}
+		// 遍历所有变更
+		for key, change := range event.Changes {
+			if change == nil {
+				continue
+			}
+			listener.OnChange(namespace, key, change.OldValue, change.NewValue)
+		}
+	})
+
+	return nil
+}
+
+// Close 关闭 Apollo 客户端
+func (c *ApolloClient) Close() error {
+	agollo.Close()
+	return nil
+}

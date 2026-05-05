@@ -1,0 +1,141 @@
+package main
+
+import (
+	"context"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"{{.GoModuleName}}/internal/handler"
+	"{{.GoModuleName}}/internal/service"
+	"{{.GoModuleName}}/pkg/config"
+	"{{.GoModuleName}}/pkg/logger"
+	"{{.GoModuleName}}/pkg/rpc"
+
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/app/server"
+	"github.com/cloudwego/hertz/pkg/common/utils"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
+	{{- if .SwaggerEnabled}}
+	_ "{{.GoModuleName}}/docs"
+	"github.com/swaggo/hertz-swagger/swaggerFiles"
+	"github.com/swaggo/swag/example/basic/swagger"
+	{{- end}}
+)
+
+// @title {{.ServiceName}} API Gateway
+// @version 1.0
+// @description This is API Gateway for {{.ServiceName}} microservice.
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name API Support
+// @contact.url http://www.swagger.io/support
+// @contact.email support@swagger.io
+
+// @license.name Apache 2.0
+// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
+
+// @host localhost:8080
+// @BasePath /api/v1
+
+func main() {
+	// 加载配置
+	cfg := config.Get()
+
+	// 初始化日志
+	log := logger.NewLogger(&cfg.Log)
+	defer log.Sync()
+
+	// 初始化 RPC 客户端（如果依赖其他服务）
+	// TODO: 根据实际依赖初始化客户端
+	_ = rpc.InitAllClients()
+
+	// 初始化服务和处理器
+	svc := service.NewService()
+	h := handler.NewHandler(svc)
+
+	// 创建 Hertz 服务器
+	hzn := server.Default(
+		server.WithHostPorts(getAddr(cfg)),
+	)
+
+	// 注册中间件（日志、限流、认证）
+	registerMiddlewares(hzn, cfg)
+
+	// 注册路由
+	registerRoutes(hzn, h)
+
+	{{- if .SwaggerEnabled}}
+	// 注册 Swagger 文档
+	hzn.GET("/swagger/*any", swagger.WrapHandler(swaggerFiles.Handler))
+	{{- end}}
+
+	// 启动服务
+	go func() {
+		hzn.Start()
+	}()
+
+	// 等待退出信号
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Info("Shutting down server...")
+
+	// 优雅关闭
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
+	defer cancel()
+
+	if err := hzn.Shutdown(ctx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+
+	log.Info("Server exited")
+}
+
+func getAddr(cfg *config.Config) string {
+	if cfg.Server.Port == 0 {
+		return "0.0.0.0:8080"
+	}
+	return "0.0.0.0:" + itoa(cfg.Server.Port)
+}
+
+func itoa(i int) string {
+	if i == 0 {
+		return "0"
+	}
+	res := ""
+	for i > 0 {
+		res = string(rune(i%10+'0')) + res
+		i /= 10
+	}
+	return res
+}
+
+func registerMiddlewares(hzn *server.Hertz, cfg *config.Config) {
+	// 日志中间件
+	hzn.Use(logger.HertzLogger())
+
+	// 限流中间件
+	if cfg.Server.RateLimit.Enabled {
+		hzn.Use(RateLimitMiddleware(cfg.Server.RateLimit.QPS))
+	}
+
+	// 认证中间件（如果开启）
+	if cfg.Auth.Enabled {
+		hzn.Use(AuthMiddleware())
+	}
+}
+
+func registerRoutes(hzn *server.Hertz, h *handler.Handler) {
+	// 健康检查
+	hzn.GET("/health", func(c context.Context, ctx *app.RequestContext) {
+		ctx.JSON(consts.StatusOK, utils.H{
+			"status": "ok",
+		})
+	})
+
+	// 注册业务路由
+	h.Register(hzn)
+}

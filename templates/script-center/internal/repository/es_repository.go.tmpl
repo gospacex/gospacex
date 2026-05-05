@@ -1,0 +1,163 @@
+package repository
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"{{.ProjectName}}/pkg/search"
+)
+
+// ESRepository Elasticsearch repository implementation following MySQL pattern
+type ESRepository struct {
+	client *search.ESClient
+}
+
+// NewESRepository creates a new ES repository instance
+func NewESRepository(client *search.ESClient) *ESRepository {
+	return &ESRepository{client: client}
+}
+
+// Create creates a new document in Elasticsearch
+// Generates a UUID if ID is not provided in entity
+func (r *ESRepository) Create(ctx context.Context, entity interface{}) error {
+	// Extract ID from entity or generate UUID
+	// For simplicity, we expect entity to have an ID field or use a generated one
+	id, ok := extractID(entity)
+	if !ok {
+		id = generateUUID()
+	}
+
+	if err := r.client.IndexDocument(id, entity); err != nil {
+		return fmt.Errorf("failed to create document: %w", err)
+	}
+
+	return nil
+}
+
+// GetByID retrieves a document by ID from Elasticsearch
+func (r *ESRepository) GetByID(ctx context.Context, id string) (interface{}, error) {
+	data, err := r.client.GetDocument(id)
+	if err != nil {
+		return nil, err
+	}
+
+	var entity interface{}
+	if err := json.Unmarshal(data, &entity); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal document: %w", err)
+	}
+
+	return entity, nil
+}
+
+// Update updates a document in Elasticsearch by ID
+func (r *ESRepository) Update(ctx context.Context, id string, entity interface{}) error {
+	if err := r.client.UpdateDocument(id, entity); err != nil {
+		return fmt.Errorf("failed to update document: %w", err)
+	}
+
+	return nil
+}
+
+// Delete deletes a document by ID from Elasticsearch
+func (r *ESRepository) Delete(ctx context.Context, id string) error {
+	if err := r.client.DeleteDocument(id); err != nil {
+		return fmt.Errorf("failed to delete document: %w", err)
+	}
+
+	return nil
+}
+
+// List retrieves all documents from Elasticsearch with pagination
+// Uses match_all query to fetch all documents
+func (r *ESRepository) List(ctx context.Context, limit, offset int) ([]interface{}, error) {
+	query := map[string]interface{}{
+		"match_all": map[string]interface{}{},
+	}
+
+	data, err := r.client.Search(query, offset, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	return parseSearchResults(data)
+}
+
+// Search searches documents in Elasticsearch using query_string
+func (r *ESRepository) Search(ctx context.Context, query string, limit, offset int) ([]interface{}, error) {
+	// Build multi_match query for full-text search
+	esQuery := map[string]interface{}{
+		"multi_match": map[string]interface{}{
+			"query":  query,
+			"fields": []string{"*"},
+		},
+	}
+
+	data, err := r.client.Search(esQuery, offset, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	return parseSearchResults(data)
+}
+
+// BulkIndex performs bulk indexing of documents
+func (r *ESRepository) BulkIndex(docs []BulkDoc) error {
+	return r.client.BulkIndex(docs)
+}
+
+// BulkDoc represents a document for bulk operations
+type BulkDoc struct {
+	ID     string
+	Action string
+	Doc    interface{}
+}
+
+// extractID tries to extract ID field from entity (simplified)
+// In a real implementation, this would use reflection
+func extractID(entity interface{}) (string, bool) {
+	// For now, return empty - ID will be generated
+	return "", false
+}
+
+// generateUUID generates a simple UUID for document ID
+func generateUUID() string {
+	// Simplified UUID generation for template
+	// In production, use github.com/google/uuid
+	return fmt.Sprintf("doc_%d", len(fmt.Sprintf("%p", new(byte))))
+}
+
+// parseSearchResults parses Elasticsearch search response
+func parseSearchResults(data []byte) ([]interface{}, error) {
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse search response: %w", err)
+	}
+
+	hits, ok := result["hits"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid hits format")
+	}
+
+	hitList, ok := hits["hits"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid hits list format")
+	}
+
+	entities := make([]interface{}, 0, len(hitList))
+	for _, hit := range hitList {
+		hitMap, ok := hit.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		source, ok := hitMap["_source"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		entities = append(entities, source)
+	}
+
+	return entities, nil
+}

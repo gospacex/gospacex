@@ -1,0 +1,133 @@
+package test
+
+import (
+	"context"
+	"testing"
+
+	"{{.ModuleName}}/{{.SrvDirName}}/internal/handler"
+	"{{.ModuleName}}/{{.SrvDirName}}/internal/repository"
+	"{{.ModuleName}}/{{.SrvDirName}}/internal/service"
+)
+
+// mockRepo 测试用 mock repository
+type mockRepo struct {
+	items []*model.{{.UpperName}}
+}
+
+func (m *mockRepo) Create(ctx context.Context, r *model.{{.UpperName}}) error {
+	m.items = append(m.items, r)
+	return nil
+}
+
+func (m *mockRepo) GetByID(ctx context.Context, id uint) (*model.{{.UpperName}}, error) {
+	for _, item := range m.items {
+		if item.Id == id {
+			return item, nil
+		}
+	}
+	return nil, gorm.ErrRecordNotFound
+}
+
+func (m *mockRepo) List(ctx context.Context) ([]*model.{{.UpperName}}, error) {
+	return m.items, nil
+}
+
+func (m *mockRepo) Update(ctx context.Context, r *model.{{.UpperName}}) error {
+	return nil
+}
+
+func (m *mockRepo) Delete(ctx context.Context, id uint) error {
+	var result []*model.{{.UpperName}}
+	for _, item := range m.items {
+		if item.Id != id {
+			result = append(result, item)
+		}
+	}
+	m.items = result
+	return nil
+}
+
+// Test{{.UpperName}}Handler_Create 测试创建
+func Test{{.UpperName}}Handler_Create(t *testing.T) {
+	repo := &mockRepo{items: make([]*model.{{.UpperName}}, 0)}
+	svc := service.New{{.UpperName}}Service(repo)
+	h := handler.New{{.UpperName}}Handler(repo)
+
+	req := &{{.ModuleName}}.Create{{.UpperName}}Req{Name: "test"}
+	resp, err := h.Create(context.Background(), req)
+
+	if err != nil {
+		t.Errorf("Create failed: %v", err)
+	}
+	if resp.Id == 0 {
+		t.Errorf("expected non-zero id")
+	}
+}
+
+// Test{{.UpperName}}Handler_Get 测试获取详情
+func Test{{.UpperName}}Handler_Get(t *testing.T) {
+	repo := &mockRepo{items: make([]*model.{{.UpperName}}, 0)}
+	h := handler.New{{.UpperName}}Handler(repo)
+
+	req := &{{.ModuleName}}.Get{{.UpperName}}Req{Id: 1}
+	resp, err := h.Get(context.Background(), req)
+
+	if err != nil && err != gorm.ErrRecordNotFound {
+		t.Errorf("Get failed: %v", err)
+	}
+}
+
+// Test{{.UpperName}}Handler_List 测试列表
+func Test{{.UpperName}}Handler_List(t *testing.T) {
+	repo := &mockRepo{items: []*model.{{.UpperName}}{
+		{ID: 1, Name: "test1"},
+		{ID: 2, Name: "test2"},
+	}}
+	h := handler.New{{.UpperName}}Handler(repo)
+
+	req := &{{.ModuleName}}.List{{.UpperName}}Req{}
+	resp, err := h.List(context.Background(), req)
+
+	if err != nil {
+		t.Errorf("List failed: %v", err)
+	}
+	if len(resp.Items) != 2 {
+		t.Errorf("expected 2 items, got %d", len(resp.Items))
+	}
+}
+
+// Test{{.UpperName}}Handler_Update 测试更新
+func Test{{.UpperName}}Handler_Update(t *testing.T) {
+	repo := &mockRepo{items: []*model.{{.UpperName}}{
+		{ID: 1, Name: "test1"},
+	}}
+	h := handler.New{{.UpperName}}Handler(repo)
+
+	req := &{{.ModuleName}}.Update{{.UpperName}}Req{Id: 1, Name: "updated"}
+	resp, err := h.Update(context.Background(), req)
+
+	if err != nil {
+		t.Errorf("Update failed: %v", err)
+	}
+	if !resp.Success {
+		t.Errorf("expected success")
+	}
+}
+
+// Test{{.UpperName}}Handler_Delete 测试删除
+func Test{{.UpperName}}Handler_Delete(t *testing.T) {
+	repo := &mockRepo{items: []*model.{{.UpperName}}{
+		{ID: 1, Name: "test1"},
+	}}
+	h := handler.New{{.UpperName}}Handler(repo)
+
+	req := &{{.ModuleName}}.Delete{{.UpperName}}Req{Id: 1}
+	resp, err := h.Delete(context.Background(), req)
+
+	if err != nil {
+		t.Errorf("Delete failed: %v", err)
+	}
+	if !resp.Success {
+		t.Errorf("expected success")
+	}
+}

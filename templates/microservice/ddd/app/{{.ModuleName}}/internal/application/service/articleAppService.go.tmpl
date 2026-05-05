@@ -1,0 +1,23 @@
+package service
+
+import (
+	"context"
+	"{{.ModuleName}}/app/{{.ModuleName}}/internal/domain"
+	"{{.ModuleName}}/app/{{.ModuleName}}/internal/application/dto"
+)
+
+type ArticleAppService struct {
+	domainSvc *domain.ArticleDomainService
+}
+
+func NewArticleAppService(domainSvc *domain.ArticleDomainService) *ArticleAppService {
+	return &ArticleAppService{domainSvc: domainSvc}
+}
+
+func (s *ArticleAppService) CreateArticle(ctx context.Context, req *dto.ArticleCreateDTO) (*dto.ArticleDTO, error) {
+	aggregate, err := s.domainSvc.CreateArticle(ctx, req.Title, req.Content, 0)
+	if err != nil {
+		return nil, err
+	}
+	return &dto.ArticleDTO{ID: aggregate.ID(), Title: aggregate.Title()}, nil
+}

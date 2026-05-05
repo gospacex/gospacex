@@ -1,0 +1,135 @@
+package config
+
+import (
+	"os"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
+
+func TestLocalFileLoader_Load(t *testing.T) {
+	// 创建临时测试文件
+	content := `
+app:
+  name: test-app
+  debug: true
+database:
+  host: localhost
+  port: 3306
+  password: ${TEST_DB_PASSWORD}
+  enabled: true
+`
+	tmpFile, err := os.CreateTemp("", "config-*.yaml")
+	assert.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+
+	_, err = tmpFile.WriteString(content)
+	assert.NoError(t, err)
+	tmpFile.Close()
+
+	// 设置环境变量
+	os.Setenv("TEST_DB_PASSWORD", "secret-password")
+	defer os.Unsetenv("TEST_DB_PASSWORD")
+
+	loader := NewLocalFileLoader(tmpFile.Name())
+	data, err := loader.Load()
+	assert.NoError(t, err)
+
+	// 验证结果
+	assert.Equal(t, "test-app", data["app.name"])
+	assert.Equal(t, true, data["app.debug"])
+	assert.Equal(t, "localhost", data["database.host"])
+	assert.Equal(t, 3306, int(data["database.port"].(float64)))
+	assert.Equal(t, "secret-password", data["database.password"])
+	assert.Equal(t, true, data["database.enabled"])
+}
+
+func TestLocalFileLoader_LoadJSON(t *testing.T) {
+	// 创建临时 JSON 测试文件
+	content := `{
+	"app": {
+		"name": "test-app",
+		"debug": true
+	},
+	"database": {
+		"host": "localhost",
+		"port": 3306
+	}
+}`
+	tmpFile, err := os.CreateTemp("", "config-*.json")
+	assert.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+
+	_, err = tmpFile.WriteString(content)
+	assert.NoError(t, err)
+	tmpFile.Close()
+
+	loader := NewLocalFileLoader(tmpFile.Name())
+	data, err := loader.Load()
+	assert.NoError(t, err)
+
+	// 验证结果
+	assert.Equal(t, "test-app", data["app.name"])
+	assert.Equal(t, true, data["app.debug"])
+	assert.Equal(t, "localhost", data["database.host"])
+	assert.Equal(t, 3306, int(data["database.port"].(float64)))
+}
+
+func TestLocalFileLoader_Source(t *testing.T) {
+	loader := NewLocalFileLoader("test/path")
+	assert.Equal(t, SourceLocalFile, loader.Source())
+}
+
+func TestLocalFileLoader_Watch(t *testing.T) {
+	loader := NewLocalFileLoader("test/path")
+	ch := loader.Watch("test.key")
+	// 目前不支持监听，channel 应该已经关闭
+	_, ok := <-ch
+	assert.False(t, ok, "channel should be closed")
+}
+
+func TestExpandEnv(t *testing.T) {
+	loader := NewLocalFileLoader("")
+
+	// 测试占位符替换
+	os.Setenv("TEST_VAR", "hello")
+	defer os.Unsetenv("TEST_VAR")
+
+	result := loader.expandEnv("prefix-${TEST_VAR}-suffix")
+	assert.Equal(t, "prefix-hello-suffix", result)
+
+	// 测试无占位符
+	result = loader.expandEnv("no-placeholders-here")
+	assert.Equal(t, "no-placeholders-here", result)
+
+	// 测试多个占位符
+	os.Setenv("VAR1", "foo")
+	os.Setenv("VAR2", "bar")
+	defer func() {
+		os.Unsetenv("VAR1")
+		os.Unsetenv("VAR2")
+	}()
+
+	result = loader.expandEnv("${VAR1}-${VAR2}")
+	assert.Equal(t, "foo-bar", result)
+
+	// 测试未设置的环境变量（替换为空）
+	result = loader.expandEnv("prefix-${NOT_EXIST}-suffix")
+	assert.Equal(t, "prefix--suffix", result)
+
+	// 测试占位符没有闭合
+	result = loader.expandEnv("prefix-${unclosed")
+	assert.Equal(t, "prefix-", result)
+}
+
+func TestExpandEnv_NoEnvironmentVariables(t *testing.T) {
+	loader := NewLocalFileLoader("")
+
+	// 测试纯文本
+	result := loader.expandEnv("this is a test")
+	assert.Equal(t, "this is a test", result)
+
+	// 测试普通美元符号不是占位符
+	result = loader.expandEnv("$100 $abc")
+	assert.Equal(t, "$100 $abc", result)
+}

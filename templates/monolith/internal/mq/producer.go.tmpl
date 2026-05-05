@@ -1,0 +1,44 @@
+package mq
+
+// MQType 消息队列类型
+type MQType string
+
+const (
+	Kafka    MQType = "kafka"
+	RabbitMQ MQType = "rabbitmq"
+	RocketMQ MQType = "rocketmq"
+)
+
+// Message 消息
+type Message struct {
+	Topic   string
+	Key     string
+	Value   []byte
+	Headers map[string]string
+}
+
+// Producer 消息生产者接口
+type Producer interface {
+	Send(ctx context.Context, msg *Message) error
+	Close() error
+}
+
+// Consumer 消息消费者接口
+type Consumer interface {
+	Start() error
+	Stop() error
+}
+
+// InitProducer 初始化生产者
+func InitProducer(mqType MQType, config interface{}) (Producer, error) {
+	switch mqType {
+	case Kafka:
+		return NewKafkaProducer(config)
+	case RabbitMQ:
+		return NewRabbitMQProducer(config)
+	case RocketMQ:
+		return NewRocketMQProducer(config)
+	default:
+		return nil, ErrUnknownMQType
+	}
+}

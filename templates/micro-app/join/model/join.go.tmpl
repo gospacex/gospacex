@@ -1,0 +1,13 @@
+package {{.PackageName}}
+
+// join{{.LeftEntity}}{{.RightEntity}}.go 联表 Model
+// 左表: {{.LeftEntity}} (表: {{.LeftTable}})
+// 右表: {{.RightEntity}} (表: {{.RightTable}}, 别名前缀: {{.RightAlias}}_)
+
+// Join{{.LeftUpper}}{{.RightUpper}} 联表查询结果（扁平结构）
+type Join{{.LeftUpper}}{{.RightUpper}} struct {
+{{range .LeftColumns}}	// {{.Comment}}
+	{{.GoName}} {{.GoType}} `gorm:"column:{{.ColumnName}};comment:{{.Comment}}"`
+{{end}}{{range .RightColumns}}	// {{.Comment}}
+	{{.GoName}} {{.GoType}} `gorm:"column:{{.AliasName}};comment:{{.Comment}}"`
+{{end}}}

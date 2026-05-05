@@ -1,0 +1,401 @@
+package test
+
+// {{.Module}}_http_test.go
+// BFF HTTP Handler Mock 测试（内嵌 mock gRPC server）
+// 不依赖外部服务，在进程内启动 mock server
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	rpcclient "{{.AppName}}/{{.BffDirName}}/internal/rpcClient"
+	pb "{{.AppName}}/common/kitexGen/{{.ProtoImportPath}}"
+
+	"github.com/gin-gonic/gin"
+	"google.golang.org/grpc"
+)
+
+// mock{{.UpperModule}}Server 模拟 gRPC 服务端（内存存储）
+type mock{{.UpperModule}}Server struct {
+	pb.Unimplemented{{.UpperModule}}ServiceServer
+	items map[int64]*pb.Get{{.UpperModule}}Resp
+	nextID int64
+}
+
+func newMock{{.UpperModule}}Server() *mock{{.UpperModule}}Server {
+	return &mock{{.UpperModule}}Server{
+		items:  make(map[int64]*pb.Get{{.UpperModule}}Resp),
+		nextID: 1,
+	}
+}
+
+func (s *mock{{.UpperModule}}Server) Create(ctx context.Context, req *pb.Create{{.UpperModule}}Req) (*pb.Create{{.UpperModule}}Resp, error) {
+	id := s.nextID
+	s.nextID++
+	s.items[id] = &pb.Get{{.UpperModule}}Resp{
+		Id: id,
+{{- range .Columns}}
+{{- if or (eq .ProtoGoName "MerId") (eq .ProtoGoName "StoreName") (eq .ProtoGoName "Price") (eq .ProtoGoName "Image") (eq .ProtoGoName "Stock") (eq .ProtoGoName "Keyword") (eq .ProtoGoName "CateId") (eq .ProtoGoName "StoreInfo")}}
+		{{.ProtoGoName}}: req.{{.ProtoGoName}},
+{{- end}}
+{{- end}}
+	}
+	return &pb.Create{{.UpperModule}}Resp{Id: id}, nil
+}
+
+func (s *mock{{.UpperModule}}Server) Get(ctx context.Context, req *pb.Get{{.UpperModule}}Req) (*pb.Get{{.UpperModule}}Resp, error) {
+	p, ok := s.items[req.Id]
+	if !ok {
+		return nil, fmt.Errorf("not found: %d", req.Id)
+	}
+	return p, nil
+}
+
+func (s *mock{{.UpperModule}}Server) List(ctx context.Context, req *pb.List{{.UpperModule}}Req) (*pb.List{{.UpperModule}}Resp, error) {
+	var items []*pb.{{.UpperModule}}Item
+	for _, p := range s.items {
+		items = append(items, &pb.{{.UpperModule}}Item{
+			Id: p.Id,
+{{- range .Columns}}
+{{- if or (eq .ProtoGoName "StoreName") (eq .ProtoGoName "Price") (eq .ProtoGoName "Stock") (eq .ProtoGoName "MerId")}}
+			{{.ProtoGoName}}: p.{{.ProtoGoName}},
+{{- end}}
+{{- end}}
+		})
+	}
+	return &pb.List{{.UpperModule}}Resp{Items: items}, nil
+}
+
+func (s *mock{{.UpperModule}}Server) Update(ctx context.Context, req *pb.Update{{.UpperModule}}Req) (*pb.Update{{.UpperModule}}Resp, error) {
+	p, ok := s.items[req.Id]
+	if !ok {
+		return nil, fmt.Errorf("not found: %d", req.Id)
+	}
+{{- range .UpdateFields}}
+{{- if or (eq .ProtoGoName "StoreName") (eq .ProtoGoName "Price") (eq .ProtoGoName "Stock")}}
+	if req.{{.ProtoGoName}} != {{.ZeroValue}} {
+		p.{{.ProtoGoName}} = req.{{.ProtoGoName}}
+	}
+{{- end}}
+{{- end}}
+	return &pb.Update{{.UpperModule}}Resp{Success: true}, nil
+}
+
+func (s *mock{{.UpperModule}}Server) Delete(ctx context.Context, req *pb.Delete{{.UpperModule}}Req) (*pb.Delete{{.UpperModule}}Resp, error) {
+	delete(s.items, req.Id)
+	return &pb.Delete{{.UpperModule}}Resp{Success: true}, nil
+}
+
+// newDirectClient 直连 mock gRPC server（绕过 Consul）
+func newDirectClient(t *testing.T, grpcAddr string) *rpcclient.{{.UpperModule}}Client {
+	t.Helper()
+	cli, err := rpcclient.New{{.UpperModule}}ClientDirect(grpcAddr)
+	if err != nil {
+		t.Fatalf("failed to create direct rpc client: %v", err)
+	}
+	return cli
+}
+
+// setupTestRouter 启动 mock gRPC server + Gin HTTP 路由
+func setupTestRouter(t *testing.T) (*gin.Engine, func()) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+
+	// 启动 mock gRPC server
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	mockSrv := grpc.NewServer()
+	pb.Register{{.UpperModule}}ServiceServer(mockSrv, newMock{{.UpperModule}}Server())
+	go mockSrv.Serve(lis)
+
+	addr := lis.Addr().String()
+	cli := newDirectClient(t, addr)
+
+	r := gin.New()
+	ph := &testable{{.UpperModule}}Handler{client: cli}
+{{- range .JoinModules}}
+	// 关联模块 {{.}} 需要在 join 场景中添加客户端
+{{- end}}
+	r.GET("/api/v1/{{.Module}}s", ph.List)
+	r.GET("/api/v1/{{.Module}}s/:id", ph.Get)
+	r.POST("/api/v1/{{.Module}}s", ph.Create)
+	r.PUT("/api/v1/{{.Module}}s/:id", ph.Update)
+	r.DELETE("/api/v1/{{.Module}}s/:id", ph.Delete)
+
+	return r, func() {
+		cli.Close()
+		mockSrv.GracefulStop()
+	}
+}
+
+// testableHandler 使用注入 rpcClient 的可测试 handler
+type testable{{.UpperModule}}Handler struct {
+	client *rpcclient.{{.UpperModule}}Client
+}
+
+{{- range .CreateFields}}
+{{- if .ProtoGoName}}
+{{.GoCreateHandler}}
+{{- end}}
+{{- end}}
+
+func (h *testable{{.UpperModule}}Handler) Create(c *gin.Context) {
+	var req struct {
+{{- range .CreateFields}}
+{{- if .ProtoGoName}}
+		{{.GoFieldName}} {{.GoFieldType}} `json:"{{.SnakeName}}"`
+{{- end}}
+{{- end}}
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	rpcReq := &pb.Create{{.UpperModule}}Req{
+{{- range .CreateFields}}
+{{- if .ProtoGoName}}
+		{{.ProtoGoName}}: req.{{.GoFieldName}},
+{{- end}}
+{{- end}}
+	}
+	resp, err := h.client.Create(c.Request.Context(), rpcReq)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"id": resp.Id})
+}
+
+func (h *testable{{.UpperModule}}Handler) Get(c *gin.Context) {
+	idStr := c.Param("id")
+	var id int64
+	if _, err := fmt.Sscanf(idStr, "%d", &id); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	resp, err := h.client.Get(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"id": resp.Id
+{{- range .Columns}}
+{{- if or (eq .ProtoGoName "MerId") (eq .ProtoGoName "StoreName") (eq .ProtoGoName "Price") (eq .ProtoGoName "Image") (eq .ProtoGoName "Stock")}},
+		"{{.SnakeName}}": resp.{{.ProtoGoName}}
+{{- end}}
+{{- end}}
+	})
+}
+
+func (h *testable{{.UpperModule}}Handler) List(c *gin.Context) {
+	resp, err := h.client.List(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	var items []map[string]interface{}
+	for _, item := range resp.Items {
+		items = append(items, map[string]interface{}{
+			"id": item.Id,
+{{- range .Columns}}
+{{- if or (eq .ProtoGoName "StoreName") (eq .ProtoGoName "Price") (eq .ProtoGoName "Stock")}},
+			"{{.SnakeName}}": item.{{.ProtoGoName}}
+{{- end}}
+{{- end}}
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
+func (h *testable{{.UpperModule}}Handler) Update(c *gin.Context) {
+	idStr := c.Param("id")
+	var id int64
+	if _, err := fmt.Sscanf(idStr, "%d", &id); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	var req struct {
+{{- range .UpdateFields}}
+		{{.GoFieldName}} {{.GoFieldType}} `json:"{{.SnakeName}}"`
+{{- end}}
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	rpcReq := &pb.Update{{.UpperModule}}Req{Id: id
+{{- range .UpdateFields}}
+{{- if .ProtoGoName}}
+		, {{.ProtoGoName}}: req.{{.GoFieldName}}
+{{- end}}
+{{- end}}
+	}
+	resp, err := h.client.Update(c.Request.Context(), rpcReq)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": resp.Success})
+}
+
+func (h *testable{{.UpperModule}}Handler) Delete(c *gin.Context) {
+	idStr := c.Param("id")
+	var id int64
+	if _, err := fmt.Sscanf(idStr, "%d", &id); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	resp, err := h.client.Delete(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": resp.Success})
+}
+
+// ========== 测试用例 ==========
+
+func Test{{.UpperModule}}Create(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	body := `{"store_name":"测试","price":99.9,"stock":100}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/{{.Module}}s", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["id"] == nil {
+		t.Fatal("expected id in response")
+	}
+	t.Logf("✅ POST /api/v1/{{.Module}}s → %d", w.Code)
+}
+
+func Test{{.UpperModule}}Get(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	body := `{"store_name":"GET测试","price":50.0,"stock":20}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/{{.Module}}s", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	var createResp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &createResp)
+	id := createResp["id"]
+
+	req = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/{{.Module}}s/%v", id), nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var getResp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &getResp)
+	t.Logf("✅ GET /api/v1/{{.Module}}s/%v → %s", id, w.Body.String())
+}
+
+func Test{{.UpperModule}}List(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	for i := 0; i < 2; i++ {
+		body := fmt.Sprintf(`{"store_name":"列表商品%d","price":%d}`, i+1, (i+1)*10)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/{{.Module}}s", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/{{.Module}}s", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	items, ok := resp["items"].([]interface{})
+	if !ok || len(items) != 2 {
+		t.Fatalf("expected 2 items, got %v", resp["items"])
+	}
+	t.Logf("✅ GET /api/v1/{{.Module}}s → %d items", len(items))
+}
+
+func Test{{.UpperModule}}Update(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	body := `{"store_name":"更新前","price":30.0}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/{{.Module}}s", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	var createResp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &createResp)
+	id := createResp["id"]
+
+	body = `{"store_name":"更新后","price":66.6}`
+	req = httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v1/{{.Module}}s/%v", id), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	t.Logf("✅ PUT /api/v1/{{.Module}}s/%v → %s", id, w.Body.String())
+}
+
+func Test{{.UpperModule}}Delete(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	body := `{"store_name":"删除测试","price":10.0}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/{{.Module}}s", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	var createResp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &createResp)
+	id := createResp["id"]
+
+	req = httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v1/{{.Module}}s/%v", id), nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	t.Logf("✅ DELETE /api/v1/{{.Module}}s/%v → %s", id, w.Body.String())
+}
+
+func Test{{.UpperModule}}InvalidID(t *testing.T) {
+	router, cleanup := setupTestRouter(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/{{.Module}}s/invalid", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+	t.Logf("✅ GET invalid → %d (bad request as expected)", w.Code)
+}

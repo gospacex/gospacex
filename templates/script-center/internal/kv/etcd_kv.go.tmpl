@@ -1,0 +1,68 @@
+package kv
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"{{.ProjectName}}/pkg/discovery"
+	"go.etcd.io/etcd/client/v3"
+)
+
+// EtcdKV etcd KV storage wrapper
+type EtcdKV struct {
+	client *clientv3.Client
+}
+
+// NewEtcdKV creates a new etcd KV instance
+func NewEtcdKV() *EtcdKV {
+	return &EtcdKV{client: discovery.EtcdClient}
+}
+
+// Put puts a key-value pair into etcd
+func (kv *EtcdKV) Put(ctx context.Context, key string, value string, ttlSeconds ...int64) error {
+	if len(ttlSeconds) > 0 && ttlSeconds[0] > 0 {
+		// With lease for TTL
+		leaseResp, err := kv.client.Grant(ctx, ttlSeconds[0])
+		if err != nil {
+			return fmt.Errorf("failed to grant lease: %w", err)
+		}
+		_, err = kv.client.Put(ctx, key, value, clientv3.WithLease(leaseResp.ID))
+		return err
+	}
+
+	_, err := kv.client.Put(ctx, key, value)
+	return err
+}
+
+// Get gets a value by key from etcd
+func (kv *EtcdKV) Get(ctx context.Context, key string) (string, error) {
+	resp, err := kv.client.Get(ctx, key)
+	if err != nil {
+		return "", fmt.Errorf("failed to get key: %w", err)
+	}
+	if len(resp.Kvs) == 0 {
+		return "", fmt.Errorf("key not found: %s", key)
+	}
+	return string(resp.Kvs[0].Value), nil
+}
+
+// Delete deletes a key from etcd
+func (kv *EtcdKV) Delete(ctx context.Context, key string) error {
+	_, err := kv.client.Delete(ctx, key)
+	return err
+}
+
+// Exists checks if a key exists in etcd
+func (kv *EtcdKV) Exists(ctx context.Context, key string) (bool, error) {
+	resp, err := kv.client.Get(ctx, key, clientv3.WithCountOnly())
+	if err != nil {
+		return false, fmt.Errorf("failed to check key: %w", err)
+	}
+	return resp.Count > 0, nil
+}
+
+// Watch watches for changes on a key prefix
+func (kv *EtcdKV) Watch(ctx context.Context, prefix string) clientv3.WatchChan {
+	return kv.client.Watch(ctx, prefix, clientv3.WithPrefix())
+}

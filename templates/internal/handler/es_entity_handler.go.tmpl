@@ -1,0 +1,87 @@
+package handler
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"{{.ProjectName}}/internal/model"
+	"{{.ProjectName}}/internal/service"
+	"{{.ProjectName}}/pkg/logger"
+)
+
+// {{.EsEntityName}}Handler {{.EsEntityName}} handler
+type {{.EsEntityName}}Handler struct {
+	service *service.{{.EsEntityName}}Service
+}
+
+// New{{.EsEntityName}}Handler creates new {{.EsEntityName}} handler
+func New{{.EsEntityName}}Handler(ctx context.Context) *{{.EsEntityName}}Handler {
+	return &{{.EsEntityName}}Handler{
+		service: service.New{{.EsEntityName}}Service(ctx),
+	}
+}
+
+// Create{{.EsEntityName}}Request create request
+type Create{{.EsEntityName}}Request struct {
+	ID string `json:"id"`
+{{- range .Fields }}
+	{{.Name}} {{.Type}} `json:"{{.JsonName}}"`
+{{- end }}
+}
+
+// Create{{.EsEntityName}} creates {{.EsEntityName}}
+func (h *{{.EsEntityName}}Handler) Create{{.EsEntityName}}(req *Create{{.EsEntityName}}Request) error {
+	entity := &model.{{.EsEntityName}}{
+		ID: req.ID,
+{{- range .Fields }}
+		{{.Name}}: req.{{.Name}},
+{{- end }}
+	}
+	if err := h.service.Index(entity); err != nil {
+		logger.Error("Failed to create {{.EntityNameLower}}: %v", err)
+		return err
+	}
+	return nil
+}
+
+// Get{{.EsEntityName}} gets {{.EsEntityName}} by ID
+func (h *{{.EsEntityName}}Handler) Get{{.EsEntityName}}(id string) (*model.{{.EsEntityName}}, error) {
+	entity, err := h.service.Get(id)
+	if err != nil {
+		logger.Error("Failed to get {{.EntityNameLower}}: %v", err)
+		return nil, err
+	}
+	return entity, nil
+}
+
+// Search{{.EsEntityName}}s searches {{.EsEntityName}}s
+func (h *{{.EsEntityName}}Handler) Search{{.EsEntityName}}s(query string, page, pageSize int) ([]*model.{{.EsEntityName}}, int64, error) {
+	entities, total, err := h.service.Search(query, page, pageSize)
+	if err != nil {
+		logger.Error("Failed to search {{.EntityNameLower}}s: %v", err)
+		return nil, 0, err
+	}
+	return entities, total, nil
+}
+
+// Delete{{.EsEntityName}} deletes {{.EsEntityName}} by ID
+func (h *{{.EsEntityName}}Handler) Delete{{.EsEntityName}}(id string) error {
+	if err := h.service.Delete(id); err != nil {
+		logger.Error("Failed to delete {{.EntityNameLower}}: %v", err)
+		return err
+	}
+	return nil
+}
+
+// Print{{.EsEntityName}} prints entity
+func (h *{{.EsEntityName}}Handler) Print{{.EsEntityName}}(o *model.{{.EsEntityName}}) {
+	d, _ := json.MarshalIndent(o, "", "  ")
+	fmt.Printf("%s\n", string(d))
+}
+
+// Print{{.EsEntityName}}s prints entities list
+func (h *{{.EsEntityName}}Handler) Print{{.EsEntityName}}s(entities []*model.{{.EsEntityName}}, total int64, page, pageSize int) {
+	d, _ := json.MarshalIndent(entities, "", "  ")
+	fmt.Printf("{{.EntityNameLower}}s (Total:%d, Page:%d, PageSize:%d):\n%s\n", total, page, pageSize, string(d))
+}

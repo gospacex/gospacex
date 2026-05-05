@@ -1,0 +1,25 @@
+# {{.ProjectName}} - Script Center with Kafka Configuration
+
+app:
+  name: {{.ProjectName}}
+  environment: development
+
+# 数据库配置
+database:
+  types: [{{range .DB}}{{.}}, {{end}}]
+{{- if .MySQL}}
+  mysql:
+    host: {{.MySQLHost}}
+    port: {{.MySQLPort}}
+    user: {{.MySQLUser}}
+    password: {{.MySQLPassword}}
+    database: {{.MySQLDatabase}}
+{{end}}
+
+# Kafka 配置
+kafka:
+  enabled: true
+  brokers:
+    - localhost:9092
+  topic: article-events
+  consumer_group: {{.ProjectName}}-group

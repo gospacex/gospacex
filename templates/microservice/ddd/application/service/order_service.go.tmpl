@@ -1,0 +1,70 @@
+package service
+
+import (
+	"context"
+	"{{ .ModuleName }}/domain/entity"
+	"{{ .ModuleName }}/domain/repository"
+	"{{ .ModuleName }}/domain/valueobject"
+)
+
+// OrderService 订单应用服务
+type OrderService struct {
+	orderRepo repository.OrderRepository
+}
+
+// NewOrderService 创建订单服务
+func NewOrderService(orderRepo repository.OrderRepository) *OrderService {
+	return &OrderService{
+		orderRepo: orderRepo,
+	}
+}
+
+// CreateOrder 创建订单
+func (s *OrderService) CreateOrder(ctx context.Context, userID int64, items []OrderItem, totalMoney *valueobject.Money) (*entity.Order, error) {
+	// 1. 创建订单实体
+	order := entity.NewOrder(userID, totalMoney)
+	
+	// 2. 添加订单项
+	for _, item := range items {
+		if err := order.AddItem(item.ProductID, item.Quantity, item.Price); err != nil {
+			return nil, err
+		}
+	}
+	
+	// 3. 验证实体
+	if err := order.Validate(); err != nil {
+		return nil, err
+	}
+	
+	// 4. 保存订单
+	if err := s.orderRepo.Save(ctx, order); err != nil {
+		return nil, err
+	}
+	
+	return order, nil
+}
+
+// GetOrderByID 根据 ID 获取订单
+func (s *OrderService) GetOrderByID(ctx context.Context, id int64) (*entity.Order, error) {
+	return s.orderRepo.FindByID(ctx, id)
+}
+
+// PayOrder 支付订单
+func (s *OrderService) PayOrder(ctx context.Context, id int64) error {
+	order, err := s.orderRepo.FindByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	
+	return order.Pay()
+}
+
+// CancelOrder 取消订单
+func (s *OrderService) CancelOrder(ctx context.Context, id int64) error {
+	order, err := s.orderRepo.FindByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	
+	return order.Cancel()
+}

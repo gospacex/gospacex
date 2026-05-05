@@ -1,0 +1,42 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"{{.ModulePath}}/internal/consumer"
+)
+
+func main() {
+	fmt.Println("=== {{.ProjectName}} Consumer Demo ===")
+	
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+	
+	h := consumer.MessageHandlerFunc(func(ctx context.Context, msg string) error {
+		fmt.Printf("Received: %s\n", msg)
+		return nil
+	})
+	
+	c, err := consumer.NewKafkaConsumer(
+		[]string{"localhost:9092"},
+		"{{.ProjectName}}-topic",
+		"{{.ProjectName}}-group",
+		h,
+	)
+	if err != nil {
+		fmt.Printf("Create consumer failed: %v\n", err)
+		return
+	}
+	defer c.Close()
+	
+	fmt.Println("Consumer started...")
+	if err := c.Consume(ctx); err != nil {
+		fmt.Printf("Consumer error: %v\n", err)
+	}
+	
+	fmt.Println("Consumer stopped")
+}

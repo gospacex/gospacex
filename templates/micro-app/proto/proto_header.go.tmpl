@@ -1,0 +1,23 @@
+syntax = "proto3";
+package {{.Module}};
+option go_package = "{{.AppName}}/common/kitexGen/{{.ProtoImportPath}}";
+
+service {{.UpperName}}Service {
+  rpc Create(Create{{.UpperName}}Req) returns (Create{{.UpperName}}Resp);
+  rpc Get(Get{{.UpperName}}Req) returns (Get{{.UpperName}}Resp);
+  rpc List(List{{.UpperName}}Req) returns (List{{.UpperName}}Resp);
+  rpc Update(Update{{.UpperName}}Req) returns (Update{{.UpperName}}Resp);
+  rpc Delete(Delete{{.UpperName}}Req) returns (Delete{{.UpperName}}Resp);
+}
+
+message Create{{.UpperName}}Req { string name = 1; }
+message Create{{.UpperName}}Resp { int64 id = 1; }
+message Get{{.UpperName}}Req { int64 id = 1; }
+message Get{{.UpperName}}Resp { int64 id = 1; string name = 2; int32 status = 3; }
+message List{{.UpperName}}Req {}
+message {{.UpperName}}Item { int64 id = 1; string name = 2; int32 status = 3; }
+message List{{.UpperName}}Resp { repeated {{.UpperName}}Item items = 1; }
+message Update{{.UpperName}}Req { int64 id = 1; string name = 2; }
+message Update{{.UpperName}}Resp { bool success = 1; }
+message Delete{{.UpperName}}Req { int64 id = 1; }
+message Delete{{.UpperName}}Resp { bool success = 1; }

@@ -1,0 +1,37 @@
+package service
+
+import (
+	"context"
+
+	"{{.ProjectName}}/internal/mq"
+	"{{.ProjectName}}/internal/handler"
+)
+
+// RabbitmqConsumerService RabbitMQ 消费者服务
+type RabbitmqConsumerService interface {
+	Start(ctx context.Context) error
+	CheckHealth() error
+}
+
+type rabbitmqConsumerServiceImpl struct {
+	consumer *mq.RabbitmqConsumer
+	handler *handler.RabbitmqConsumerHandler
+}
+
+// NewRabbitmqConsumerService 创建服务
+func NewRabbitmqConsumerService(consumer *mq.RabbitmqConsumer, handler *handler.RabbitmqConsumerHandler) RabbitmqConsumerService {
+	return &rabbitmqConsumerServiceImpl{
+		consumer: consumer,
+		handler: handler,
+	}
+}
+
+// Start 开始消费
+func (s *rabbitmqConsumerServiceImpl) Start(ctx context.Context) error {
+	return s.handler.Start(ctx)
+}
+
+// CheckHealth 检查健康
+func (s *rabbitmqConsumerServiceImpl) CheckHealth() error {
+	return s.consumer.IsHealthy()
+}
