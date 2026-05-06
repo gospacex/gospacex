@@ -8,7 +8,7 @@ import (
 {{- if or (eq .Register "consul") (eq .Register "etcd")}}
 	"{{.AppName}}/pkg/config"
 {{- end}}
-	"{{.AppName}}/pkg/logger"
+	"github.com/gospacex/logger"
 	"{{.AppName}}/{{.BffDirName}}/internal/rpcClient"
 	pb "{{.AppName}}/common/kitexGen/{{.ProtoImportPath}}"
 

@@ -1508,51 +1508,83 @@ func genConfig(projectDir string) {
 
 import (
 	"fmt"
-	"os"
-	"gopkg.in/yaml.v3"
+	"sync"
+
+	"github.com/spf13/viper"
+)
+
+var (
+	globalConfig *Config
+	configMu    sync.RWMutex
 )
 
 type Config struct {
-	Server ServerConfig ` + "`" + `yaml:"server"` + "`" + `
-	Database DatabaseConfig ` + "`" + `yaml:"database"` + "`" + `
-	Registry RegistryConfig ` + "`" + `yaml:"registry"` + "`" + `
-	Tracing TracingConfig ` + "`" + `yaml:"tracing"` + "`" + `
+	Server   ServerConfig   ` + "`" + `mapstructure:"server"` + "`" + `
+	Database DatabaseConfig ` + "`" + `mapstructure:"database"` + "`" + `
+	Registry RegistryConfig ` + "`" + `mapstructure:"registry"` + "`" + `
+	Tracing  TracingConfig  ` + "`" + `mapstructure:"tracing"` + "`" + `
 }
 
 type ServerConfig struct {
-	Host string ` + "`" + `yaml:"host"` + "`" + `
-	Port int ` + "`" + `yaml:"port"` + "`" + `
+	Host string ` + "`" + `mapstructure:"host"` + "`" + `
+	Port int    ` + "`" + `mapstructure:"port"` + "`" + `
 }
 
 type DatabaseConfig struct {
-	Host string ` + "`" + `yaml:"host"` + "`" + `
-	Port string ` + "`" + `yaml:"port"` + "`" + `
-	User string ` + "`" + `yaml:"user"` + "`" + `
-	Password string ` + "`" + `yaml:"password"` + "`" + `
-	Database string ` + "`" + `yaml:"database"` + "`" + `
+	Host            string ` + "`" + `mapstructure:"host"` + "`" + `
+	Port            string ` + "`" + `mapstructure:"port"` + "`" + `
+	User            string ` + "`" + `mapstructure:"user"` + "`" + `
+	Password        string ` + "`" + `mapstructure:"password"` + "`" + `
+	Database        string ` + "`" + `mapstructure:"database"` + "`" + `
+	MaxOpenConns    int    ` + "`" + `mapstructure:"max_open_conns"` + "`" + `
+	MaxIdleConns    int    ` + "`" + `mapstructure:"max_idle_conns"` + "`" + `
+	ConnMaxLifetime int    ` + "`" + `mapstructure:"conn_max_lifetime"` + "`" + `
+	ConnMaxIdleTime int    ` + "`" + `mapstructure:"conn_max_idle_time"` + "`" + `
 }
 
 type RegistryConfig struct {
-	Type    string ` + "`" + `yaml:"type"` + "`" + `
-	Address string ` + "`" + `yaml:"address"` + "`" + `
+	Type    string ` + "`" + `mapstructure:"type"` + "`" + `
+	Address string ` + "`" + `mapstructure:"address"` + "`" + `
 }
 
 type TracingConfig struct {
-	Enabled    bool   ` + "`" + `yaml:"enabled"` + "`" + `
-	Endpoint   string ` + "`" + `yaml:"endpoint"` + "`" + `
-	ServiceName string ` + "`" + `yaml:"service_name"` + "`" + `
+	Enabled     bool   ` + "`" + `mapstructure:"enabled"` + "`" + `
+	Endpoint    string ` + "`" + `mapstructure:"endpoint"` + "`" + `
+	ServiceName string ` + "`" + `mapstructure:"service_name"` + "`" + `
 }
 
 func Load(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("config file not found: %s (error: %v)", path, err)
+	v := viper.New()
+	v.SetConfigFile(path)
+	v.SetConfigType("yaml")
+
+	v.SetDefault("server.host", "0.0.0.0")
+	v.SetDefault("server.port", 8080)
+	v.SetDefault("database.max_open_conns", 100)
+	v.SetDefault("database.max_idle_conns", 10)
+	v.SetDefault("database.conn_max_lifetime", 3600)
+	v.SetDefault("database.conn_max_idle_time", 600)
+
+	if err := v.ReadInConfig(); err != nil {
+		return nil, fmt.Errorf("error reading config: %w", err)
 	}
+
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("config file parse error: %v", err)
+	if err := v.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("error unmarshaling config: %w", err)
 	}
+
+	configMu.Lock()
+	globalConfig = &cfg
+	configMu.Unlock()
+
 	return &cfg, nil
+}
+
+func Get() *Config {
+	configMu.RLock()
+	defer configMu.RUnlock()
+	return globalConfig
 }
 `
 	os.WriteFile(filepath.Join(projectDir, "pkg", "config", "config.go"), []byte(content), 0644)
@@ -1563,6 +1595,8 @@ func genDatabase(projectDir string) {
 
 import (
 	"fmt"
+	"time"
+
 	"` + microAppName + `/pkg/config"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -1570,9 +1604,44 @@ import (
 )
 
 func NewDB(cfg *config.DatabaseConfig) (*gorm.DB, error) {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True",
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 		cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.Database)
-	return gorm.Open(mysql.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Info)})
+
+	maxOpenConns := cfg.MaxOpenConns
+	if maxOpenConns <= 0 {
+		maxOpenConns = 100
+	}
+	maxIdleConns := cfg.MaxIdleConns
+	if maxIdleConns <= 0 {
+		maxIdleConns = 10
+	}
+	connMaxLifetime := cfg.ConnMaxLifetime
+	if connMaxLifetime <= 0 {
+		connMaxLifetime = 3600
+	}
+	connMaxIdleTime := cfg.ConnMaxIdleTime
+	if connMaxIdleTime <= 0 {
+		connMaxIdleTime = 600
+	}
+
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Info),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database: %w", err)
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
+	}
+
+	sqlDB.SetMaxOpenConns(maxOpenConns)
+	sqlDB.SetMaxIdleConns(maxIdleConns)
+	sqlDB.SetConnMaxLifetime(time.Duration(connMaxLifetime) * time.Second)
+	sqlDB.SetConnMaxIdleTime(time.Duration(connMaxIdleTime) * time.Second)
+
+	return db, nil
 }
 `
 	os.WriteFile(filepath.Join(projectDir, "pkg", "database", "database.go"), []byte(content), 0644)
