@@ -5,11 +5,10 @@ import (
 	"net"
 	"testing"
 
-	"{{.AppName}}/common/kitex_gen/{{.EntityName}}"
+	pb "{{.AppName}}/common/kitexGen/{{.ProtoImportPath}}"
 	"{{.AppName}}/pkg/config"
 	"{{.AppName}}/pkg/database"
 	"{{.AppName}}/{{.SrvDirName}}/internal/handler"
-	"{{.AppName}}/{{.SrvDirName}}/internal/service"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -17,7 +16,7 @@ import (
 
 var (
 	testSrvAddr = "localhost:{{.SrvPort}}"
-	testClient  {{.UpperEntityName}}.{{.UpperEntityName}}ServiceClient
+	testClient  pb.{{.UpperEntityName}}ServiceClient
 	testConn    *grpc.ClientConn
 )
 
@@ -29,7 +28,7 @@ func setupGRPCClient(t *testing.T) {
 	if err != nil {
 		t.Skipf("skipping: cannot connect to gRPC server at %s: %v", testSrvAddr, err)
 	}
-	testClient = {{.UpperEntityName}}.New{{.UpperEntityName}}ServiceClient(testConn)
+	testClient = pb.New{{.UpperEntityName}}ServiceClient(testConn)
 }
 
 func teardownGRPCClient() {
@@ -55,7 +54,7 @@ func startTestServer(t *testing.T) func() {
 
 	srv := grpc.NewServer()
 	{{.LowerEntityName}}Handler := handler.New{{.UpperEntityName}}Handler(db)
-	{{.UpperEntityName}}.Register{{.UpperEntityName}}ServiceServer(srv, {{.LowerEntityName}}Handler)
+	pb.Register{{.UpperEntityName}}ServiceServer(srv, {{.LowerEntityName}}Handler)
 	go srv.Serve(lis)
 
 	return func() {
@@ -73,7 +72,7 @@ func Test{{.UpperEntityName}}Service_Create(t *testing.T) {
 	setupGRPCClient(t)
 	defer teardownGRPCClient()
 
-	resp, err := testClient.Create(context.Background(), &{{.UpperEntityName}}.Create{{.UpperEntityName}}Req{
+	resp, err := testClient.Create(context.Background(), &pb.Create{{.UpperEntityName}}Req{
 		StoreName: "Test {{.UpperEntityName}}",
 		Price:     99.9,
 	})
@@ -91,7 +90,7 @@ func Test{{.UpperEntityName}}Service_List(t *testing.T) {
 	setupGRPCClient(t)
 	defer teardownGRPCClient()
 
-	resp, err := testClient.List(context.Background(), &{{.UpperEntityName}}.List{{.UpperEntityName}}Req{})
+	resp, err := testClient.List(context.Background(), &pb.List{{.UpperEntityName}}Req{})
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
@@ -103,14 +102,14 @@ func Test{{.UpperEntityName}}Service_Get(t *testing.T) {
 	setupGRPCClient(t)
 	defer teardownGRPCClient()
 
-	createResp, err := testClient.Create(context.Background(), &{{.UpperEntityName}}.Create{{.UpperEntityName}}Req{
+	createResp, err := testClient.Create(context.Background(), &pb.Create{{.UpperEntityName}}Req{
 		StoreName: "Get Test {{.UpperEntityName}}",
 	})
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
 
-	resp, err := testClient.Get(context.Background(), &{{.UpperEntityName}}.Get{{.UpperEntityName}}Req{
+	resp, err := testClient.Get(context.Background(), &pb.Get{{.UpperEntityName}}Req{
 		Id: createResp.Id,
 	})
 	if err != nil {
@@ -126,14 +125,14 @@ func Test{{.UpperEntityName}}Service_Update(t *testing.T) {
 	setupGRPCClient(t)
 	defer teardownGRPCClient()
 
-	createResp, err := testClient.Create(context.Background(), &{{.UpperEntityName}}.Create{{.UpperEntityName}}Req{
+	createResp, err := testClient.Create(context.Background(), &pb.Create{{.UpperEntityName}}Req{
 		StoreName: "Before Update",
 	})
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
 
-	_, err = testClient.Update(context.Background(), &{{.UpperEntityName}}.Update{{.UpperEntityName}}Req{
+	_, err = testClient.Update(context.Background(), &pb.Update{{.UpperEntityName}}Req{
 		Id:        createResp.Id,
 		StoreName: "After Update",
 	})
@@ -141,7 +140,7 @@ func Test{{.UpperEntityName}}Service_Update(t *testing.T) {
 		t.Fatalf("Update failed: %v", err)
 	}
 
-	getResp, err := testClient.Get(context.Background(), &{{.UpperEntityName}}.Get{{.UpperEntityName}}Req{
+	getResp, err := testClient.Get(context.Background(), &pb.Get{{.UpperEntityName}}Req{
 		Id: createResp.Id,
 	})
 	if err != nil {
@@ -157,21 +156,21 @@ func Test{{.UpperEntityName}}Service_Delete(t *testing.T) {
 	setupGRPCClient(t)
 	defer teardownGRPCClient()
 
-	createResp, err := testClient.Create(context.Background(), &{{.UpperEntityName}}.Create{{.UpperEntityName}}Req{
+	createResp, err := testClient.Create(context.Background(), &pb.Create{{.UpperEntityName}}Req{
 		StoreName: "To Delete",
 	})
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
 
-	_, err = testClient.Delete(context.Background(), &{{.UpperEntityName}}.Delete{{.UpperEntityName}}Req{
+	_, err = testClient.Delete(context.Background(), &pb.Delete{{.UpperEntityName}}Req{
 		Id: createResp.Id,
 	})
 	if err != nil {
 		t.Fatalf("Delete failed: %v", err)
 	}
 
-	_, err = testClient.Get(context.Background(), &{{.UpperEntityName}}.Get{{.UpperEntityName}}Req{
+	_, err = testClient.Get(context.Background(), &pb.Get{{.UpperEntityName}}Req{
 		Id: createResp.Id,
 	})
 	if err == nil {

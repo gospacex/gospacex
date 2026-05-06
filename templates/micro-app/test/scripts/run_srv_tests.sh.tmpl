@@ -37,11 +37,11 @@ echo ""
 
 {{range .Modules}}
 echo "--- Test: {{.ServiceName}}/Create ---"
-CREATE_RESP=$(grpcurl -plaintext -d '{}' "${SRV_HOST}:${SRV_PORT}" {{.RouteName}}.{{.ServiceName}}/Create)
+CREATE_RESP=$(grpcurl -plaintext -d '{"store_name": "Test Product", "price": 99.9}' "${SRV_HOST}:${SRV_PORT}" {{.RouteName}}.{{.ServiceName}}/Create)
 echo "$CREATE_RESP"
-CREATED_ID=$(echo "$CREATE_RESP" | grep -o '"id":"[^"]*"' | grep -o '[0-9]*' | head -1)
+CREATED_ID=$(echo "$CREATE_RESP" | grep -o '"id"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -o '[0-9]\+' | head -1)
 if [ -z "$CREATED_ID" ]; then
-    CREATED_ID="2"
+    CREATED_ID="3"
 fi
 echo ""
 
@@ -59,6 +59,18 @@ echo ""
 
 echo "--- Test: {{.ServiceName}}/Delete (ID=${CREATED_ID}) ---"
 grpcurl -plaintext -d "{\"id\": ${CREATED_ID}}" "${SRV_HOST}:${SRV_PORT}" {{.RouteName}}.{{.ServiceName}}/Delete
+echo ""
+{{end}}
+
+{{if .HasJoin}}
+echo ""
+echo "=========================================="
+echo "  JOIN Tests (1t1)"
+echo "=========================================="
+
+echo ""
+echo "--- Test: JoinGetStoreProductStoreProductAttr (ID=3) ---"
+grpcurl -plaintext -d '{"id": 3}' "${SRV_HOST}:${SRV_PORT}" {{.JoinServiceName}}
 echo ""
 {{end}}
 

@@ -10,7 +10,7 @@ import (
 	"{{.AppName}}/{{.SrvDirName}}/internal/model"
 	"{{.AppName}}/{{.SrvDirName}}/internal/repository"
 	"{{.AppName}}/{{.SrvDirName}}/internal/service"
-	"{{.AppName}}/pkg/utils"
+	"github.com/gospacex/goTools"
 
 	"gorm.io/gorm"
 )
@@ -64,25 +64,6 @@ func (h *{{.UpperEntityName}}Handler) Get(ctx context.Context, req *pb.Get{{.Upp
 	return resp, nil
 }
 
-{{if .HasJoin}}
-func (h *{{.UpperEntityName}}Handler) {{.JoinHandlerMethodName}}(ctx context.Context, req *pb.{{.JoinReqTypeName}}) (*pb.{{.JoinRespTypeName}}, error) {
-	start := time.Now()
-	logger.Business.Infow("handle {{.JoinHandlerMethodName}}", "{{.PKProtoGoName}}", req.{{.PKProtoGoName}})
-
-	result, err := h.svc.{{.JoinRepoMethodName}}(ctx, {{.PKReqConvert}})
-	if err != nil {
-		logger.Business.Errorw("{{.JoinHandlerMethodName}} failed", "error", err.Error())
-		return nil, err
-	}
-
-	resp := &pb.{{.JoinRespTypeName}}{}
-	copier.Copy(resp, result)
-
-	logger.Business.Infow("{{.JoinHandlerMethodName}} success", "{{.PKProtoGoName}}", req.{{.PKProtoGoName}}, "duration", time.Since(start).String())
-	return resp, nil
-}
-{{end}}
-
 func (h *{{.UpperEntityName}}Handler) List(ctx context.Context, req *pb.List{{.UpperEntityName}}Req) (*pb.List{{.UpperEntityName}}Resp, error) {
 	start := time.Now()
 	logger.Business.Infow("handle list {{.Module}}")
@@ -114,7 +95,7 @@ func (h *{{.UpperEntityName}}Handler) Update(ctx context.Context, req *pb.Update
 		return nil, err
 	}
 
-	if err := utils.PartialUpdate(m, req); err != nil {
+	if err := goTools.PartialUpdate(m, req); err != nil {
 		logger.Business.Errorw("partial update failed", "error", err.Error())
 		return nil, err
 	}

@@ -1,18 +1,18 @@
-// GetJoin{{.LeftUpper}}{{.RightUpper}} 获取一对一联表数据
-func (h *StoreProductHandler) GetJoin{{.LeftUpper}}{{.RightUpper}}(ctx context.Context, req *pb.GetJoin{{.LeftUpper}}{{.RightUpper}}Req) (*pb.GetJoin{{.LeftUpper}}{{.RightUpper}}Resp, error) {
+// Find{{.LeftUpper}}2{{.RightUpper}} 联表查询
+func (h *StoreProductHandler) Find{{.LeftUpper}}2{{.RightUpper}}(ctx context.Context, req *pb.Get{{.LeftUpper}}2{{.RightUpper}}Req) (*pb.Get{{.LeftUpper}}2{{.RightUpper}}Resp, error) {
 	start := time.Now()
-	logger.Business.Infow("handle get join {{.LeftLower}}{{.RightLower}}", "id", req.Id)
+	logger.Business.Infow("handle find {{.LeftLower}} 2 {{.RightLower}}", "id", req.Id)
 
-	result, err := h.svc.JoinGet{{.LeftUpper}}{{.RightUpper}}(ctx, int64(req.Id))
+	result, err := h.svc.Get{{.LeftUpper}}{{.RightUpper}}(ctx, int64(req.Id))
 	if err != nil {
-		logger.Business.Errorw("get join product failed", "error", err.Error())
+		logger.Business.Errorw("find {{.LeftLower}} 2 {{.RightLower}} failed", "error", err.Error())
 		return nil, err
 	}
 
-	logger.Business.Infow("get join product success", "id", req.Id, "duration", time.Since(start).String())
+	logger.Business.Infow("find {{.LeftLower}} 2 {{.RightLower}} success", "id", req.Id, "duration", time.Since(start).String())
 
 	// 转换为 protobuf 响应
-	resp := &pb.GetJoin{{.LeftUpper}}{{.RightUpper}}Resp{}
+	resp := &pb.Get{{.LeftUpper}}2{{.RightUpper}}Resp{}
 	copier.Copy(resp, result)
 	return resp, nil
 }

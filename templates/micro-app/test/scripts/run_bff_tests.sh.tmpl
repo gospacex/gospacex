@@ -15,7 +15,7 @@ echo "=========================================="
 
 # 检查服务是否运行
 check_service() {
-    if ! curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/health" | grep -q "200"; then
+    if ! curl -s "${BASE_URL}/api/v1/{{index .Modules 0}}.RouteName" 2>/dev/null | grep -q "items"; then
         echo "⚠️  Warning: Service may not be running at ${BASE_URL}"
         echo "   Run: cd bffH5 && go run cmd/main.go"
     fi
@@ -23,24 +23,19 @@ check_service() {
 
 check_service
 
-echo ""
-echo "--- Test: Health Check ---"
-curl -s "${BASE_URL}/health" | head -c 100
-echo ""
-echo ""
-
 {{range .Modules}}
-echo "--- Test: Create {{.UpperName}} ---"
-RESPONSE=$(curl -s -X POST "${BASE_URL}/api/v1/{{.RouteName}}s" -H "Content-Type: application/json" -d '{}')
-echo "$RESPONSE" | head -c 200
 echo ""
+echo "--- Test: Create {{.UpperName}} ---"
+RESPONSE=$(curl -s -X POST "${BASE_URL}/api/v1/{{.RouteName}}s" -H "Content-Type: application/json" -d '{"store_name": "Test Product", "price": 99.9}')
+echo "$RESPONSE" | head -c 200
 echo ""
 
 # 提取创建的 ID
 CREATED_ID=$(echo "$RESPONSE" | grep -o '"id":[0-9]*' | grep -o '[0-9]*' | head -1)
 if [ -z "$CREATED_ID" ]; then
-    CREATED_ID="2"
+    CREATED_ID="3"
 fi
+echo ""
 
 echo "--- Test: List {{.UpperName}} ---"
 curl -s "${BASE_URL}/api/v1/{{.RouteName}}s" | head -c 200
@@ -60,6 +55,18 @@ echo ""
 echo "--- Test: Delete {{.UpperName}} (ID=${CREATED_ID}) ---"
 curl -s -X DELETE "${BASE_URL}/api/v1/{{.RouteName}}s/${CREATED_ID}" | head -c 200
 echo ""
+echo ""
+{{end}}
+
+{{if .HasJoin}}
+echo ""
+echo "=========================================="
+echo "  JOIN Tests (1t1)"
+echo "=========================================="
+
+echo ""
+echo "--- Test: Join {{.JoinRouteName}} (ID=3) ---"
+curl -s "${BASE_URL}/api/v1/{{.JoinRouteName}}/3" | head -c 500
 echo ""
 {{end}}
 

@@ -1,0 +1,14 @@
+package dto
+
+type {{.UpperName}}CreateReq struct {
+	Name string `json:"name" binding:"required"`
+}
+
+type {{.UpperName}}UpdateReq struct {
+	Name string `json:"name"`
+}
+
+type {{.UpperName}}Resp struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}

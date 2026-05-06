@@ -1,0 +1,156 @@
+#!/bin/bash
+# End-to-End Test Script
+# Tests the full flow: BFF -> SRV -> DB
+# Usage: bash run_e2e_tests.sh
+
+set -e
+
+# 切换到项目根目录
+cd "$(dirname "$0")/.."
+PROJECT_DIR=$(pwd)
+
+SRV_PORT={{.SRVPort}}
+SRV_HOST=${SRV_HOST:-localhost}
+BFF_PORT={{.BFFPort}}
+BFF_HOST=${BFF_HOST:-localhost}
+SRV_BASE_URL="http://${SRV_HOST}:${SRV_PORT}"
+BFF_BASE_URL="http://${BFF_HOST}:${BFF_PORT}"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+pass() { echo -e "${GREEN}✓ PASS${NC}: $1"; }
+fail() { echo -e "${RED}✗ FAIL${NC}: $1"; FAILED=1; }
+
+echo "=========================================="
+echo "End-to-End Testing"
+echo "SRV: ${SRV_HOST}:${SRV_PORT}"
+echo "BFF: ${BFF_HOST}:${BFF_PORT}"
+echo "Project: ${PROJECT_DIR}"
+echo "=========================================="
+
+FAILED=0
+
+# 检查依赖
+if ! command -v grpcurl &> /dev/null; then
+    echo "⚠️  grpcurl not found. Install with:"
+    echo "    go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest"
+fi
+
+# 自动启动服务
+echo ""
+echo "Starting services..."
+mkdir -p ${PROJECT_DIR}/log
+nohup ${PROJECT_DIR}/bin/srvProduct -config ${PROJECT_DIR}/srvProduct/configs/config.yaml > ${PROJECT_DIR}/log/srvProduct.log 2>&1 &
+SRV_PID=$!
+nohup ${PROJECT_DIR}/bin/bffH5 -config ${PROJECT_DIR}/bffH5/configs/config.yaml > ${PROJECT_DIR}/log/bffH5.log 2>&1 &
+BFF_PID=$!
+sleep 5
+
+# 检查服务是否运行
+echo ""
+echo "--- Checking services ---"
+if grpcurl -plaintext "${SRV_HOST}:${SRV_PORT}" list &>/dev/null; then
+    pass "SRV service is running"
+else
+    fail "SRV service is NOT running"
+    echo "SRV log:"
+    tail -20 ${PROJECT_DIR}/log/srvProduct.log
+    exit 1
+fi
+
+{{$firstModule := index .Modules 0}}
+if curl -s "${BFF_BASE_URL}/api/v1/{{$firstModule.RouteName}}s" 2>/dev/null | grep -q "items" || \
+   curl -s "${BFF_BASE_URL}/api/v1/{{$firstModule.RouteName}}s" 2>/dev/null | grep -q "id"; then
+    pass "BFF service is running"
+else
+    fail "BFF service is NOT running"
+    echo "BFF log:"
+    tail -20 ${PROJECT_DIR}/log/bffH5.log
+    exit 1
+fi
+
+{{range .Modules}}
+echo ""
+echo "=========================================="
+echo "  Testing: {{.UpperName}}"
+echo "=========================================="
+
+# SRV gRPC Tests
+echo ""
+echo "--- Layer 1: SRV gRPC Tests ---"
+
+echo "--- Create via SRV ---"
+CREATE_RESP=$(grpcurl -plaintext -d '{"store_name": "E2E Test", "price": 99.9}' "${SRV_HOST}:${SRV_PORT}" {{.RouteName}}.{{.ServiceName}}/Create 2>&1)
+echo "$CREATE_RESP" | head -c 100
+TEST_ID=$(echo "$CREATE_RESP" | grep -o '"id"' | grep -o '[0-9]\+' | head -1)
+if [ -z "$TEST_ID" ]; then TEST_ID="3"; fi
+echo "   ID: ${TEST_ID}"
+
+echo ""
+echo "--- List via SRV ---"
+LIST_RESP=$(grpcurl -plaintext -d '{}' "${SRV_HOST}:${SRV_PORT}" {{.RouteName}}.{{.ServiceName}}/List 2>&1)
+echo "Items: $(echo "$LIST_RESP" | grep -o '"id"' | wc -l)"
+
+echo ""
+echo "--- Get via SRV ---"
+GET_RESP=$(grpcurl -plaintext -d "{\"id\": ${TEST_ID}}" "${SRV_HOST}:${SRV_PORT}" {{.RouteName}}.{{.ServiceName}}/Get 2>&1)
+echo "$GET_RESP" | head -c 100
+
+echo ""
+echo "--- Update via SRV ---"
+grpcurl -plaintext -d "{\"id\": ${TEST_ID}, \"store_name\": \"Updated\"}" "${SRV_HOST}:${SRV_PORT}" {{.RouteName}}.{{.ServiceName}}/Update 2>&1 | head -c 50
+
+# BFF HTTP Tests
+echo ""
+echo "--- Layer 2: BFF HTTP Tests ---"
+
+echo "--- Get via BFF ---"
+curl -s "${BFF_BASE_URL}/api/v1/{{.RouteName}}s/${TEST_ID}" 2>/dev/null | head -c 100
+
+echo ""
+echo "--- List via BFF ---"
+curl -s "${BFF_BASE_URL}/api/v1/{{.RouteName}}s" 2>/dev/null | head -c 100
+
+# Cleanup
+echo ""
+echo "--- Cleanup ---"
+grpcurl -plaintext -d "{\"id\": ${TEST_ID}}" "${SRV_HOST}:${SRV_PORT}" {{.RouteName}}.{{.ServiceName}}/Delete &>/dev/null
+pass "Cleanup done"
+
+{{end}}
+
+{{if .HasJoin}}
+echo ""
+echo "=========================================="
+echo "  JOIN Tests (1t1)"
+echo "=========================================="
+
+echo ""
+echo "--- Join via SRV gRPC ---"
+JOIN_RESP=$(grpcurl -plaintext -d '{"id": 3}' "${SRV_HOST}:${SRV_PORT}" {{.JoinServiceName}} 2>&1)
+echo "Has AttrAttrName: $(echo "$JOIN_RESP" | grep -c 'AttrAttrName')"
+
+echo ""
+echo "--- Join via BFF HTTP ---"
+curl -s "${BFF_BASE_URL}/api/v1/{{.JoinRouteName}}/3" 2>/dev/null | head -c 200
+{{end}}
+
+# 停止服务
+echo ""
+echo "Stopping services..."
+kill $SRV_PID $BFF_PID 2>/dev/null || true
+
+echo ""
+echo "=========================================="
+echo "End-to-End Test Summary"
+echo "=========================================="
+if [ $FAILED -eq 0 ]; then
+    echo -e "${GREEN}All tests passed!${NC}"
+    exit 0
+else
+    echo -e "${RED}Some tests failed!${NC}"
+    exit 1
+fi

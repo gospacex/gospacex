@@ -345,313 +345,145 @@ func main() {
 	return nil
 }
 
+// bffTemplateData BFF 模板数据
+type bffTemplateData struct {
+	ProjectName   string
+	BffName      string
+	BffDir       string
+	Modules      []bffModuleData
+	RegistryType string
+	RegistryAddr string
+}
+
+type bffModuleData struct {
+	Name       string
+	UpperName  string
+	LowerName  string
+	ProtoPath  string
+}
+
 // createBFFInExistingProject 在已有项目中创建 BFF
 func createBFFInExistingProject(bffDir string, bffName string, projectName string, modules []string) error {
+	bffTemplateDir := filepath.Join(getTemplatesDir(), "micro-bff")
+
+	var moduleData []bffModuleData
+	for _, m := range modules {
+		moduleData = append(moduleData, bffModuleData{
+			Name:      m,
+			UpperName: toPascalCase(m),
+			LowerName: toCamelCase(m),
+			ProtoPath: toCamelCase(m),
+		})
+	}
+
+	data := bffTemplateData{
+		ProjectName:   projectName,
+		BffName:       bffName,
+		BffDir:        "bff_" + bffName,
+		Modules:       moduleData,
+		RegistryType:  "direct",
+		RegistryAddr:  "localhost:2379",
+	}
+
 	// main.go
-	mainContent := fmt.Sprintf(`package main
-
-import (
-	"flag"
-	"fmt"
-	"log"
-
-	"%s/pkg/config"
-	"%s/bff_%s/internal/router"
-)
-
-var confPath string
-
-func init() {
-	flag.StringVar(&confPath, "config", "configs/config.yaml", "config file")
-}
-
-func main() {
-	flag.Parse()
-	cfg, err := config.Load(confPath)
-	if err != nil {
-		log.Fatalf("Load config failed: %%v", err)
-	}
-
-	addr := fmt.Sprintf("%%s:%%d", cfg.Server.Host, cfg.Server.Port)
-	log.Printf("BFF %s starting on %%s", addr)
-
-	r := router.NewRouter()
-	if err := r.Run(addr); err != nil {
-		log.Fatalf("Start server failed: %%v", err)
-	}
-}
-`, projectName, projectName, bffName, bffName)
-	if err := os.WriteFile(filepath.Join(bffDir, "cmd", "main.go"), []byte(mainContent), 0644); err != nil {
-		return err
+	if err := renderBffTemplate(
+		filepath.Join(bffTemplateDir, "main", "main.go.tmpl"),
+		data,
+		filepath.Join(bffDir, "cmd", "main.go"),
+	); err != nil {
+		return fmt.Errorf("render main.go failed: %w", err)
 	}
 
 	// config.yaml
-	configContent := `server:
-  host: 0.0.0.0
-  port: 8080
-
-registry:
-  type: direct
-  addr: localhost:2379
-
-log:
-  level: info
-  format: json
-`
-	if err := os.WriteFile(filepath.Join(bffDir, "configs", "config.yaml"), []byte(configContent), 0644); err != nil {
-		return err
+	if err := renderBffTemplate(
+		filepath.Join(bffTemplateDir, "main", "config.yaml.tmpl"),
+		data,
+		filepath.Join(bffDir, "configs", "config.yaml"),
+	); err != nil {
+		return fmt.Errorf("render config.yaml failed: %w", err)
 	}
 
 	// router.go
-	routerContent := fmt.Sprintf(`package router
-
-import (
-	"%s/bff_%s/internal/handler"
-
-	"github.com/gin-gonic/gin"
-)
-
-// Router 路由管理器
-type Router struct {
-	engine *gin.Engine
-}
-
-func NewRouter() *Router {
-	r := &Router{
-		engine: gin.Default(),
-	}
-	r.registerRoutes()
-	return r
-}
-
-func (r *Router) registerRoutes() {
-`, projectName, bffName)
-	for _, module := range modules {
-		moduleUpper := toPascalCase(module)
-		routerContent += fmt.Sprintf("\th%[1]s := handler.New%[1]sHandler()\n", moduleUpper)
-		routerContent += fmt.Sprintf("\tv1 := r.engine.Group(\"/api/v1\")\n")
-		routerContent += fmt.Sprintf("\t{\n")
-		routerContent += fmt.Sprintf("\t\tv1.POST(\"/%[1]ss\", h%[2]s.Create)\n", toCamelCase(module), moduleUpper)
-		routerContent += fmt.Sprintf("\t\tv1.GET(\"/%[1]ss\", h%[2]s.List)\n", toCamelCase(module), moduleUpper)
-		routerContent += fmt.Sprintf("\t\tv1.GET(\"/%[1]ss/:id\", h%[2]s.Get)\n", toCamelCase(module), moduleUpper)
-		routerContent += fmt.Sprintf("\t\tv1.PUT(\"/%[1]ss/:id\", h%[2]s.Update)\n", toCamelCase(module), moduleUpper)
-		routerContent += fmt.Sprintf("\t\tv1.DELETE(\"/%[1]ss/:id\", h%[2]s.Delete)\n", module, moduleUpper)
-		routerContent += fmt.Sprintf("\t}\n\n")
-	}
-	routerContent += `}
-
-// Run 启动服务器
-func (r *Router) Run(addr string) error {
-	return r.engine.Run(addr)
-}
-`
-	if err := os.WriteFile(filepath.Join(bffDir, "internal", "router", "router.go"), []byte(routerContent), 0644); err != nil {
-		return err
+	if err := renderBffTemplate(
+		filepath.Join(bffTemplateDir, "router", "router.go.tmpl"),
+		data,
+		filepath.Join(bffDir, "internal", "router", "router.go"),
+	); err != nil {
+		return fmt.Errorf("render router.go failed: %w", err)
 	}
 
 	// middleware
-	middleware := `package middleware
-
-import (
-	"log"
-	"time"
-
-	"github.com/gin-gonic/gin"
-)
-
-// Logger 日志中间件
-func Logger() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		start := time.Now()
-		path := c.Request.URL.Path
-		method := c.Request.Method
-
-		c.Next()
-
-		latency := time.Since(start)
-		status := c.Writer.Status()
-		log.Printf("[%s] %s %d %v", method, path, status, latency)
-	}
-}
-
-// Recovery 恢复中间件
-func Recovery() gin.HandlerFunc {
-	return gin.Recovery()
-}
-`
-	if err := os.WriteFile(filepath.Join(bffDir, "internal", "middleware", "middleware.go"), []byte(middleware), 0644); err != nil {
-		return err
+	if err := renderBffTemplate(
+		filepath.Join(bffTemplateDir, "middleware", "middleware.go.tmpl"),
+		data,
+		filepath.Join(bffDir, "internal", "middleware", "middleware.go"),
+	); err != nil {
+		return fmt.Errorf("render middleware.go failed: %w", err)
 	}
 
 	// 为每个模块创建 handler, rpc_client, dto
-	for _, module := range modules {
-		moduleUpper := toPascalCase(module)
+	for _, m := range modules {
+		moduleData := bffModuleData{
+			Name:      m,
+			UpperName: toPascalCase(m),
+			LowerName: toCamelCase(m),
+			ProtoPath: toCamelCase(m),
+		}
+		moduleTemplateData := struct {
+			ProjectName string
+			BffDir     string
+			bffModuleData
+		}{
+			ProjectName:  projectName,
+			BffDir:       "bff_" + bffName,
+			bffModuleData: moduleData,
+		}
 
 		// gRPC client
-		grpcClient := fmt.Sprintf(`package rpc_client
-
-import (
-	"context"
-	"fmt"
-	"sync"
-	"time"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-
-	"%s/common/kitex_gen/%s"
-)
-
-var (
-	client *%sClient
-	once   sync.Once
-)
-
-// %sClient %s 服务 RPC 客户端
-type %sClient struct {
-	conn   *grpc.ClientConn
-	client %s.%sServiceClient
-}
-
-// New%sClient 创建 %s RPC 客户端
-func New%sClient(addr string) (*%sClient, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	conn, err := grpc.DialContext(ctx, addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return nil, fmt.Errorf("dial %%s failed: %%w", addr, err)
-	}
-
-	return &%sClient{
-		conn:   conn,
-		client: %s.New%sServiceClient(conn),
-	}, nil
-}
-
-// Close 关闭连接
-func (c *%sClient) Close() error {
-	return c.conn.Close()
-}
-
-// GetClient 获取单例客户端
-func GetClient() *%sClient {
-	return client
-}
-
-// InitClient 初始化单例客户端
-func InitClient(addr string) error {
-	var err error
-	once.Do(func() {
-		client, err = New%sClient(addr)
-	})
-	return err
-}
-`,
-			projectName, module,     // import: %s/common/kitex_gen/%s
-			moduleUpper,             // var: *%sClient
-			moduleUpper, module,     // comment: %sClient %s
-			moduleUpper,             // type: %sClient struct
-			module, moduleUpper,     // client: %s.%sServiceClient
-			moduleUpper, module,     // New%sClient 创建 %s
-			moduleUpper, moduleUpper, // func New%sClient ... *%sClient
-			moduleUpper,             // &%sClient
-			module, moduleUpper,     // %s.New%sServiceClient
-			moduleUpper,             // %sClient Close
-			moduleUpper,             // %sClient GetClient
-			moduleUpper,             // New%sClient in InitClient
-		)
-		if err := os.WriteFile(filepath.Join(bffDir, "internal", "rpc_client", module+"_client.go"), []byte(grpcClient), 0644); err != nil {
-			return err
+		if err := renderBffTemplate(
+			filepath.Join(bffTemplateDir, "client", "grpc_client.go.tmpl"),
+			moduleTemplateData,
+			filepath.Join(bffDir, "internal", "rpc_client", m+"_client.go"),
+		); err != nil {
+			return fmt.Errorf("render %s_client.go failed: %w", m, err)
 		}
 
 		// Handler
-		handler := fmt.Sprintf(`package handler
-
-import (
-	"net/http"
-
-	"%s/bff_%s/internal/rpc_client"
-
-	"github.com/gin-gonic/gin"
-)
-
-// %sHandler %s HTTP 处理器
-type %sHandler struct{}
-
-// New%sHandler 创建 Handler
-func New%sHandler() *%sHandler {
-	return &%sHandler{}
-}
-
-// Create 创建
-func (h *%sHandler) Create(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "create %s"})
-}
-
-// List 获取列表
-func (h *%sHandler) List(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "list %ss"})
-}
-
-// Get 获取单个
-func (h *%sHandler) Get(c *gin.Context) {
-	id := c.Param("id")
-	c.JSON(http.StatusOK, gin.H{"id": id})
-}
-
-// Update 更新
-func (h *%sHandler) Update(c *gin.Context) {
-	id := c.Param("id")
-	c.JSON(http.StatusOK, gin.H{"id": id})
-}
-
-// Delete 删除
-func (h *%sHandler) Delete(c *gin.Context) {
-	id := c.Param("id")
-	c.JSON(http.StatusOK, gin.H{"id": id})
-}
-`,
-			projectName, bffName,   // import: %s/bff_%s/internal/rpc_client
-			moduleUpper, module,    // comment: %sHandler %s
-			moduleUpper,            // type: %sHandler struct
-			moduleUpper,            // New%sHandler
-			moduleUpper, moduleUpper, // func New%sHandler *%sHandler
-			moduleUpper,            // &%sHandler{}
-			moduleUpper,            // (h *%sHandler) Create
-			module,                 // "create %s"
-			moduleUpper,            // (h *%sHandler) List
-			module,                 // "list %ss"
-			moduleUpper,            // (h *%sHandler) Get
-			moduleUpper,            // (h *%sHandler) Update
-			moduleUpper,            // (h *%sHandler) Delete
-		)
-		if err := os.WriteFile(filepath.Join(bffDir, "internal", "handler", module+"_handler.go"), []byte(handler), 0644); err != nil {
-			return err
+		if err := renderBffTemplate(
+			filepath.Join(bffTemplateDir, "handler", "handler.go.tmpl"),
+			moduleTemplateData,
+			filepath.Join(bffDir, "internal", "handler", m+"_handler.go"),
+		); err != nil {
+			return fmt.Errorf("render %s_handler.go failed: %w", m, err)
 		}
 
 		// DTO
-		dto := fmt.Sprintf(`package dto
-
-// %sCreateReq 创建请求
-type %sCreateReq struct {
-	Name string `+"`"+`json:"name" binding:"required"`+"`"+` 
-}
-
-// %sUpdateReq 更新请求
-type %sUpdateReq struct {
-	Name string `+"`"+`json:"name"`+"`"+`
-}
-
-// %sResp 响应
-type %sResp struct {
-	ID   int64  `+"`"+`json:"id"`+"`"+`
-	Name string `+"`"+`json:"name"`+"`"+`
-}
-`, moduleUpper, moduleUpper, moduleUpper, moduleUpper, moduleUpper, moduleUpper)
-		if err := os.WriteFile(filepath.Join(bffDir, "internal", "dto", module+"_dto.go"), []byte(dto), 0644); err != nil {
-			return err
+		if err := renderBffTemplate(
+			filepath.Join(bffTemplateDir, "dto", "dto.go.tmpl"),
+			moduleTemplateData,
+			filepath.Join(bffDir, "internal", "dto", m+"_dto.go"),
+		); err != nil {
+			return fmt.Errorf("render %s_dto.go failed: %w", m, err)
 		}
+	}
+
+	return nil
+}
+
+// renderBffTemplate 渲染 BFF 模板
+func renderBffTemplate(tmplPath string, data interface{}, outputPath string) error {
+	tmplBytes, err := os.ReadFile(tmplPath)
+	if err != nil {
+		return fmt.Errorf("read template %s failed: %w", tmplPath, err)
+	}
+
+	result, err := executeTemplate(string(tmplBytes), data)
+	if err != nil {
+		return fmt.Errorf("execute template %s failed: %w", tmplPath, err)
+	}
+
+	if err := os.WriteFile(outputPath, []byte(result), 0644); err != nil {
+		return fmt.Errorf("write file %s failed: %w", outputPath, err)
 	}
 
 	return nil

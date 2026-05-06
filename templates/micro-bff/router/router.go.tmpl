@@ -1,0 +1,37 @@
+package router
+
+import (
+	"{{.ProjectName}}/{{.BffDir}}/internal/handler"
+
+	"github.com/gin-gonic/gin"
+)
+
+type Router struct {
+	engine *gin.Engine
+}
+
+func NewRouter() *Router {
+	r := &Router{
+		engine: gin.Default(),
+	}
+	r.registerRoutes()
+	return r
+}
+
+func (r *Router) registerRoutes() {
+{{- range .Modules}}
+	h{{.UpperName}} := handler.New{{.UpperName}}Handler()
+	v1 := r.engine.Group("/api/v1")
+	{
+		v1.POST("/{{.LowerName}}s", h{{.UpperName}}.Create)
+		v1.GET("/{{.LowerName}}s", h{{.UpperName}}.List)
+		v1.GET("/{{.LowerName}}s/:id", h{{.UpperName}}.Get)
+		v1.PUT("/{{.LowerName}}s/:id", h{{.UpperName}}.Update)
+		v1.DELETE("/{{.LowerName}}s/:id", h{{.UpperName}}.Delete)
+	}
+{{- end}}
+}
+
+func (r *Router) Run(addr string) error {
+	return r.engine.Run(addr)
+}

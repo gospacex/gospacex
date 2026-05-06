@@ -1239,7 +1239,7 @@ func runNewMicroAppWithFlags() error {
 			}
 		}
 		genTestDirs(projectDir, microAppBFFName, microAppModules, hasDBTable, tableColumns, moduleTableName)
-		genShellScripts(projectDir, microAppBFFName, microAppModules, bffPort, srvPort, moduleTableName)
+		genShellScripts(projectDir, microAppBFFName, microAppModules, bffPort, srvPort, moduleTableName, joinConfigs)
 	}
 
 	genScripts(projectDir, moduleTables, joinConfigs)
@@ -2807,7 +2807,7 @@ configs/local*.yaml
 	}
 }
 
-// genGoMod 生成 go.mod 文件
+// genGoMod 生成 go.mod 文件并运行 go mod tidy
 func genGoMod(projectDir string) {
 	goVersion := getGoVersion()
 	content := fmt.Sprintf(`module %s
@@ -2818,6 +2818,17 @@ go %s
 	gomodPath := filepath.Join(projectDir, "go.mod")
 	os.WriteFile(gomodPath, []byte(content), 0644)
 	fmt.Printf("  Generated: go.mod (go %s)\n", goVersion)
+
+	// 运行 go mod tidy 添加依赖
+	cmd := exec.Command("go", "mod", "tidy")
+	cmd.Dir = projectDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Printf("  Warning: go mod tidy failed: %v\n", err)
+		fmt.Printf("  Output: %s\n", string(output))
+	} else {
+		fmt.Printf("  go mod tidy completed\n")
+	}
 }
 
 func getGoVersion() string {
@@ -3089,15 +3100,64 @@ func genBFFFromSchema(projectDir, bffName string, moduleTables ModuleTables, pro
 		UpperName string
 		PathName  string
 	}
+	type joinRouteModule struct {
+		JoinPath    string
+		HandlerName string
+		LeftUpper   string
+		RightUpper  string
+	}
 	var crudRouteModules []crudRouteModule
-	// 处理所有表（连表模式下第一张表做主表进行左连接，但所有表都生成路由）
+	var joinRouteModules []joinRouteModule
+	// 处理所有表（连表模式下右表为辅助表，不生成独立路由）
 	tablesToProcess := moduleTables
 	for _, tables := range tablesToProcess {
 		for _, table := range tables {
+			// 连表模式下，右表（辅助表）不生成独立的 CRUD 路由
+			if isJoinTable(table.TableName, joinConfigs) {
+				continue
+			}
 			entityName := tableToEntityName(table.TableName, tableNames)
 			upperEntity := toPascalCase(entityName)
 			lowerEntity := strings.ToLower(entityName[:1]) + entityName[1:]
 			crudRouteModules = append(crudRouteModules, crudRouteModule{Name: table.TableName, UpperName: upperEntity, PathName: lowerEntity})
+		}
+	}
+	// 构建连表路由数据
+	for _, jc := range joinConfigs {
+		leftEntityName := ""
+		rightEntityName := ""
+		for _, tables := range moduleTables {
+			for _, tbl := range tables {
+				if tbl.TableName == jc.LeftTable || strings.Contains(tbl.TableName, jc.LeftTable) {
+					leftEntityName = tableToEntityName(tbl.TableName, tableNames)
+					break
+				}
+			}
+			if leftEntityName != "" {
+				break
+			}
+		}
+		if leftEntityName == "" && len(tableNames) > 0 {
+			leftEntityName = tableToEntityName(tableNames[0], tableNames)
+		}
+		for _, tables := range moduleTables {
+			for _, tbl := range tables {
+				if tbl.TableName != jc.LeftTable && (tbl.TableName == jc.RightTable || strings.Contains(tbl.TableName, jc.RightTable)) {
+					rightEntityName = tableToEntityName(tbl.TableName, tableNames)
+					break
+				}
+			}
+			if rightEntityName != "" {
+				break
+			}
+		}
+		if leftEntityName != "" && rightEntityName != "" {
+			leftUpper := toPascalCase(leftEntityName)
+			rightUpper := toPascalCase(rightEntityName)
+			joinPathName := leftUpper + rightUpper
+			joinPath := strings.ToLower(joinPathName[:1]) + joinPathName[1:] + "s"
+			handlerName := leftUpper
+			joinRouteModules = append(joinRouteModules, joinRouteModule{JoinPath: joinPath, HandlerName: handlerName, LeftUpper: leftUpper, RightUpper: rightUpper})
 		}
 	}
 	tmplPath = filepath.Join(getTemplatesDir(), "micro-app", "bff", "router", "gin_router_crud.go.tmpl")
@@ -3111,6 +3171,7 @@ func genBFFFromSchema(projectDir, bffName string, moduleTables ModuleTables, pro
 		"BFFName": bffName,
 		"BffDirName": toBffDirName(bffName),
 		"Modules": crudRouteModules,
+		"JoinTables": joinRouteModules,
 	})
 	if err != nil {
 		fmt.Printf("ERROR executing BFFFromSchema router template: %v\n", err)
@@ -3171,7 +3232,7 @@ func Logger() gin.HandlerFunc {
 `), 0644)
 
 	// 为每个 module 下的每张表生成 rpc_client 和 handler
-	srvPort := 50050
+	srvPort := 8001
 	for moduleName, tables := range moduleTables {
 		upper := toPascalCase(moduleName)
 		for _, table := range tables {
@@ -3273,6 +3334,10 @@ func genSrvMainAndConfig(projectDir, module string, port int, tables []TableInfo
 	var protoImports []string
 	var handlerRegs []string
 	for _, tbl := range tablesToProcess {
+		// 连表模式下，右表（辅助表）不注册独立的 gRPC 服务
+		if isJoinTable(tbl.TableName, joinConfigs) {
+			continue
+		}
 		entityName := tableToEntityName(tbl.TableName, tableNames)
 		// 用 camelCase entity 名作 import 别名（如 ebstoreproduct）
 		alias := toCamelCase(entityName)
@@ -3704,24 +3769,25 @@ func isBoolField(colName string) bool {
 		lower == "active" || lower == "locked"
 }
 
-// joinColType 返回 join model 的字段类型（与 myshop1 基准一致）
-// myshop1 的 join model 类型选择：
-//   - decimal -> float64
-//   - int/bigint (任何形式) -> int64
+// joinColType 返回 join model 的字段类型（与 proto 类型保持一致）
+// 与 mysqlTypeToProto 保持一致：
+//   - int/bigint/mediumint/smallint/tinyint -> int64
+//   - decimal/float/double -> float64
+//   - bool 类 tinyint 字段 -> bool
 //   - 其他类型 -> string
 func joinColType(col ColumnInfo) string {
 	colType := strings.ToLower(col.Type)
+	// bool 类 tinyint 字段 -> bool
+	if colType == "tinyint" && isBoolField(col.Name) {
+		return "bool"
+	}
 	// decimal/float/double -> float64
 	if colType == "decimal" || colType == "float" || colType == "double" {
 		return "float64"
 	}
-	// int 或 bigint（任何形式，包括 unsigned）-> int64
-	if colType == "int" || colType == "bigint" {
+	// int/bigint/mediumint/smallint/tinyint -> int64（与 mysqlTypeToProto 一致）
+	if colType == "int" || colType == "bigint" || colType == "mediumint" || colType == "smallint" || colType == "tinyint" {
 		return "int64"
-	}
-	// mediumint/smallint/tinyint -> string
-	if colType == "smallint" || colType == "mediumint" || colType == "tinyint" {
-		return "string"
 	}
 	return "string"
 }
@@ -3886,7 +3952,7 @@ func genTestDirs(projectDir, bffName string, modules []string, hasDBTable bool, 
 }
 
 // genShellScripts 生成测试 shell 脚本（tests/ 目录）
-func genShellScripts(projectDir, bffName string, modules []string, bffPort, srvPort int, moduleTableName map[string]string) {
+func genShellScripts(projectDir, bffName string, modules []string, bffPort, srvPort int, moduleTableName map[string]string, joinConfigs []*JoinConfig) {
 	testsDir := filepath.Join(projectDir, "tests")
 	os.MkdirAll(testsDir, 0755)
 
@@ -3916,6 +3982,33 @@ func genShellScripts(projectDir, bffName string, modules []string, bffPort, srvP
 		})
 	}
 
+	// 构建联表信息
+	hasJoin := len(joinConfigs) > 0
+	var joinServiceName, joinRouteName string
+	if hasJoin {
+		for _, jc := range joinConfigs {
+			leftEntityName := ""
+			for _, m := range modules {
+				tableName := m
+				if tn, ok := moduleTableName[m]; ok && tn != "" {
+					tableName = tn
+				}
+				if strings.Contains(tableName, jc.LeftTable) || jc.LeftTable == tableName {
+					leftEntityName = toProtoGoFieldName(tableName)
+					break
+				}
+			}
+			if leftEntityName == "" {
+				leftEntityName = toProtoGoFieldName(jc.LeftTable)
+			}
+			rightEntityName := toProtoGoFieldName(jc.RightTable)
+			leftProtoImportPath := toCamelCase(jc.LeftTable)
+			joinServiceName = leftProtoImportPath + "." + leftEntityName + "Service/JoinGet" + leftEntityName + rightEntityName
+			joinRouteName = toCamelCaseFile(jc.LeftTable) + rightEntityName + "s"
+			break
+		}
+	}
+
 	// BFF 测试脚本
 	bffTmplPath := filepath.Join(getTemplatesDir(), "micro-app", "test", "scripts", "run_bff_tests.sh.tmpl")
 	bffTmplBytes, err := os.ReadFile(bffTmplPath)
@@ -3923,8 +4016,10 @@ func genShellScripts(projectDir, bffName string, modules []string, bffPort, srvP
 		fmt.Printf("ERROR reading BFF test script template: %v\n", err)
 	} else {
 		bffContent, err := executeTemplate(string(bffTmplBytes), map[string]interface{}{
-			"BFFPort": bffPort,
-			"Modules": testModules,
+			"BFFPort":        bffPort,
+			"Modules":        testModules,
+			"HasJoin":        hasJoin,
+			"JoinRouteName":  joinRouteName,
 		})
 		if err != nil {
 			fmt.Printf("ERROR executing BFF test script template: %v\n", err)
@@ -3945,15 +4040,39 @@ func genShellScripts(projectDir, bffName string, modules []string, bffPort, srvP
 			protoPath = "common/idl/" + testModules[0].RouteName + ".proto"
 		}
 		srvContent, err := executeTemplate(string(srvTmplBytes), map[string]interface{}{
-			"SRVPort":   srvPort,
-			"Modules":   testModules,
-			"ProtoPath":  protoPath,
+			"SRVPort":        srvPort,
+			"Modules":        testModules,
+			"ProtoPath":      protoPath,
+			"HasJoin":        hasJoin,
+			"JoinServiceName": joinServiceName,
 		})
 		if err != nil {
 			fmt.Printf("ERROR executing Service test script template: %v\n", err)
 		} else {
 			os.WriteFile(filepath.Join(testsDir, "run_srv_tests.sh"), []byte(srvContent), 0755)
 			fmt.Printf("  Generated: tests/run_srv_tests.sh\n")
+		}
+	}
+
+	// E2E 测试脚本
+	e2eTmplPath := filepath.Join(getTemplatesDir(), "micro-app", "test", "scripts", "run_e2e_tests.sh.tmpl")
+	e2eTmplBytes, err := os.ReadFile(e2eTmplPath)
+	if err != nil {
+		fmt.Printf("ERROR reading E2E test script template: %v\n", err)
+	} else {
+		e2eContent, err := executeTemplate(string(e2eTmplBytes), map[string]interface{}{
+			"SRVPort":        srvPort,
+			"BFFPort":        bffPort,
+			"Modules":        testModules,
+			"HasJoin":        hasJoin,
+			"JoinServiceName": joinServiceName,
+			"JoinRouteName":   joinRouteName,
+		})
+		if err != nil {
+			fmt.Printf("ERROR executing E2E test script template: %v\n", err)
+		} else {
+			os.WriteFile(filepath.Join(testsDir, "run_e2e_tests.sh"), []byte(e2eContent), 0755)
+			fmt.Printf("  Generated: tests/run_e2e_tests.sh\n")
 		}
 	}
 }
@@ -4187,6 +4306,48 @@ func genJoinCode(projectDir string, modules []string, joinCfg *JoinConfig, allTa
 	// 修改 proto 文件，追加 join RPC
 	appendJoinProtoRPC(projectDir, leftModule, leftUpper, rightUpper, leftTableName, rightTableName, joinCfg, allTableCols)
 
+	// 追加 join handler 方法到 SRV handler 文件
+	joinhSrvPath := filepath.Join(projectDir, toSrvDirName(leftModule), "internal", "handler", toCamelFileName(leftEntityName, "Handler.go"))
+	joinhExisting, joinhErr := os.ReadFile(joinhSrvPath)
+	if joinhErr == nil {
+		joinhMethodName := fmt.Sprintf("JoinGet%s%s", leftUpper, rightUpper)
+		svcJoinMethodName := "Get" + leftUpper + rightUpper
+		if !strings.Contains(string(joinhExisting), joinhMethodName) {
+			joinhMethod := fmt.Sprintf(`
+// %s 联表查询
+func (h *%sHandler) %s(ctx context.Context, req *pb.Get%s%sReq) (*pb.Get%s%sResp, error) {
+	start := time.Now()
+	logger.Business.Infow("handle join get", "method", "%s", "id", req.Id)
+	m, err := h.svc.%s(ctx, int64(req.Id))
+	if err != nil {
+		logger.Business.Errorw("join get failed", "method", "%s", "error", err.Error())
+		return nil, err
+	}
+	var resp pb.Get%s%sResp
+	copier.Copy(&resp, m)
+	logger.Business.Infow("join get success", "method", "%s", "duration", time.Since(start).String())
+	return &resp, nil
+}`,
+				joinhMethodName, leftUpper, joinhMethodName,
+				leftUpper, rightUpper, leftUpper, rightUpper,
+				joinhMethodName, svcJoinMethodName, svcJoinMethodName,
+				leftUpper, rightUpper, svcJoinMethodName)
+			handlerStr := string(joinhExisting)
+			lastBrace := strings.LastIndex(handlerStr, "}")
+			if lastBrace > 0 {
+				newContent := handlerStr[:lastBrace+1] + "\n" + joinhMethod + "\n" + handlerStr[lastBrace+1:]
+				os.WriteFile(joinhSrvPath, []byte(newContent), 0644)
+				fmt.Printf("  Appended: %s (join handler method)\n", joinhSrvPath)
+			}
+		}
+	}
+
+	// 追加 BFF RPC client 连表方法
+	appendJoinRPCClientMethod(projectDir, leftEntityName, leftModule, leftUpper, rightUpper, joinCfg)
+
+	// 生成 BFF join handler（追加到主 handler）
+	genJoinHandler(projectDir, leftEntityName, leftModule, leftUpper, rightModule, rightUpper, joinCfg)
+
 	fmt.Println("✓ Join query code generated")
 }
 
@@ -4215,9 +4376,9 @@ func appendJoinProtoRPC(projectDir, leftModule, leftUpper, rightUpper, leftTable
 	}
 	
 	// 构建 join RPC 名称
-	joinRPCName := fmt.Sprintf("Find%s2%s", leftUpper, rightUpper)
-	joinReqName := fmt.Sprintf("Get%s2%sReq", leftUpper, rightUpper)
-	joinRespName := fmt.Sprintf("Get%s2%sResp", leftUpper, rightUpper)
+	joinRPCName := fmt.Sprintf("JoinGet%s%s", leftUpper, rightUpper)
+	joinReqName := fmt.Sprintf("Get%s%sReq", leftUpper, rightUpper)
+	joinRespName := fmt.Sprintf("Get%s%sResp", leftUpper, rightUpper)
 	
 	// 获取左表主键
 	var leftColumns []ColumnInfo
@@ -4231,12 +4392,12 @@ func appendJoinProtoRPC(projectDir, leftModule, leftUpper, rightUpper, leftTable
 	// 生成要追加的内容
 	var sb strings.Builder
 	sb.WriteString("\n\n")
-	sb.WriteString(fmt.Sprintf("// %s 请求\n", joinRPCName))
+	sb.WriteString(fmt.Sprintf("// %s 请求\n", joinReqName))
 	sb.WriteString(fmt.Sprintf("message %s {\n", joinReqName))
 	sb.WriteString(fmt.Sprintf("  %s %s = 1;\n", pkField.ProtoType, getLowerFirst(pkField.Name)))
 	sb.WriteString("}\n\n")
 	
-	sb.WriteString(fmt.Sprintf("// %s 响应\n", joinRPCName))
+	sb.WriteString(fmt.Sprintf("// %s 响应\n", joinRespName))
 	sb.WriteString(fmt.Sprintf("message %s {\n", joinRespName))
 	protoIndex := 1
 	// 左表字段
@@ -4244,8 +4405,11 @@ func appendJoinProtoRPC(projectDir, leftModule, leftUpper, rightUpper, leftTable
 		sb.WriteString(fmt.Sprintf("  %s %s = %d;\n", col.ProtoType, getLowerFirst(col.Name), protoIndex))
 		protoIndex++
 	}
-	// 右表字段（带前缀）
-	rightPrefix := "Attr"
+	// 右表字段（带前缀）：从 rightUpper 中去除 leftUpper 的公共前缀作为右表字段前缀
+	rightPrefix := rightUpper
+	if strings.HasPrefix(rightUpper, leftUpper) && len(rightUpper) > len(leftUpper) {
+		rightPrefix = rightUpper[len(leftUpper):]
+	}
 	for _, col := range rightColumns {
 		fieldName := rightPrefix + toProtoGoFieldName(col.Name)
 		aliasName := "attr_" + col.Name
@@ -4255,8 +4419,8 @@ func appendJoinProtoRPC(projectDir, leftModule, leftUpper, rightUpper, leftTable
 	sb.WriteString("}\n")
 	
 	// 修改 service 定义，追加 join RPC
-	oldServiceEnd := "  rpc Delete(DeleteReq) returns (DeleteResp);"
-	newServiceEnd := fmt.Sprintf("  rpc Delete(DeleteReq) returns (DeleteResp);\n  rpc %s(%s) returns (%s);", joinRPCName, joinReqName, joinRespName)
+	oldServiceEnd := fmt.Sprintf("  rpc Delete(Delete%sReq) returns (Delete%sResp);", leftUpper, leftUpper)
+	newServiceEnd := fmt.Sprintf("  rpc Delete(Delete%sReq) returns (Delete%sResp);\n  rpc %s(%s) returns (%s);", leftUpper, leftUpper, joinRPCName, joinReqName, joinRespName)
 	protoContentStr := strings.Replace(string(protoContent), oldServiceEnd, newServiceEnd, 1)
 	
 	// 在文件末尾追加 join 消息定义
@@ -4395,23 +4559,7 @@ func genJoinRepository(projectDir, leftModule, leftUpper, rightModule, rightUppe
 	// 当两个 import 相同时，使用同一 package 模板（避免重复 import 错误）
 	useSamePkg := leftImport == rightImport
 	if useSamePkg {
-		// 同一个 package，合并 import - 使用模板
-		headerTmplPath := filepath.Join(getTemplatesDir(), "micro-app", "join", "repository", "header_same_pkg.go.tmpl")
-		headerTmplBytes, err := os.ReadFile(headerTmplPath)
-		if err != nil {
-			fmt.Printf("Error reading template: %v\n", err)
-			return
-		}
-		headerResult, err := executeTemplate(string(headerTmplBytes), map[string]interface{}{
-			"LeftImport": leftImport,
-			"LeftUpper":  leftUpper,
-			"RightUpper": rightUpper,
-		})
-		if err != nil {
-			fmt.Printf("Error executing template: %v\n", err)
-			return
-		}
-		repoContent.WriteString(headerResult)
+		// 同一个 package：方法将追加到已有主 Repository 文件，跳过 header（避免重复 package/import 声明）
 	} else {
 		// 不同 package - 使用模板
 		headerTmplPath := filepath.Join(getTemplatesDir(), "micro-app", "join", "repository", "header_diff_pkg.go.tmpl")
@@ -4453,6 +4601,8 @@ func genJoinRepository(projectDir, leftModule, leftUpper, rightModule, rightUppe
 			"RightColumns": allTableCols[rightTableName],
 			"LeftTable":   leftTableName,
 			"RightTable":  rightTableName,
+			"LeftAlias":   tableAlias(leftTableName),
+			"RightAlias":  tableAlias(rightTableName),
 		})
 		if err != nil {
 			fmt.Printf("Error executing template: %v\n", err)
@@ -4511,13 +4661,13 @@ func genJoinRepository(projectDir, leftModule, leftUpper, rightModule, rightUppe
 		actualTableNames = append(actualTableNames, tn)
 	}
 	leftEntityName := tableToEntityName(leftTableName, actualTableNames)
-	mainRepoPath := filepath.Join(projectDir, toSrvDirName(leftEntityName), "internal", "repository", toCamelFileName(leftEntityName, "Repo.go"))
+	mainRepoPath := filepath.Join(projectDir, toSrvDirName(leftModule), "internal", "repository", toCamelFileName(leftEntityName, "Repo.go"))
 	fmt.Printf("  DEBUG genJoinRepository: leftTableName=%s, leftEntityName=%s, mainRepoPath=%s\n", leftTableName, leftEntityName, mainRepoPath)
 	existingContent, err := os.ReadFile(mainRepoPath)
 	if err != nil {
 		fmt.Printf("  DEBUG: failed to read mainRepoPath: %v\n", err)
 		// Try alternative path with leftModule
-		altPath := filepath.Join(projectDir, toSrvDirName(leftModule), "internal", "repository", getUpperFirst(leftModule)+"Repo.go")
+		altPath := filepath.Join(projectDir, toSrvDirName(leftModule), "internal", "repository", toCamelFileName(leftEntityName, "Repo.go"))
 		fmt.Printf("  DEBUG: trying alternative path: %s\n", altPath)
 		existingContent, err = os.ReadFile(altPath)
 		if err == nil {
@@ -4528,10 +4678,14 @@ func genJoinRepository(projectDir, leftModule, leftUpper, rightModule, rightUppe
 	if err == nil {
 			// Find the last closing brace and insert join method before it
 		existingStr := string(existingContent)
+		// Add fmt import if not present (needed for fmt.Errorf in join method)
+		if !strings.Contains(existingStr, "\"fmt\"") {
+			existingStr = strings.Replace(existingStr, "\"context\"", "\"context\"\n\t\"fmt\"", 1)
+		}
 		lastBrace := strings.LastIndex(existingStr, "}")
 		if lastBrace > 0 {
-			// Insert join method before the last closing brace
-			newContent := existingStr[:lastBrace] + "\n" + repoContent.String() + "\n}"
+			// Append join method after the last closing brace
+			newContent := existingStr + "\n" + repoContent.String()
 			os.WriteFile(mainRepoPath, []byte(newContent), 0644)
 			fmt.Printf("  Updated: %s/internal/repository/%sRepo.go (join method added)\n", toSrvDirName(leftModule), getUpperFirst(leftModule))
 		}
@@ -4657,7 +4811,7 @@ func genJoinService(projectDir, leftModule, leftUpper, rightModule, rightUpper s
 	os.MkdirAll(joinSvcDir, 0755)
 
 	// 检查主 Service 文件是否已存在
-	mainSvcPath := filepath.Join(joinSvcDir, toCamelFileName(leftModule, "Service.go"))
+	mainSvcPath := filepath.Join(joinSvcDir, toCamelFileName(toCamelCase(leftTableName), "Service.go"))
 	methodTmplPath := filepath.Join(getTemplatesDir(), "micro-app", "join", "service", "method_1t1.go.tmpl")
 	methodTmplBytes, err := os.ReadFile(methodTmplPath)
 	if err != nil {
@@ -4681,13 +4835,13 @@ func genJoinService(projectDir, leftModule, leftUpper, rightModule, rightUpper s
 			return
 		}
 		// 检查是否已有该 join 方法（避免重复追加）
-		joinMethodName := "JoinGet" + leftUpper + rightUpper
+		joinMethodName := "Get" + leftUpper + rightUpper
 		if strings.Contains(string(existingContent), joinMethodName) {
-			fmt.Printf("  Join method already exists in %s\n", toCamelFileName(leftModule, "Service.go"))
+			fmt.Printf("  Join method already exists in %s\n", toCamelFileName(toCamelCase(leftTableName), "Service.go"))
 		} else {
 			updatedContent := strings.TrimRight(string(existingContent), "\n") + "\n" + methodResult
 			os.WriteFile(mainSvcPath, []byte(updatedContent), 0644)
-			fmt.Printf("  Appended: %s/internal/service/%s (join method)\n", toSrvDirName(leftModule), toCamelFileName(leftModule, "Service.go"))
+			fmt.Printf("  Appended: %s/internal/service/%s (join method)\n", toSrvDirName(leftModule), toCamelFileName(toCamelCase(leftTableName), "Service.go"))
 		}
 	} else {
 		// 主 Service 文件不存在，创建包含 join 方法的文件
@@ -4710,113 +4864,118 @@ func genJoinService(projectDir, leftModule, leftUpper, rightModule, rightUpper s
 		svcContent.WriteString(headerResult)
 		svcContent.WriteString(methodResult)
 		os.WriteFile(mainSvcPath, []byte(svcContent.String()), 0644)
-		fmt.Printf("  Generated: %s/internal/service/%s (join method)\n", toSrvDirName(leftModule), toCamelFileName(leftModule, "Service.go"))
+		fmt.Printf("  Generated: %s/internal/service/%s (join method)\n", toSrvDirName(leftModule), toCamelFileName(toCamelCase(leftTableName), "Service.go"))
 	}
 }
 
 // genJoinHandler 生成联表查询 BFF Handler 代码
-func genJoinHandler(projectDir, leftModule, leftUpper, rightModule, rightUpper string, joinCfg *JoinConfig) {
-	var handlerContent strings.Builder
+func genJoinHandler(projectDir, leftEntityName, leftModule, leftUpper, rightModule, rightUpper string, joinCfg *JoinConfig) {
+	joinMethodName := fmt.Sprintf("GetJoin%s%s", leftUpper, rightUpper)
+	joinRPCMethodName := fmt.Sprintf("JoinGet%s%s", leftUpper, rightUpper)
 
-	// Go 结构体字段名（首字母大写），用于变量命名
-	leftVarName := leftUpper  // e.g. Product
-	rightVarName := rightUpper // e.g. Description
-
-	// 使用模板生成 Handler 头部
-	headerTmplPath := filepath.Join(getTemplatesDir(), "micro-app", "join", "handler", "header.go.tmpl")
-	headerTmplBytes, err := os.ReadFile(headerTmplPath)
+	handlerMethod := fmt.Sprintf(`
+// %s 获取联表数据
+func (h *%sHandler) %s(c *gin.Context) {
+	start := time.Now()
+	requestID, _ := c.Get("requestID")
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		fmt.Printf("Error reading template: %v\n", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	headerResult, err := executeTemplate(string(headerTmplBytes), map[string]interface{}{
-		"AppName":      microAppName,
-		"BffDirName":   toBffDirName(microAppBFFName),
-		"LeftUpper":    leftUpper,
-		"RightUpper":   rightUpper,
-		"LeftVarName":  leftVarName,
-		"RightVarName": rightVarName,
-		"LeftModule":   leftModule,
-		"RightModule":  rightModule,
-	})
+	logger.Business.Infow("get join start", "resource", "%s", "id", idStr, "requestID", requestID)
+
+	resp, err := h.client.%s(c.Request.Context(), int64(id))
 	if err != nil {
-		fmt.Printf("Error executing template: %v\n", err)
+		logger.Business.Errorw("get join failed", "resource", "%s", "id", id, "error", err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	handlerContent.WriteString(headerResult)
 
-	switch joinCfg.Style {
-	case "1t1":
-		// 一对一 - 使用模板
-		getTmplPath := filepath.Join(getTemplatesDir(), "micro-app", "join", "handler", "get_1t1.go.tmpl")
-		getTmplBytes, err := os.ReadFile(getTmplPath)
-		if err != nil {
-			fmt.Printf("Error reading template: %v\n", err)
-			return
-		}
-		getResult, err := executeTemplate(string(getTmplBytes), map[string]interface{}{
-			"LeftUpper":    leftUpper,
-			"RightUpper":   rightUpper,
-			"LeftVarName":  leftVarName,
-			"RightVarName": rightVarName,
-			"LeftModule":   leftModule,
-			"RightModule":  rightModule,
-		})
-		if err != nil {
-			fmt.Printf("Error executing template: %v\n", err)
-			return
-		}
-		handlerContent.WriteString(getResult)
+	logger.Business.Infow("get join success", "resource", "%s", "id", id, "duration", time.Since(start).String())
+	c.JSON(http.StatusOK, resp)
+}`,
+		joinMethodName, leftUpper, joinMethodName, joinRPCMethodName, joinRPCMethodName)
 
-	case "1tn":
-		// 一对多 - 使用模板
-		getTmplPath := filepath.Join(getTemplatesDir(), "micro-app", "join", "handler", "get_1tn.go.tmpl")
-		getTmplBytes, err := os.ReadFile(getTmplPath)
-		if err != nil {
-			fmt.Printf("Error reading template: %v\n", err)
-			return
-		}
-		getResult, err := executeTemplate(string(getTmplBytes), map[string]interface{}{
-			"LeftUpper":    leftUpper,
-			"RightUpper":   rightUpper,
-			"LeftVarName":  leftVarName,
-			"RightVarName": rightVarName,
-			"LeftModule":   leftModule,
-			"RightModule":  rightModule,
-		})
-		if err != nil {
-			fmt.Printf("Error executing template: %v\n", err)
-			return
-		}
-		handlerContent.WriteString(getResult)
-
-	case "nt1":
-		// 多对一 - 使用模板
-		getTmplPath := filepath.Join(getTemplatesDir(), "micro-app", "join", "handler", "get_nt1.go.tmpl")
-		getTmplBytes, err := os.ReadFile(getTmplPath)
-		if err != nil {
-			fmt.Printf("Error reading template: %v\n", err)
-			return
-		}
-		getResult, err := executeTemplate(string(getTmplBytes), map[string]interface{}{
-			"LeftUpper":    leftUpper,
-			"RightUpper":   rightUpper,
-			"LeftVarName":  leftVarName,
-			"RightVarName": rightVarName,
-			"LeftModule":   leftModule,
-			"RightModule":  rightModule,
-		})
-		if err != nil {
-			fmt.Printf("Error executing template: %v\n", err)
-			return
-		}
-		handlerContent.WriteString(getResult)
+	mainHandlerPath := filepath.Join(projectDir, toBffDirName(microAppBFFName), "internal", "handler", toCamelFileName(leftEntityName, "Handler.go"))
+	mainHandlerContent, err := os.ReadFile(mainHandlerPath)
+	if err != nil {
+		fmt.Printf("WARNING: cannot read main handler %s: %v\n", mainHandlerPath, err)
+		return
 	}
 
-	joinHandlerDir := filepath.Join(projectDir, toBffDirName(microAppBFFName), "internal", "handler")
-	os.MkdirAll(joinHandlerDir, 0755)
-	os.WriteFile(filepath.Join(joinHandlerDir, "join"+getUpperFirst(leftModule)+getUpperFirst(rightModule)+"Handler.go"), []byte(handlerContent.String()), 0644)
-	fmt.Printf("  Generated: %s/internal/handler/join%s%sHandler.go\n", toBffDirName(microAppBFFName), getUpperFirst(leftModule), getUpperFirst(rightModule))
+	if strings.Contains(string(mainHandlerContent), joinMethodName) {
+		fmt.Printf("  Skip: %s already contains %s method\n", mainHandlerPath, joinMethodName)
+		return
+	}
+
+	mainHandlerStr := string(mainHandlerContent)
+	lastBrace := strings.LastIndex(mainHandlerStr, "}")
+	if lastBrace > 0 {
+		newContent := mainHandlerStr[:lastBrace+1] + "\n" + handlerMethod + "\n" + mainHandlerStr[lastBrace+1:]
+		os.WriteFile(mainHandlerPath, []byte(newContent), 0644)
+		fmt.Printf("  Appended: %s (%s method)\n", mainHandlerPath, joinMethodName)
+	}
+}
+
+// appendJoinRPCClientMethod 追加连表 RPC 方法到主 BFF client 文件
+func appendJoinRPCClientMethod(projectDir, leftEntityName, leftModule, leftUpper, rightUpper string, joinCfg *JoinConfig) {
+	joinRPCMethodName := fmt.Sprintf("JoinGet%s%s", leftUpper, rightUpper)
+	joinReqTypeName := fmt.Sprintf("Get%s%sReq", leftUpper, rightUpper)
+	joinRespTypeName := fmt.Sprintf("Get%s%sResp", leftUpper, rightUpper)
+
+	rpcMethod := fmt.Sprintf(`
+func (c *%sClient) %s(ctx context.Context, id int64) (*pb.%s, error) {
+	return c.client.%s(ctx, &pb.%s{Id: id})
+}
+`, leftUpper, joinRPCMethodName, joinRespTypeName, joinRPCMethodName, joinReqTypeName)
+
+	mainClientPath := filepath.Join(projectDir, toBffDirName(microAppBFFName), "internal", "rpcClient", toCamelFileName(leftEntityName, "Client.go"))
+	mainClientContent, err := os.ReadFile(mainClientPath)
+	if err != nil {
+		fmt.Printf("WARNING: cannot read main client %s: %v\n", mainClientPath, err)
+		return
+	}
+
+	if strings.Contains(string(mainClientContent), joinRPCMethodName) {
+		fmt.Printf("  Skip: %s already contains %s method\n", mainClientPath, joinRPCMethodName)
+		return
+	}
+
+	mainClientStr := string(mainClientContent)
+
+	joinMethodSig := fmt.Sprintf("%s(ctx context.Context, id int64) (*pb.%s, error)", joinRPCMethodName, joinRespTypeName)
+
+	mainClientStr = strings.Replace(mainClientStr,
+		"type "+leftUpper+"ServiceClientInterface interface {",
+		"type "+leftUpper+"ServiceClientInterface interface {\n\t"+joinMethodSig,
+		1)
+
+	findFunc := fmt.Sprintf("func (c *%sClient) %s(", leftUpper, joinRPCMethodName)
+	findIdx := strings.Index(mainClientStr, findFunc)
+	var lastBrace int
+	if findIdx > 0 {
+		for i := findIdx - 1; i >= 0; i-- {
+			if mainClientStr[i] == '}' && (i == 0 || mainClientStr[i-1] == '\n') {
+				if i+2 < len(mainClientStr) {
+					next1 := mainClientStr[i+1]
+					next2 := mainClientStr[i+2]
+					if next1 == '\n' && next2 == '\n' {
+						lastBrace = i
+						break
+					}
+				}
+			}
+		}
+	} else {
+		lastBrace = strings.LastIndex(mainClientStr, "}")
+	}
+	if lastBrace > 0 {
+		newContent := mainClientStr[:lastBrace+1] + "\n" + rpcMethod + "\n" + mainClientStr[lastBrace+1:]
+		os.WriteFile(mainClientPath, []byte(newContent), 0644)
+		fmt.Printf("  Appended: %s (%s method)\n", mainClientPath, joinRPCMethodName)
+	}
 }
 
 func GetMicroAppCmd() *cobra.Command {
@@ -5380,6 +5539,19 @@ func toPascalCase(tableName string) string {
 		result += strings.ToUpper(part[:1]) + part[1:]
 	}
 	return result
+}
+
+// tableAlias strips common DB prefixes and returns the table name with underscores preserved.
+// Used as SQL alias. e.g., "eb_store_product" -> "store_product", "t_order_item" -> "order_item"
+func tableAlias(tableName string) string {
+	prefixes := []string{"eb_", "t_", "sys_", "tb_", "bc_"}
+	name := strings.ToLower(tableName)
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(name, prefix) {
+			return strings.TrimPrefix(name, prefix)
+		}
+	}
+	return name
 }
 
 // toCamelCase converts table name to camelCase (小驼峰)

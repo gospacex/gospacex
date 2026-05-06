@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	"{{.AppName}}/common/kitexGen/{{.ProtoImportPath}}"
-	"myshop/pkg/config"
-	"myshop/pkg/database"
-	"myshop/srvProduct/internal/handler"
-	"myshop/srvProduct/internal/service"
+	"{{.AppName}}/pkg/config"
+	"{{.AppName}}/pkg/database"
+	"{{.AppName}}/{{.SrvDirName}}/internal/handler"
+	"{{.AppName}}/{{.SrvDirName}}/internal/service"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -17,7 +17,7 @@ import (
 
 var (
 	testSrvAddr = "localhost:8001"
-	testClient  product.ProductServiceClient
+	testClient  {{.UpperName}}.{{.UpperName}}ServiceClient
 	testConn    *grpc.ClientConn
 )
 
@@ -29,7 +29,7 @@ func setupGRPCClient(t *testing.T) {
 	if err != nil {
 		t.Skipf("skipping: cannot connect to gRPC server at %s: %v", testSrvAddr, err)
 	}
-	testClient = product.NewProductServiceClient(testConn)
+	testClient = {{.UpperName}}.New{{.UpperName}}ServiceClient(testConn)
 }
 
 func teardownGRPCClient() {
@@ -54,8 +54,8 @@ func startTestServer(t *testing.T) func() {
 	}
 
 	srv := grpc.NewServer()
-	productHandler := handler.NewProductHandler(db)
-	product.RegisterProductServiceServer(srv, productHandler)
+	handler.New{{.UpperName}}Handler(db)
+	{{.UpperName}}.Register{{.UpperName}}ServiceServer(srv, storeProductHandler)
 	go srv.Serve(lis)
 
 	return func() {
@@ -73,7 +73,7 @@ func TestProductService_Create(t *testing.T) {
 	setupGRPCClient(t)
 	defer teardownGRPCClient()
 
-	resp, err := testClient.Create(context.Background(), &product.CreateProductReq{
+	resp, err := testClient.Create(context.Background(), &{{.UpperName}}.CreateProductReq{
 		StoreName: "Test Product",
 		Price:     99.9,
 	})
@@ -91,7 +91,7 @@ func TestProductService_List(t *testing.T) {
 	setupGRPCClient(t)
 	defer teardownGRPCClient()
 
-	resp, err := testClient.List(context.Background(), &product.ListProductReq{})
+	resp, err := testClient.List(context.Background(), &{{.UpperName}}.ListProductReq{})
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
@@ -104,14 +104,14 @@ func TestProductService_Get(t *testing.T) {
 	defer teardownGRPCClient()
 
 	// 先创建一个用于测试
-	createResp, err := testClient.Create(context.Background(), &product.CreateProductReq{
+	createResp, err := testClient.Create(context.Background(), &{{.UpperName}}.CreateProductReq{
 		StoreName: "Get Test Product",
 	})
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
 
-	resp, err := testClient.Get(context.Background(), &product.GetProductReq{
+	resp, err := testClient.Get(context.Background(), &{{.UpperName}}.GetProductReq{
 		Id: createResp.Id,
 	})
 	if err != nil {
@@ -128,7 +128,7 @@ func TestProductService_Update(t *testing.T) {
 	defer teardownGRPCClient()
 
 	// 先创建一个用于测试
-	createResp, err := testClient.Create(context.Background(), &product.CreateProductReq{
+	createResp, err := testClient.Create(context.Background(), &{{.UpperName}}.CreateProductReq{
 		StoreName: "Before Update",
 	})
 	if err != nil {
@@ -136,7 +136,7 @@ func TestProductService_Update(t *testing.T) {
 	}
 
 	// 更新
-	_, err = testClient.Update(context.Background(), &product.UpdateProductReq{
+	_, err = testClient.Update(context.Background(), &{{.UpperName}}.UpdateProductReq{
 		Id:        createResp.Id,
 		StoreName: "After Update",
 	})
@@ -145,7 +145,7 @@ func TestProductService_Update(t *testing.T) {
 	}
 
 	// 验证更新
-	getResp, err := testClient.Get(context.Background(), &product.GetProductReq{
+	getResp, err := testClient.Get(context.Background(), &{{.UpperName}}.GetProductReq{
 		Id: createResp.Id,
 	})
 	if err != nil {
@@ -162,7 +162,7 @@ func TestProductService_Delete(t *testing.T) {
 	defer teardownGRPCClient()
 
 	// 先创建一个用于测试
-	createResp, err := testClient.Create(context.Background(), &product.CreateProductReq{
+	createResp, err := testClient.Create(context.Background(), &{{.UpperName}}.CreateProductReq{
 		StoreName: "To Delete",
 	})
 	if err != nil {
@@ -170,7 +170,7 @@ func TestProductService_Delete(t *testing.T) {
 	}
 
 	// 删除
-	_, err = testClient.Delete(context.Background(), &product.DeleteProductReq{
+	_, err = testClient.Delete(context.Background(), &{{.UpperName}}.DeleteProductReq{
 		Id: createResp.Id,
 	})
 	if err != nil {
@@ -178,7 +178,7 @@ func TestProductService_Delete(t *testing.T) {
 	}
 
 	// 验证删除 - 应该失败
-	_, err = testClient.Get(context.Background(), &product.GetProductReq{
+	_, err = testClient.Get(context.Background(), &{{.UpperName}}.GetProductReq{
 		Id: createResp.Id,
 	})
 	if err == nil {

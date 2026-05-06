@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"{{.AppName}}/pkg/database"
@@ -98,7 +97,7 @@ func (r *{{.UpperEntityName}}Repo) ListWithFilter(ctx context.Context, req *pb.L
 	offset := (page - 1) * pageSize
 
 	var list []*model.{{.UpperEntityName}}
-	err := query.Offset(offset).Limit(pageSize).Find(&list).Error
+	err := query.Offset(int(offset)).Limit(int(pageSize)).Find(&list).Error
 	if err != nil {
 		logger.Business.Errorw("list {{.Module}} with filter failed", "error", err.Error())
 		return nil, err
@@ -138,21 +137,3 @@ func (r *{{.UpperEntityName}}Repo) Delete(ctx context.Context, id {{.PKGoType}})
 	logger.Business.Infow("delete {{.Module}} success", "id", id, "duration", time.Since(start).String())
 	return nil
 }
-
-{{if .HasJoin}}
-// {{.JoinRepoMethodName}} 一对一联表查询
-func (r *{{.UpperEntityName}}Repo) {{.JoinRepoMethodName}}(ctx context.Context, id int64) (*model.{{.JoinModelName}}, error) {
-	var result model.{{.JoinModelName}}
-	err := r.db.WithContext(ctx).
-		Table("`{{.LeftTable}}` AS {{.LeftAlias}}").
-		Select("`{{.LeftAlias}}`.id{{range .LeftColumns}}, `{{$.LeftAlias}}`.{{.Name}}{{end}}{{range .RightColumns}}, `{{$.RightAlias}}`.{{.Name}} AS {{.AliasName}}{{end}}").
-		Joins("LEFT JOIN `{{.RightTable}}` AS {{.RightAlias}} ON `{{$.RightAlias}}`.`{{.RightJoinField}}` = `{{$.LeftAlias}}`.`{{.LeftJoinField}}`").
-		Where("`{{.LeftAlias}}`.`id` = ?", id).
-		Scan(&result).
-		Error
-	if err != nil {
-		return nil, fmt.Errorf("join query failed: %w", err)
-	}
-	return &result, nil
-}
-{{end}}

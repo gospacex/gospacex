@@ -34,9 +34,3 @@ func (s *{{.UpperEntityName}}Service) Update(ctx context.Context, m *model.{{.Up
 func (s *{{.UpperEntityName}}Service) Delete(ctx context.Context, id {{.PKGoType}}) error {
 	return s.repo.Delete(ctx, {{.PKModelConvert}})
 }
-{{if .HasJoin}}
-
-func (s *{{.UpperEntityName}}Service) {{.JoinRepoMethodName}}(ctx context.Context, id int64) (*model.{{.JoinModelName}}, error) {
-	return s.repo.{{.JoinRepoMethodName}}(ctx, id)
-}
-{{end}}

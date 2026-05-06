@@ -28,7 +28,12 @@ go.work.sum
 
 #### ai ignore
 output/
+openspec
 data/
 .claude
 .gsd
 .deepseek
+.omc
+data
+CLAUDE.md
+AGENTS.md

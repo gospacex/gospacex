@@ -12,5 +12,6 @@ func NewRouter() *gin.Engine {
 	r.POST("/api/v1/{{.PathName}}s", handler.New{{.UpperName}}Handler().Create)
 	r.PUT("/api/v1/{{.PathName}}s/:id", handler.New{{.UpperName}}Handler().Update)
 	r.DELETE("/api/v1/{{.PathName}}s/:id", handler.New{{.UpperName}}Handler().Delete)
+{{end}}{{range .JoinTables}}	r.GET("/api/v1/{{.JoinPath}}/:id", handler.New{{.HandlerName}}Handler().GetJoin{{.LeftUpper}}{{.RightUpper}})
 {{end}}	return r
 }
