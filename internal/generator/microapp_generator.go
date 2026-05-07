@@ -27,6 +27,7 @@ type MicroAppConfig struct {
 	DBName       string
 	Protocol     string // 通信协议: grpc (默认), kitex
 	HTTP         string // BFF HTTP 框架: gin (默认), hertz
+	Play         string // 新增：支付平台列表
 }
 
 // ModuleConfig 模块配置
