@@ -44,6 +44,7 @@ var (
 	microAppMiddleware    string   // 中间件列表: jwt,ratelimit,blacklist
 	microAppConfig        string   // 配置中心: nacos|viper(默认)
 	microAppConfigFile    string   // 配置文件路径: yaml/json/toml
+	microAppPlay        string   // 支付平台列表: alipay,wechat,etc
 
 	// URL 化参数
 	microAppRegistry    string   // 注册中心 URL 格式: consul://127.0.0.1:8500, etcd://127.0.0.1:2379, direct
@@ -3972,6 +3973,7 @@ func init() {
 	newMicroAppCmd.Flags().StringVar(&microAppMiddleware, "middleware", "", "生成中间件（BFF: jwt,ratelimit,blacklist; SRV: ratelimit,retry,timeout,tracing）")
 	newMicroAppCmd.Flags().StringVar(&microAppConfig, "config", "", "配置中心: nacos|viper（默认从本地 config.yaml 读取）")
 	newMicroAppCmd.Flags().StringVar(&microAppConfigFile, "config-file", "", "从配置文件读取参数，支持 yaml/json/toml 格式")
+	newMicroAppCmd.Flags().StringVar(&microAppPlay, "play", "", "支付平台列表 (如: alipay,wechat)")
 
 	// URL 化参数
 	newMicroAppCmd.Flags().StringVar(&microAppRegistry, "registry", "", "注册中心 URL: consul://host:port | etcd://host:port | direct（直连）")
