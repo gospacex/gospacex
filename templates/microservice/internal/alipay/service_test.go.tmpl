@@ -1,0 +1,35 @@
+package alipay
+
+import (
+    "context"
+    "testing"
+)
+
+func TestGeneratePayURL(t *testing.T) {
+    svc, err := NewService()
+    if err != nil {
+        t.Skipf("skip test: failed to create service: %v", err)
+    }
+
+    payUrl, err := svc.GeneratePayURL(context.Background(), "test123", "100.00", "Test Order")
+    if err != nil {
+        t.Errorf("GeneratePayURL failed: %v", err)
+    }
+    if payUrl == "" {
+        t.Error("expected non-empty pay url")
+    }
+}
+
+func TestHandleNotify(t *testing.T) {
+    svc, _ := NewService()
+    params := map[string]string{
+        "trade_status": "TRADE_SUCCESS",
+    }
+    status, err := svc.HandleNotify(context.Background(), params)
+    if err != nil {
+        t.Errorf("HandleNotify failed: %v", err)
+    }
+    if status != "success" {
+        t.Errorf("expected 'success', got %s", status)
+    }
+}
