@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package {{.AppName}}.alipay;
+
+option go_package = "{{.AppName}}/common/alipay";
+
+service AlipayService {
+  rpc GeneratePayURL(GeneratePayURLRequest) returns (GeneratePayURLResponse);
+  rpc HandleNotify(HandleNotifyRequest) returns (HandleNotifyResponse);
+}
+
+message GeneratePayURLRequest {
+  string order_id = 1;
+  string total_amount = 2;
+  string subject = 3;
+}
+
+message GeneratePayURLResponse {
+  string pay_url = 1;
+}
+
+message HandleNotifyRequest {
+  map<string, string> params = 1;
+}
+
+message HandleNotifyResponse {
+  string status = 1;
+}
