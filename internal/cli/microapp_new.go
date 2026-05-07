@@ -211,6 +211,27 @@ func parseTraceURL(traceURL string) error {
 	return nil
 }
 
+// toCamelCaseDir converts table name to camelCase directory name (e.g., "product" -> "srvProduct")
+func toCamelCaseDir(tableName string) string {
+    prefixes := []string{"eb_", "t_", "sys_", "tb_", "bc_"}
+    name := tableName
+    for _, prefix := range prefixes {
+        if strings.HasPrefix(strings.ToLower(name), prefix) {
+            name = strings.TrimPrefix(name, prefix)
+            break
+        }
+    }
+    parts := strings.Split(name, "_")
+    result := "srv"
+    for _, part := range parts {
+        if part == "" {
+            continue
+        }
+        result += strings.ToUpper(part[:1]) + part[1:]
+    }
+    return result
+}
+
 // toCamelCaseFile converts table name to camelCase file name
 // e.g., "eb_store_product" -> "storeProduct"
 func toCamelCaseFile(tableName string) string {
@@ -1250,10 +1271,130 @@ func runNewMicroAppWithFlags() error {
 
 	runGenProtoScript(projectDir)
 
+	// 如果启用了支付宝，注入支付宝代码
+	if microAppPlay != "" {
+		if err := injectAlipayCode(projectDir, microAppBFFName, microAppModules); err != nil {
+			return fmt.Errorf("inject alipay code: %w", err)
+		}
+	}
+
 	genGitignore(projectDir)
 	cleanHiddenFiles(projectDir)
 
 	fmt.Printf("\nDone! Project at: %s\n", projectDir)
+	return nil
+}
+
+// injectAlipayCode 注入支付宝相关代码
+func injectAlipayCode(projectDir, bffName string, modules []string) error {
+	// 1. 为每个微服务模块生成支付宝配置和服务文件
+	for _, mod := range modules {
+		srvDir := filepath.Join(projectDir, toCamelCaseDir(mod))
+
+		// 读取并渲染 alipay config.go.tmpl
+		configTmplPath := filepath.Join(getTemplatesDir(), "microservice", "internal", "alipay", "config.go.tmpl")
+		configTmpl, err := os.ReadFile(configTmplPath)
+		if err != nil {
+			return fmt.Errorf("read config template: %w", err)
+		}
+		configContent, err := executeTemplate(string(configTmpl), map[string]interface{}{
+			"AlipayAppID":      "YOUR_APP_ID",
+			"AlipayPrivateKey":  "YOUR_PRIVATE_KEY",
+			"AlipayPublicKey":  "YOUR_PUBLIC_KEY",
+			"AlipayNotifyURL":   "http://your-domain.com/api/order/notify",
+			"AlipayIsProduction": false,
+		})
+		if err != nil {
+			return fmt.Errorf("execute config template: %w", err)
+		}
+
+		if err := os.MkdirAll(filepath.Join(srvDir, "internal", "alipay"), 0755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(srvDir, "internal", "alipay", "config.go"), []byte(configContent), 0644); err != nil {
+			return err
+		}
+
+		// 读取并渲染 alipay service.go.tmpl
+		serviceTmplPath := filepath.Join(getTemplatesDir(), "microservice", "internal", "alipay", "service.go.tmpl")
+		serviceTmpl, err := os.ReadFile(serviceTmplPath)
+		if err != nil {
+			return fmt.Errorf("read service template: %w", err)
+		}
+		serviceContent, err := executeTemplate(string(serviceTmpl), nil)
+		if err != nil {
+			return fmt.Errorf("execute service template: %w", err)
+		}
+
+		if err := os.WriteFile(filepath.Join(srvDir, "internal", "alipay", "service.go"), []byte(serviceContent), 0644); err != nil {
+			return err
+		}
+
+		// 生成 alipay.proto
+		protoTmplPath := filepath.Join(getTemplatesDir(), "microservice", "api", "alipay", "alipay.proto.tmpl")
+		protoTmpl, err := os.ReadFile(protoTmplPath)
+		if err != nil {
+			return fmt.Errorf("read proto template: %w", err)
+		}
+		protoContent, err := executeTemplate(string(protoTmpl), map[string]interface{}{
+			"AppName": filepath.Base(projectDir),
+		})
+		if err != nil {
+			return fmt.Errorf("execute proto template: %w", err)
+		}
+
+		protoDir := filepath.Join(projectDir, "common", "idl")
+		if err := os.MkdirAll(protoDir, 0755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(protoDir, "alipay.proto"), []byte(protoContent), 0644); err != nil {
+			return err
+		}
+	}
+
+	// 2. 为 BFF 注入 handler 和 rpcClient
+	bffDir := filepath.Join(projectDir, fmt.Sprintf("bff_%s", bffName))
+
+	// 读取并渲染 orderHandler.go.tmpl
+	handlerTmplPath := filepath.Join(getTemplatesDir(), "micro-bff", "internal", "handler", "orderHandler.go.tmpl")
+	handlerTmpl, err := os.ReadFile(handlerTmplPath)
+	if err != nil {
+		return fmt.Errorf("read handler template: %w", err)
+	}
+	handlerContent, err := executeTemplate(string(handlerTmpl), map[string]interface{}{
+		"AppName": filepath.Base(projectDir),
+	})
+	if err != nil {
+		return fmt.Errorf("execute handler template: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(bffDir, "internal", "handler"), 0755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(bffDir, "internal", "handler", "orderHandler.go"), []byte(handlerContent), 0644); err != nil {
+		return err
+	}
+
+	// 读取并渲染 orderRpcClient.go.tmpl
+	clientTmplPath := filepath.Join(getTemplatesDir(), "micro-bff", "internal", "rpcClient", "orderRpcClient.go.tmpl")
+	clientTmpl, err := os.ReadFile(clientTmplPath)
+	if err != nil {
+		return fmt.Errorf("read rpcClient template: %w", err)
+	}
+	clientContent, err := executeTemplate(string(clientTmpl), map[string]interface{}{
+		"AppName": filepath.Base(projectDir),
+	})
+	if err != nil {
+		return fmt.Errorf("execute rpcClient template: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(bffDir, "internal", "rpcClient"), 0755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(bffDir, "internal", "rpcClient", "orderRpcClient.go"), []byte(clientContent), 0644); err != nil {
+		return err
+	}
+
 	return nil
 }
 

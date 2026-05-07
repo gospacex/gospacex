@@ -3374,112 +3374,63 @@ func (g *MicroAppGenerator) injectAlipayCode() error {
 	for _, mod := range g.config.Modules {
 		srvDir := filepath.Join(projectDir, toCamelCaseDir(mod.Name))
 
-		// 生成 alipay config.go
-		alipayConfigContent := fmt.Sprintf(`package alipay
+		// 读取并渲染 alipay config.go.tmpl
+		configTmplPath := filepath.Join(g.templateDir, "microservice", "internal", "alipay", "config.go.tmpl")
+		configTmpl, err := os.ReadFile(configTmplPath)
+		if err != nil {
+			return fmt.Errorf("read config template: %w", err)
+		}
+		configContent, err := executeTemplate(string(configTmpl), map[string]interface{}{
+			"AlipayAppID":       "YOUR_APP_ID",
+			"AlipayPrivateKey":  "YOUR_PRIVATE_KEY",
+			"AlipayPublicKey":  "YOUR_PUBLIC_KEY",
+			"AlipayNotifyURL":   "http://your-domain.com/api/order/notify",
+			"AlipayIsProduction": false,
+		})
+		if err != nil {
+			return fmt.Errorf("execute config template: %w", err)
+		}
 
-import (
-	"os"
-
-	"gopkg.in/yaml.v3"
-)
-
-type AlipayConfig struct {
-	AppID      string ` + "`yaml:\"app_id\"`" + `
-	PrivateKey string ` + "`yaml:\"private_key\"`" + `
-	PublicKey  string ` + "`yaml:\"public_key\"`" + `
-	NotifyURL   string ` + "`yaml:\"notify_url\"`" + `
-}
-
-func LoadAlipayConfig(path string) (*AlipayConfig, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var cfg AlipayConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, err
-	}
-	return &cfg, nil
-}
-`)
 		if err := os.MkdirAll(filepath.Join(srvDir, "internal", "alipay"), 0755); err != nil {
 			return err
 		}
-		if err := os.WriteFile(filepath.Join(srvDir, "internal", "alipay", "config.go"), []byte(alipayConfigContent), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(srvDir, "internal", "alipay", "config.go"), []byte(configContent), 0644); err != nil {
 			return err
 		}
 
-		// 生成 alipay service.go
-		alipayServiceContent := fmt.Sprintf(`package alipay
+		// 读取并渲染 alipay service.go.tmpl
+		serviceTmplPath := filepath.Join(g.templateDir, "microservice", "internal", "alipay", "service.go.tmpl")
+		serviceTmpl, err := os.ReadFile(serviceTmplPath)
+		if err != nil {
+			return fmt.Errorf("read service template: %w", err)
+		}
+		serviceContent, err := executeTemplate(string(serviceTmpl), nil)
+		if err != nil {
+			return fmt.Errorf("execute service template: %w", err)
+		}
 
-import (
-	"context"
-	"fmt"
-
-	"github.com/smartwalle/alipay"
-)
-
-type Service struct {
-	client *alipay.Client
-}
-
-func NewService(cfg *AlipayConfig) (*Service, error) {
-	client, err := alipay.New(cfg.AppID, cfg.PrivateKey, cfg.PublicKey, false)
-	if err != nil {
-		return nil, fmt.Errorf("create alipay client: %%w", err)
-	}
-	return &Service{client: client}, nil
-}
-
-func (s *Service) Pay(ctx context.Context, orderNo string, amount float64) (string, error) {
-	// 调用支付宝支付接口
-	return "", nil
-}
-
-func (s *Service) VerifyNotify(ctx context.Context, notify *alipay.NotifyRequest) (bool, error) {
-	// 验证支付宝回调
-	return true, nil
-}
-`)
-		if err := os.WriteFile(filepath.Join(srvDir, "internal", "alipay", "service.go"), []byte(alipayServiceContent), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(srvDir, "internal", "alipay", "service.go"), []byte(serviceContent), 0644); err != nil {
 			return err
 		}
 
-		// 生成 alipay proto 文件
-		alipayProtoContent := `syntax = "proto3";
+		// 读取并渲染 alipay.proto.tmpl
+		protoTmplPath := filepath.Join(g.templateDir, "microservice", "api", "alipay", "alipay.proto.tmpl")
+		protoTmpl, err := os.ReadFile(protoTmplPath)
+		if err != nil {
+			return fmt.Errorf("read proto template: %w", err)
+		}
+		protoContent, err := executeTemplate(string(protoTmpl), map[string]interface{}{
+			"AppName": g.config.ProjectName,
+		})
+		if err != nil {
+			return fmt.Errorf("execute proto template: %w", err)
+		}
 
-package alipay;
-
-option go_package = "` + g.config.ProjectName + `/common/kitex_gen/alipay";
-
-service AlipayService {
-  rpc CreatePay(CreatePayReq) returns (CreatePayResp);
-  rpc VerifyNotify(VerifyNotifyReq) returns (VerifyNotifyResp);
-}
-
-message CreatePayReq {
-  string order_no = 1;
-  double amount = 2;
-}
-
-message CreatePayResp {
-  string pay_url = 1;
-  bool success = 2;
-}
-
-message VerifyNotifyReq {
-  string notify_data = 1;
-}
-
-message VerifyNotifyResp {
-  bool verified = 1;
-}
-`
 		protoDir := filepath.Join(projectDir, "common", "idl")
 		if err := os.MkdirAll(protoDir, 0755); err != nil {
 			return err
 		}
-		if err := os.WriteFile(filepath.Join(protoDir, "alipay.proto"), []byte(alipayProtoContent), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(protoDir, "alipay.proto"), []byte(protoContent), 0644); err != nil {
 			return err
 		}
 	}
@@ -3487,85 +3438,43 @@ message VerifyNotifyResp {
 	// 2. 为 BFF 注入 handler 和 rpcClient
 	bffDir := filepath.Join(projectDir, fmt.Sprintf("bff_%s", g.config.BFFName))
 
-	// 生成 orderHandler.go (BFF handler)
-	orderHandlerContent := fmt.Sprintf(`package handler
-
-import (
-	"net/http"
-
-	"%s/bff_%s/internal/rpc_client"
-	"github.com/gin-gonic/gin"
-)
-
-type OrderHandler struct {
-	alipayClient *rpc_client.AlipayClient
-}
-
-func NewOrderHandler() *OrderHandler {
-	client, _ := rpc_client.NewAlipayClient("localhost:9001")
-	return &OrderHandler{alipayClient: client}
-}
-
-func (h *OrderHandler) CreatePay(c *gin.Context) {
-	var req struct {
-		OrderNo string  ` + "`json:\"order_no\" binding:\"required\"`" + `
-		Amount  float64 ` + "`json:\"amount\" binding:\"required\"`" + `
+	// 读取并渲染 orderHandler.go.tmpl
+	handlerTmplPath := filepath.Join(g.templateDir, "micro-bff", "internal", "handler", "orderHandler.go.tmpl")
+	handlerTmpl, err := os.ReadFile(handlerTmplPath)
+	if err != nil {
+		return fmt.Errorf("read handler template: %w", err)
 	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+	handlerContent, err := executeTemplate(string(handlerTmpl), map[string]interface{}{
+		"AppName": g.config.ProjectName,
+	})
+	if err != nil {
+		return fmt.Errorf("execute handler template: %w", err)
 	}
-	// 调用支付宝服务
-	c.JSON(http.StatusOK, gin.H{"pay_url": "https://...", "success": true})
-}
-`, g.config.ProjectName, g.config.BFFName)
+
 	if err := os.MkdirAll(filepath.Join(bffDir, "internal", "handler"), 0755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(bffDir, "internal", "handler", "orderHandler.go"), []byte(orderHandlerContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(bffDir, "internal", "handler", "orderHandler.go"), []byte(handlerContent), 0644); err != nil {
 		return err
 	}
 
-	// 生成 orderRpcClient.go (BFF rpc client)
-	orderRpcClientContent := `package rpc_client
-
-import (
-	"context"
-
-	alipay "github.com/yourorg/` + g.config.ProjectName + `/common/kitex_gen/alipay"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-)
-
-type AlipayClient struct {
-	conn   *grpc.ClientConn
-	client alipay.AlipayServiceClient
-}
-
-func NewAlipayClient(addr string) (*AlipayClient, error) {
-	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// 读取并渲染 orderRpcClient.go.tmpl
+	clientTmplPath := filepath.Join(g.templateDir, "micro-bff", "internal", "rpcClient", "orderRpcClient.go.tmpl")
+	clientTmpl, err := os.ReadFile(clientTmplPath)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("read rpcClient template: %w", err)
 	}
-	return &AlipayClient{conn: conn, client: alipay.NewAlipayServiceClient(conn)}, nil
-}
-
-func (c *AlipayClient) Close() error {
-	return c.conn.Close()
-}
-
-func (c *AlipayClient) CreatePay(ctx context.Context, orderNo string, amount float64) (string, error) {
-	resp, err := c.client.CreatePay(ctx, &alipay.CreatePayReq{OrderNo: orderNo, Amount: amount})
+	clientContent, err := executeTemplate(string(clientTmpl), map[string]interface{}{
+		"AppName": g.config.ProjectName,
+	})
 	if err != nil {
-		return "", err
+		return fmt.Errorf("execute rpcClient template: %w", err)
 	}
-	return resp.PayUrl, nil
-}
-`
-	if err := os.MkdirAll(filepath.Join(bffDir, "internal", "rpc_client"), 0755); err != nil {
+
+	if err := os.MkdirAll(filepath.Join(bffDir, "internal", "rpcClient"), 0755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(bffDir, "internal", "rpc_client", "orderRpcClient.go"), []byte(orderRpcClientContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(bffDir, "internal", "rpcClient", "orderRpcClient.go"), []byte(clientContent), 0644); err != nil {
 		return err
 	}
 

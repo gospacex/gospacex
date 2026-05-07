@@ -36,7 +36,6 @@ func Execute() error {
 		GetMicroBffCmd(),
 		GetCRUDCmd(),
 		GetGenProtoCmd(),
-		GetGenGRPCCmd(),
 		GetScriptCenterCmd(),
 		GetPkgCmd(),
 	)
