@@ -1,0 +1,43 @@
+package rpcClient
+
+import (
+    "context"
+    "fmt"
+
+    "google.golang.org/grpc"
+    pb "{{.AppName}}/common/alipay"
+)
+
+type OrderRpcClient struct {
+    client pb.AlipayServiceClient
+}
+
+func NewOrderRpcClient(conn *grpc.ClientConn) *OrderRpcClient {
+    return &OrderRpcClient{
+        client: pb.NewAlipayServiceClient(conn),
+    }
+}
+
+func (c *OrderRpcClient) GeneratePayURL(ctx context.Context, orderId, totalAmount, subject string) (string, error) {
+    req := &pb.GeneratePayURLRequest{
+        OrderId:     orderId,
+        TotalAmount: totalAmount,
+        Subject:     subject,
+    }
+    resp, err := c.client.GeneratePayURL(ctx, req)
+    if err != nil {
+        return "", fmt.Errorf("rpc GeneratePayURL failed: %w", err)
+    }
+    return resp.PayUrl, nil
+}
+
+func (c *OrderRpcClient) HandleNotify(ctx context.Context, params map[string]string) (string, error) {
+    req := &pb.HandleNotifyRequest{
+        Params: params,
+    }
+    resp, err := c.client.HandleNotify(ctx, req)
+    if err != nil {
+        return "failure", fmt.Errorf("rpc HandleNotify failed: %w", err)
+    }
+    return resp.Status, nil
+}
