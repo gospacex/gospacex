@@ -1,0 +1,65 @@
+package handler
+
+import (
+    "bytes"
+    "context"
+    "encoding/json"
+    "net/http"
+    "net/http/httptest"
+    "testing"
+
+    "github.com/gin-gonic/gin"
+)
+
+type MockOrderRpcClient struct{}
+
+func (m *MockOrderRpcClient) GeneratePayURL(ctx context.Context, orderId, totalAmount, subject string) (string, error) {
+    return "https://openapi.alipay.com/gateway.do?mock", nil
+}
+
+func (m *MockOrderRpcClient) HandleNotify(ctx context.Context, params map[string]string) (string, error) {
+    return "success", nil
+}
+
+func TestGeneratePayURLHandler(t *testing.T) {
+    gin.SetMode(gin.TestMode)
+    mockClient := &MockOrderRpcClient{}
+    handler := NewOrderHandler(mockClient)
+
+    r := gin.Default()
+    r.POST("/api/order/pay", handler.GeneratePayURL)
+
+    reqBody, _ := json.Marshal(map[string]string{
+        "orderId": "test123",
+        "totalAmount": "100.00",
+        "subject": "Test Order",
+    })
+    req, _ := http.NewRequest("POST", "/api/order/pay", bytes.NewBuffer(reqBody))
+    req.Header.Set("Content-Type", "application/json")
+    w := httptest.NewRecorder()
+    r.ServeHTTP(w, req)
+
+    if w.Code != http.StatusOK {
+        t.Errorf("expected 200, got %d", w.Code)
+    }
+}
+
+func TestHandleNotifyHandler(t *testing.T) {
+    gin.SetMode(gin.TestMode)
+    mockClient := &MockOrderRpcClient{}
+    handler := NewOrderHandler(mockClient)
+
+    r := gin.Default()
+    r.POST("/api/order/notify", handler.HandleNotify)
+
+    req, _ := http.NewRequest("POST", "/api/order/notify", nil)
+    req.PostForm = map[string][]string{
+        "trade_status": {"TRADE_SUCCESS"},
+    }
+    w := httptest.NewRecorder()
+    r.ServeHTTP(w, req)
+
+    if w.Code != http.StatusOK {
+        t.Errorf("expected 200, got %d", w.Code)
+    }
+}
