@@ -1350,6 +1350,9 @@ func injectAlipayCode(projectDir, bffName string, modules []string) error {
 		if err := os.WriteFile(filepath.Join(protoDir, "alipay.proto"), []byte(protoContent), 0644); err != nil {
 			return err
 		}
+
+		// 编译 alipay.proto（延迟到 gen_proto.sh 处理）
+		_ = protoDir // 占位，避免编译错误
 	}
 
 	// 2. 为 BFF 注入 handler 和 rpcClient
@@ -1363,6 +1366,7 @@ func injectAlipayCode(projectDir, bffName string, modules []string) error {
 	}
 	handlerContent, err := executeTemplate(string(handlerTmpl), map[string]interface{}{
 		"AppName": filepath.Base(projectDir),
+		"BFF":     filepath.Base(bffDir),
 	})
 	if err != nil {
 		return fmt.Errorf("execute handler template: %w", err)
@@ -1383,6 +1387,7 @@ func injectAlipayCode(projectDir, bffName string, modules []string) error {
 	}
 	clientContent, err := executeTemplate(string(clientTmpl), map[string]interface{}{
 		"AppName": filepath.Base(projectDir),
+		"BFF":     filepath.Base(bffDir),
 	})
 	if err != nil {
 		return fmt.Errorf("execute rpcClient template: %w", err)

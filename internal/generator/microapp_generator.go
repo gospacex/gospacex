@@ -190,13 +190,13 @@ func (g *MicroAppGenerator) createDirectories() error {
 		filepath.Join(projectDir, "pkg", "logger"),
 		filepath.Join(projectDir, "pkg", "registry"),
 		filepath.Join(projectDir, "pkg", "utils"),
-		filepath.Join(projectDir, fmt.Sprintf("bff_%s", g.config.BFFName), "cmd"),
-		filepath.Join(projectDir, fmt.Sprintf("bff_%s", g.config.BFFName), "configs"),
-		filepath.Join(projectDir, fmt.Sprintf("bff_%s", g.config.BFFName), "internal", "handler"),
-		filepath.Join(projectDir, fmt.Sprintf("bff_%s", g.config.BFFName), "internal", "middleware"),
-		filepath.Join(projectDir, fmt.Sprintf("bff_%s", g.config.BFFName), "internal", "rpc_client"),
-		filepath.Join(projectDir, fmt.Sprintf("bff_%s", g.config.BFFName), "internal", "router"),
-		filepath.Join(projectDir, fmt.Sprintf("bff_%s", g.config.BFFName), "internal", "service"),
+		filepath.Join(projectDir, fmt.Sprintf("bff%s", toPascalCase(g.config.BFFName)), "cmd"),
+		filepath.Join(projectDir, fmt.Sprintf("bff%s", toPascalCase(g.config.BFFName)), "configs"),
+		filepath.Join(projectDir, fmt.Sprintf("bff%s", toPascalCase(g.config.BFFName)), "internal", "handler"),
+		filepath.Join(projectDir, fmt.Sprintf("bff%s", toPascalCase(g.config.BFFName)), "internal", "middleware"),
+		filepath.Join(projectDir, fmt.Sprintf("bff%s", toPascalCase(g.config.BFFName)), "internal", "rpc_client"),
+		filepath.Join(projectDir, fmt.Sprintf("bff%s", toPascalCase(g.config.BFFName)), "internal", "router"),
+		filepath.Join(projectDir, fmt.Sprintf("bff%s", toPascalCase(g.config.BFFName)), "internal", "service"),
 		filepath.Join(projectDir, "scripts"),
 		filepath.Join(projectDir, "deploy"),
 		filepath.Join(projectDir, "tests", "integration"),
@@ -1033,11 +1033,11 @@ func main() {
 		log.Fatal(err)
 	}
 	addr := cfg.GetAddr()
-	log.Printf("BFF starting on %%s", addr)
+	log.Printf("BFF starting on %s", addr)
 	router.NewRouter().Run(addr)
 }
 `, g.config.ProjectName, bffName, g.config.ProjectName)
-	if err := os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff_%s", bffName), "cmd", "main.go"), []byte(mainContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff%s", toPascalCase(g.config.BFFName)), "cmd", "main.go"), []byte(mainContent), 0644); err != nil {
 		return err
 	}
 
@@ -1054,7 +1054,7 @@ log:
   level: info
   format: json
 `
-	if err := os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff_%s", bffName), "configs", "config.yaml"), []byte(configYaml), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff%s", toPascalCase(g.config.BFFName)), "configs", "config.yaml"), []byte(configYaml), 0644); err != nil {
 		return err
 	}
 
@@ -1087,7 +1087,7 @@ func NewRouter() *gin.Engine {
 	}
 	routerContent.WriteString("\treturn r\n}\n")
 
-	if err := os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff_%s", bffName), "internal", "router", "router.go"), []byte(routerContent.String()), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff%s", toPascalCase(g.config.BFFName)), "internal", "router", "router.go"), []byte(routerContent.String()), 0644); err != nil {
 		return err
 	}
 
@@ -1179,7 +1179,7 @@ func (c *%sClient) Delete(ctx context.Context, id int64) (*%s.Delete%sResp, erro
 		mod.ServiceName, toCamelCaseFile(mod.Name), mod.ServiceName, mod.ServiceName, toCamelCaseFile(mod.Name), mod.ServiceName,
 		mod.ServiceName, toCamelCaseFile(mod.Name), mod.ServiceName, mod.ServiceName, toCamelCaseFile(mod.Name), mod.ServiceName)
 
-	if err := os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff_%s", bffName), "internal", "rpc_client", toCamelCaseFile(mod.Name)+"Client.go"), []byte(clientContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff%s", toPascalCase(g.config.BFFName)), "internal", "rpc_client", toCamelCaseFile(mod.Name)+"Client.go"), []byte(clientContent), 0644); err != nil {
 		return err
 	}
 
@@ -1282,7 +1282,7 @@ func (h *%sHandler) Delete(c *gin.Context) {
 		mod.ServiceName, mod.ServiceName,
 		mod.ServiceName, fmt.Sprintf("%d", mod.Port))
 
-	return os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff_%s", bffName), "internal", "handler", toCamelCaseFile(mod.TableName)+"Handler.go"), []byte(handlerContent), 0644)
+	return os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff%s", toPascalCase(g.config.BFFName)), "internal", "handler", toCamelCaseFile(mod.TableName)+"Handler.go"), []byte(handlerContent), 0644)
 }
 
 func (g *MicroAppGenerator) generateMicroService(mod *ModuleConfig) error {
@@ -2133,7 +2133,7 @@ func copyFile(src, dst string) error {
 // generateBFFMiddleware 生成 BFF 中间件
 func (g *MicroAppGenerator) generateBFFMiddleware(bffName string) error {
 	projectDir := filepath.Join(g.outputDir, g.config.ProjectName)
-	bffPath := filepath.Join(projectDir, fmt.Sprintf("bff_%s", bffName))
+	bffPath := filepath.Join(projectDir, fmt.Sprintf("bff%s", toPascalCase(g.config.BFFName)))
 
 	// CORS 中间件
 	corsContent := `package middleware
@@ -2556,7 +2556,7 @@ func main() {
 	h.Run()
 }
 `, g.config.ProjectName, bffName, g.config.ProjectName)
-	if err := os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff_%s", bffName), "cmd", "main.go"), []byte(mainContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff%s", toPascalCase(g.config.BFFName)), "cmd", "main.go"), []byte(mainContent), 0644); err != nil {
 		return err
 	}
 
@@ -2573,7 +2573,7 @@ log:
   level: info
   format: json
 `
-	if err := os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff_%s", bffName), "configs", "config.yaml"), []byte(configYaml), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff%s", toPascalCase(g.config.BFFName)), "configs", "config.yaml"), []byte(configYaml), 0644); err != nil {
 		return err
 	}
 
@@ -2605,7 +2605,7 @@ func Register(h *server.Hertz) {
 	}
 	routerContent.WriteString("}\n")
 
-	if err := os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff_%s", bffName), "internal", "router", "router.go"), []byte(routerContent.String()), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff%s", toPascalCase(g.config.BFFName)), "internal", "router", "router.go"), []byte(routerContent.String()), 0644); err != nil {
 		return err
 	}
 
@@ -2630,7 +2630,7 @@ func (g *MicroAppGenerator) generateBFFModuleHertz(mod *ModuleConfig, bffName st
 
 	// rpc_client - 使用 gRPC 或 Kitex
 	clientContent := g.generateRPCClient(mod)
-	if err := os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff_%s", bffName), "internal", "rpc_client", toCamelCaseFile(mod.TableName)+"Client.go"), []byte(clientContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff%s", toPascalCase(g.config.BFFName)), "internal", "rpc_client", toCamelCaseFile(mod.TableName)+"Client.go"), []byte(clientContent), 0644); err != nil {
 		return err
 	}
 
@@ -2737,7 +2737,7 @@ func (h *%sHandler) Delete(ctx context.Context, c *app.RequestContext) {
 		mod.ServiceName,
 		mod.ServiceName)
 
-	return os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff_%s", bffName), "internal", "handler", toCamelCaseFile(mod.TableName)+"Handler.go"), []byte(handlerContent), 0644)
+	return os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("bff%s", toPascalCase(g.config.BFFName)), "internal", "handler", toCamelCaseFile(mod.TableName)+"Handler.go"), []byte(handlerContent), 0644)
 }
 
 // generateRPCClient 根据 Protocol 生成 RPC 客户端代码
@@ -2907,7 +2907,7 @@ func (c *%sClient) Delete(ctx context.Context, id int64) (*%s.Delete%sResp, erro
 // generateBFFMiddlewareHertz 生成 Hertz 中间件
 func (g *MicroAppGenerator) generateBFFMiddlewareHertz(bffName string) error {
 	projectDir := filepath.Join(g.outputDir, g.config.ProjectName)
-	bffPath := filepath.Join(projectDir, fmt.Sprintf("bff_%s", bffName))
+	bffPath := filepath.Join(projectDir, fmt.Sprintf("bff%s", toPascalCase(g.config.BFFName)))
 
 	// CORS 中间件
 	corsContent := `package middleware
@@ -3398,6 +3398,25 @@ func (g *MicroAppGenerator) injectAlipayCode() error {
 			return err
 		}
 
+		// 读取并渲染 alipay provider.go.tmpl
+		providerTmplPath := filepath.Join(g.templateDir, "microservice", "internal", "alipay", "provider.go.tmpl")
+		providerTmpl, err := os.ReadFile(providerTmplPath)
+		if err != nil {
+			return fmt.Errorf("read provider template: %w", err)
+		}
+		providerContent, err := executeTemplate(string(providerTmpl), map[string]interface{}{
+			"AlipayAppID":       "YOUR_APP_ID",
+			"AlipayPrivateKey":  "YOUR_PRIVATE_KEY",
+			"AlipayPublicKey":   "YOUR_PUBLIC_KEY",
+			"AlipayIsProduction": false,
+		})
+		if err != nil {
+			return fmt.Errorf("execute provider template: %w", err)
+		}
+		if err := os.WriteFile(filepath.Join(srvDir, "internal", "alipay", "provider.go"), []byte(providerContent), 0644); err != nil {
+			return err
+		}
+
 		// 读取并渲染 alipay service.go.tmpl
 		serviceTmplPath := filepath.Join(g.templateDir, "microservice", "internal", "alipay", "service.go.tmpl")
 		serviceTmpl, err := os.ReadFile(serviceTmplPath)
@@ -3436,7 +3455,7 @@ func (g *MicroAppGenerator) injectAlipayCode() error {
 	}
 
 	// 2. 为 BFF 注入 handler 和 rpcClient
-	bffDir := filepath.Join(projectDir, fmt.Sprintf("bff_%s", g.config.BFFName))
+	bffDir := filepath.Join(projectDir, fmt.Sprintf("bff%s", toPascalCase(g.config.BFFName)))
 
 	// 读取并渲染 orderHandler.go.tmpl
 	handlerTmplPath := filepath.Join(g.templateDir, "micro-bff", "internal", "handler", "orderHandler.go.tmpl")
