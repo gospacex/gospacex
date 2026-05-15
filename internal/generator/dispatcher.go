@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/gospacex/gpx/internal/config"
+	"github.com/gospacex/gpx/internal/generator/agent"
 	"github.com/gospacex/gpx/internal/generator/microservice"
 	"github.com/gospacex/gpx/internal/generator/monolith"
 	"github.com/gospacex/gpx/internal/generator/scriptcenter"
@@ -23,6 +24,8 @@ func NewProjectGenerator(cfg *config.ProjectConfig) ProjectGenerator {
 		return microservice.NewGenerator(cfg)
 	case "monolith":
 		return monolith.NewGenerator(cfg)
+	case "agent":
+		return agent.NewAgentGenerator(projectName(cfg), cfg.OutputDir)
 	default:
 		return nil
 	}
@@ -46,6 +49,8 @@ func New(cfg *config.ProjectConfig) interface{} {
 		return microservice.NewGenerator(cfg)
 	case "monolith":
 		return monolith.NewGenerator(cfg)
+	case "agent":
+		return agent.NewAgentGenerator(projectName(cfg), cfg.OutputDir)
 	default:
 		return nil
 	}
@@ -63,7 +68,20 @@ func Generate(cfg *config.ProjectConfig) error {
 	case "monolith":
 		gen := monolith.NewGenerator(cfg)
 		return gen.Generate()
+	case "agent":
+		gen := agent.NewAgentGenerator(projectName(cfg), cfg.OutputDir)
+		return gen.Generate()
 	default:
 		return fmt.Errorf("unknown project type: %s", cfg.ProjectType)
 	}
+}
+
+func projectName(cfg *config.ProjectConfig) string {
+	if cfg.ProjectName != "" {
+		return cfg.ProjectName
+	}
+	if cfg.ModuleName != "" {
+		return cfg.ModuleName
+	}
+	return cfg.ServiceName
 }

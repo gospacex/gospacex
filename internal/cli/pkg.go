@@ -5,14 +5,14 @@ import (
 	"os"
 
 	"github.com/gospacex/gpx/internal/config"
-	pkggen "github.com/gospacex/gpx/internal/generator/pkg"
+	pkggen "github.com/gospacex/gpx/internal/generator/common/pkg"
 	"github.com/spf13/cobra"
 )
 
 // pkg 命令参数
 var (
-	pkgOutputDir  string
-	pkgSnowflake  bool
+	pkgOutputDir string
+	pkgSnowflake bool
 )
 
 var pkgCmd = &cobra.Command{

@@ -3,7 +3,6 @@ module github.com/gospacex/gpx
 go 1.26.2
 
 require (
-	github.com/elastic/go-elasticsearch/v7 v7.17.10
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/jinzhu/copier v0.4.0
 	github.com/pelletier/go-toml/v2 v2.2.4
@@ -11,6 +10,8 @@ require (
 	github.com/stretchr/testify v1.11.1
 	gopkg.in/yaml.v3 v3.0.1
 )
+
+replace github.com/gospacex/golock => /Users/hyx/work/gowork/src/gospacex/golock
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect

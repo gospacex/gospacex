@@ -69,7 +69,10 @@ go build -o gpx
 # 微服多表
 gpx micro --name myshop4 --output output --bff h5 --srvs product --db-host 127.0.0.1 --db-port 3306 --db-user root --db-password 123456 --db-name gospacex --db-table eb_store_product,eb_store_product_attr --test
 # 微服连表
-gpx micro --name myshop4 --output output --bff h5 --srvs product --db-host 127.0.0.1 --db-port 3306 --db-user root --db-password 123456 --db-name gospacex --db-table eb_store_product,eb_store_product_attr --db-join-condition eb_store_product.id=eb_store_product_attr.product_id --db-join-style  eb_store_product:eb_store_product_attr=1t1 --test
+go run . micro --name myshop4 --output output --bff h5 --srvs product --db-host 127.0.0.1 --db-port 3306 --db-user root --db-password 123456 --db-name gospacex --db-table eb_store_product,eb_store_product_attr --db-join-condition eb_store_product.id=eb_store_product_attr.product_id --db-join-style  eb_store_product:eb_store_product_attr=1t1 --test
+
+go run . micro --name myshop4 --output output --bff h5 --srvs product --db-host 127.0.0.1 --db-port 3306 --db-user root --db-password 123456 --db-name gospacex --db-table eb_store_product,eb_store_product_attr --db-join-condition eb_store_product.id=eb_store_product_attr.product_id --db-join-style  eb_store_product:eb_store_product_attr=1t1 --play alipay --test
+
 ```
 
 ## 📦 依赖

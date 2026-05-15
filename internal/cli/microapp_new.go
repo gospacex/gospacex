@@ -5101,19 +5101,19 @@ func (h *%sHandler) %s(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	logger.Business.Infow("get join start", "resource", "%s", "id", idStr, "requestID", requestID)
+	logger.Business.Infow("get join start", "resource", "%%s", "id", idStr, "requestID", requestID)
 
 	resp, err := h.client.%s(c.Request.Context(), int64(id))
 	if err != nil {
-		logger.Business.Errorw("get join failed", "resource", "%s", "id", id, "error", err.Error())
+		logger.Business.Errorw("get join failed", "resource", "%%s", "id", id, "error", err.Error())
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	logger.Business.Infow("get join success", "resource", "%s", "id", id, "duration", time.Since(start).String())
+	logger.Business.Infow("get join success", "resource", "%%s", "id", id, "duration", time.Since(start).String())
 	c.JSON(http.StatusOK, resp)
 }`,
-		joinMethodName, leftUpper, joinMethodName, joinRPCMethodName, joinRPCMethodName)
+		joinMethodName, leftUpper, joinMethodName, joinRPCMethodName)
 
 	mainHandlerPath := filepath.Join(projectDir, toBffDirName(microAppBFFName), "internal", "handler", toCamelFileName(leftEntityName, "Handler.go"))
 	mainHandlerContent, err := os.ReadFile(mainHandlerPath)

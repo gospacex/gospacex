@@ -25,6 +25,7 @@ go.work.sum
 # env file
 .env
 .idea
+.sisyphus
 
 #### ai ignore
 output/
@@ -33,7 +34,9 @@ data/
 .claude
 .gsd
 .deepseek
+.opencode
 .omc
 data
 CLAUDE.md
 AGENTS.md
+docs

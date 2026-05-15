@@ -4,6 +4,11 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/gospacex/gpx/internal/generator/agent"
+	"github.com/gospacex/gpx/internal/generator/common"
+	"github.com/gospacex/gpx/internal/generator/microservice"
+	"github.com/gospacex/gpx/internal/generator/monolith"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -27,11 +32,11 @@ func (s *GeneratorTestSuite) TearDownSuite() {
 
 // TestMicroserviceStandard tests standard microservice generator
 func (s *GeneratorTestSuite) TestMicroserviceStandard() {
-	g := NewMicroserviceStandardGenerator("order-service", filepath.Join(s.testDir, "standard"))
+	g := microservice.NewMicroserviceStandardGenerator("order-service", filepath.Join(s.testDir, "standard"))
 	err := g.Generate()
-	
+
 	s.NoError(err)
-	
+
 	// Check generated files
 	expectedFiles := []string{
 		"app/order-service/main.go",
@@ -42,7 +47,7 @@ func (s *GeneratorTestSuite) TestMicroserviceStandard() {
 		"idl/example.proto",
 		"go.mod",
 	}
-	
+
 	for _, file := range expectedFiles {
 		_, err := os.Stat(filepath.Join(s.testDir, "standard", file))
 		s.NoError(err, "File %s should exist", file)
@@ -51,11 +56,11 @@ func (s *GeneratorTestSuite) TestMicroserviceStandard() {
 
 // TestMicroserviceDDD tests DDD microservice generator
 func (s *GeneratorTestSuite) TestMicroserviceDDD() {
-	g := NewMicroserviceDDDGenerator("payment-service", filepath.Join(s.testDir, "ddd"))
+	g := microservice.NewMicroserviceDDDGenerator("payment-service", filepath.Join(s.testDir, "ddd"))
 	err := g.Generate()
-	
+
 	s.NoError(err)
-	
+
 	// Check DDD structure
 	expectedDirs := []string{
 		"app/payment-service/domain/entity",
@@ -63,7 +68,7 @@ func (s *GeneratorTestSuite) TestMicroserviceDDD() {
 		"app/payment-service/application/service",
 		"app/payment-service/infrastructure/persistence/mysql",
 	}
-	
+
 	for _, dir := range expectedDirs {
 		_, err := os.Stat(filepath.Join(s.testDir, "ddd", dir))
 		s.NoError(err, "Directory %s should exist", dir)
@@ -72,18 +77,18 @@ func (s *GeneratorTestSuite) TestMicroserviceDDD() {
 
 // TestMicroserviceIstio tests Istio microservice generator
 func (s *GeneratorTestSuite) TestMicroserviceIstio() {
-	g := NewMicroserviceIstioGenerator("product-service", filepath.Join(s.testDir, "istio"))
+	g := microservice.NewMicroserviceIstioGenerator("product-service", filepath.Join(s.testDir, "istio"))
 	err := g.Generate()
-	
+
 	s.NoError(err)
-	
+
 	// Check Istio manifests
 	expectedFiles := []string{
 		"manifest/istio/virtual-service.yaml",
 		"manifest/istio/destination-rule.yaml",
 		"manifest/istio/gateway.yaml",
 	}
-	
+
 	for _, file := range expectedFiles {
 		_, err := os.Stat(filepath.Join(s.testDir, "istio", file))
 		s.NoError(err, "File %s should exist", file)
@@ -92,11 +97,11 @@ func (s *GeneratorTestSuite) TestMicroserviceIstio() {
 
 // TestMicroserviceThrift tests Thrift microservice generator
 func (s *GeneratorTestSuite) TestMicroserviceThrift() {
-	g := NewMicroserviceThriftGenerator("inventory-service", filepath.Join(s.testDir, "thrift"))
+	g := microservice.NewMicroserviceThriftGenerator("inventory-service", filepath.Join(s.testDir, "thrift"))
 	err := g.Generate()
-	
+
 	s.NoError(err)
-	
+
 	// Check Thrift IDL
 	_, err = os.Stat(filepath.Join(s.testDir, "thrift", "idl/thrift/example.thrift"))
 	s.NoError(err)
@@ -104,11 +109,11 @@ func (s *GeneratorTestSuite) TestMicroserviceThrift() {
 
 // TestMonolith tests monolith generator
 func (s *GeneratorTestSuite) TestMonolith() {
-	g := NewMonolithGenerator("admin-app", filepath.Join(s.testDir, "monolith"))
+	g := monolith.NewMonolithGenerator("admin-app", filepath.Join(s.testDir, "monolith"))
 	err := g.Generate()
-	
+
 	s.NoError(err)
-	
+
 	// Check monolith structure
 	expectedFiles := []string{
 		"main.go",
@@ -116,7 +121,7 @@ func (s *GeneratorTestSuite) TestMonolith() {
 		"internal/service/service.go",
 		"internal/model/model.go",
 	}
-	
+
 	for _, file := range expectedFiles {
 		_, err := os.Stat(filepath.Join(s.testDir, "monolith", file))
 		s.NoError(err, "File %s should exist", file)
@@ -125,11 +130,11 @@ func (s *GeneratorTestSuite) TestMonolith() {
 
 // TestAgent tests agent generator
 func (s *GeneratorTestSuite) TestAgent() {
-	g := NewAgentGenerator("customer-agent", filepath.Join(s.testDir, "agent"))
+	g := agent.NewAgentGenerator("customer-agent", filepath.Join(s.testDir, "agent"))
 	err := g.Generate()
-	
+
 	s.NoError(err)
-	
+
 	// Check agent structure
 	expectedFiles := []string{
 		"main.go",
@@ -138,7 +143,7 @@ func (s *GeneratorTestSuite) TestAgent() {
 		"internal/memory/memory.go",
 		"prompts/system.txt",
 	}
-	
+
 	for _, file := range expectedFiles {
 		_, err := os.Stat(filepath.Join(s.testDir, "agent", file))
 		s.NoError(err, "File %s should exist", file)
@@ -147,19 +152,19 @@ func (s *GeneratorTestSuite) TestAgent() {
 
 // TestDatabaseIntegration tests database integration generator
 func (s *GeneratorTestSuite) TestDatabaseIntegration() {
-	g := NewDatabaseIntegrationGenerator(filepath.Join(s.testDir, "db-integration"), 
+	g := common.NewDatabaseIntegrationGenerator(filepath.Join(s.testDir, "db-integration"),
 		[]string{"mysql", "redis"})
 	err := g.Generate()
-	
+
 	s.NoError(err)
-	
+
 	// Check database files
 	expectedFiles := []string{
 		"internal/dal/mysql/init.go",
 		"internal/dal/redis/init.go",
 		"internal/dal/factory.go",
 	}
-	
+
 	for _, file := range expectedFiles {
 		_, err := os.Stat(filepath.Join(s.testDir, "db-integration", file))
 		s.NoError(err, "File %s should exist", file)
@@ -168,19 +173,19 @@ func (s *GeneratorTestSuite) TestDatabaseIntegration() {
 
 // TestMiddlewareIntegration tests middleware integration generator
 func (s *GeneratorTestSuite) TestMiddlewareIntegration() {
-	g := NewMiddlewareIntegrationGenerator(filepath.Join(s.testDir, "mw-integration"),
+	g := microservice.NewMiddlewareIntegrationGenerator(filepath.Join(s.testDir, "mw-integration"),
 		[]string{"jaeger", "kafka", "nacos"})
 	err := g.Generate()
-	
+
 	s.NoError(err)
-	
+
 	// Check middleware files
 	expectedFiles := []string{
 		"internal/middleware/jaeger/init.go",
 		"internal/middleware/kafka/init.go",
 		"internal/middleware/nacos/init.go",
 	}
-	
+
 	for _, file := range expectedFiles {
 		_, err := os.Stat(filepath.Join(s.testDir, "mw-integration", file))
 		s.NoError(err, "File %s should exist", file)
@@ -189,18 +194,18 @@ func (s *GeneratorTestSuite) TestMiddlewareIntegration() {
 
 // TestDTMIntegration tests DTM integration generator
 func (s *GeneratorTestSuite) TestDTMIntegration() {
-	g := NewDTMIntegrationGenerator("order-service", filepath.Join(s.testDir, "dtm"))
+	g := microservice.NewDTMIntegrationGenerator("order-service", filepath.Join(s.testDir, "dtm"))
 	err := g.Generate()
-	
+
 	s.NoError(err)
-	
+
 	// Check DTM files
 	expectedFiles := []string{
 		"internal/dtm/client.go",
 		"internal/dtm/saga/order.go",
 		"internal/dtm/tcc/order.go",
 	}
-	
+
 	for _, file := range expectedFiles {
 		_, err := os.Stat(filepath.Join(s.testDir, "dtm", file))
 		s.NoError(err, "File %s should exist", file)
@@ -209,11 +214,11 @@ func (s *GeneratorTestSuite) TestDTMIntegration() {
 
 // TestTestIntegration tests test integration generator
 func (s *GeneratorTestSuite) TestTestIntegration() {
-	g := NewTestIntegrationGenerator("test-service", filepath.Join(s.testDir, "test"))
+	g := common.NewTestIntegrationGenerator("test-service", filepath.Join(s.testDir, "test"))
 	err := g.Generate()
-	
+
 	s.NoError(err)
-	
+
 	// Check test files
 	expectedFiles := []string{
 		"tests/unit/example_test.go",
@@ -221,7 +226,7 @@ func (s *GeneratorTestSuite) TestTestIntegration() {
 		"tests/e2e/example_test.go",
 		"scripts/test.sh",
 	}
-	
+
 	for _, file := range expectedFiles {
 		_, err := os.Stat(filepath.Join(s.testDir, "test", file))
 		s.NoError(err, "File %s should exist", file)
@@ -230,11 +235,11 @@ func (s *GeneratorTestSuite) TestTestIntegration() {
 
 // TestDocsRelease tests docs and release generator
 func (s *GeneratorTestSuite) TestDocsRelease() {
-	g := NewDocsReleaseGenerator("gpx", filepath.Join(s.testDir, "docs"))
+	g := common.NewDocsReleaseGenerator("gpx", filepath.Join(s.testDir, "docs"))
 	err := g.Generate()
-	
+
 	s.NoError(err)
-	
+
 	// Check doc files
 	expectedFiles := []string{
 		"README.md",
@@ -242,7 +247,7 @@ func (s *GeneratorTestSuite) TestDocsRelease() {
 		"CONTRIBUTING.md",
 		"LICENSE",
 	}
-	
+
 	for _, file := range expectedFiles {
 		_, err := os.Stat(filepath.Join(s.testDir, "docs", file))
 		s.NoError(err, "File %s should exist", file)

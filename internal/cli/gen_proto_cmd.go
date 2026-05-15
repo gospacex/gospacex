@@ -4,9 +4,9 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/spf13/cobra"
-	"github.com/gospacex/gpx/internal/generator"
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/gospacex/gpx/internal/generator/common"
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -61,7 +61,7 @@ func runGenProto(cmd *cobra.Command, args []string) error {
 	}
 
 	// 创建生成器
-	gen := generator.NewProtoGenerator(db, "", "github.com/example")
+	gen := common.NewProtoGenerator(db, "", "github.com/example")
 
 	// 生成 proto
 	info, err := gen.GenerateFromTable(genProtoTableName)

@@ -47,17 +47,17 @@ func (g *Generator) generateBaseTemplates() error {
 
 	// 基础模板映射（必选）
 	baseTemplates := map[string]string{
-		"README.md":                   baseDir + "/README.md.tmpl",
-		"cmd/main.go":                 baseDir + "/cmd/main.go.tmpl",
-		"cmd/server/main.go":           baseDir + "/cmd/server/main.go.tmpl",
-		"configs/config.yaml":          baseDir + "/configs/config.yaml.tmpl",
-		"configs/server.yaml":          baseDir + "/configs/server.yaml.tmpl",
-		"go.mod":                      baseDir + "/go.mod.tmpl",
+		"README.md":                      baseDir + "/README.md.tmpl",
+		"cmd/main.go":                    baseDir + "/cmd/main.go.tmpl",
+		"cmd/server/main.go":             baseDir + "/cmd/server/main.go.tmpl",
+		"configs/config.yaml":            baseDir + "/configs/config.yaml.tmpl",
+		"configs/server.yaml":            baseDir + "/configs/server.yaml.tmpl",
+		"go.mod":                         baseDir + "/go.mod.tmpl",
 		"internal/api/articleHandler.go": baseDir + "/internal/api/articleHandler.go.tmpl",
-		"internal/handler/routes.go":  baseDir + "/internal/handler/routes.go.tmpl",
-		"internal/shared/db.go":        baseDir + "/internal/shared/db.go.tmpl",
-		"pkg/config/config.go":        baseDir + "/pkg/config/config.go.tmpl",
-		"pkg/config/config_test.go":   baseDir + "/pkg/config/config_test.go.tmpl",
+		"internal/handler/routes.go":     baseDir + "/internal/handler/routes.go.tmpl",
+		"internal/shared/db.go":          baseDir + "/internal/shared/db.go.tmpl",
+		"pkg/config/config.go":           baseDir + "/pkg/config/config.go.tmpl",
+		"pkg/config/config_test.go":      baseDir + "/pkg/config/config_test.go.tmpl",
 	}
 
 	// 生成 deploy 目录（如果模板存在）

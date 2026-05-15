@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gospacex/gpx/internal/generator"
+	"github.com/gospacex/gpx/internal/generator/common"
 	"github.com/spf13/cobra"
 )
 
@@ -54,7 +54,7 @@ func runCRUD(cmd *cobra.Command, args []string) error {
 		crudOutput = "./internal"
 	}
 
-	gen := generator.NewCRUDGenerator(
+	gen := common.NewCRUDGenerator(
 		crudHost,
 		crudPort,
 		crudUser,

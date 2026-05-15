@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gospacex/gpx/internal/config"
 	"github.com/gospacex/gpx/internal/template"
@@ -23,6 +24,14 @@ func NewGenerator(cfg *config.ProjectConfig) *Generator {
 
 // Generate 生成脚本中心项目
 func (g *Generator) Generate() error {
+	if g.config == nil {
+		return fmt.Errorf("project config is nil")
+	}
+
+	if len(normalizeMQTypes(g.config.MQ)) == 0 {
+		return NewScriptCenterGenerator(g.config).Generate(g.config.OutputDir)
+	}
+
 	if err := g.createDirectoryStructure(); err != nil {
 		return fmt.Errorf("create directory structure: %w", err)
 	}
@@ -62,49 +71,27 @@ func (g *Generator) createDirectoryStructure() error {
 }
 
 func (g *Generator) renderTemplates() error {
-	// 如果没有启用 MQ，跳过模板渲染（避免加载不需要的模板）
-	if g.config.MQ == "" {
+	mqTypes := normalizeMQTypes(g.config.MQ)
+	if len(mqTypes) == 0 {
 		return nil
 	}
-
-	baseTemplateDir := "templates/scriptcenter"
-
-	// 根据配置选择模板目录
-	var templateDirs []string
-
-	// 基础脚本中心模板（如果有的话）
-	if hasTemplates(baseTemplateDir) {
-		templateDirs = append(templateDirs, baseTemplateDir)
+	if len(mqTypes) > 1 {
+		return fmt.Errorf("scriptcenter template generator supports one integration type at a time: %s", strings.Join(mqTypes, ", "))
 	}
 
-	// 根据启用的 MQ 类型追加对应模板目录
-	if g.config.MQ != "" {
-		mqTemplateDir := baseTemplateDir + "/" + g.config.MQ
-		if hasTemplates(mqTemplateDir) {
-			templateDirs = append(templateDirs, mqTemplateDir)
-		}
+	templateDir := filepath.Join("templates", "scriptcenter", mqTypes[0])
+	if !hasTemplates(templateDir) {
+		return fmt.Errorf("scriptcenter templates not found for %q in %s", mqTypes[0], templateDir)
 	}
 
-	// 如果没有指定目录，退回 script（旧模板位置，根目录有 .tmpl）
-	if len(templateDirs) == 0 {
-		templateDirs = append(templateDirs, "templates/script")
-	}
-
-	loader := template.NewLoader("")
-	for _, dir := range templateDirs {
-		subLoader := template.NewLoader(dir)
-		if err := subLoader.Load(""); err != nil {
-			return fmt.Errorf("load templates from %s: %w", dir, err)
-		}
-		// 合并模板
-		loader.Merge(subLoader)
+	loader := template.NewLoader(templateDir)
+	if err := loader.Load(""); err != nil {
+		return fmt.Errorf("load templates from %s: %w", templateDir, err)
 	}
 
 	processor := template.NewProcessor(loader)
-	for _, dir := range templateDirs {
-		if err := processor.ProcessDirectory(dir, g.config.OutputDir, g.config); err != nil {
-			return fmt.Errorf("process directory %s: %w", dir, err)
-		}
+	if err := processor.ProcessDirectory(templateDir, g.config.OutputDir, g.config); err != nil {
+		return fmt.Errorf("process directory %s: %w", templateDir, err)
 	}
 
 	return nil

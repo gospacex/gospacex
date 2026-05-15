@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/gospacex/gpx/internal/config"
-	"github.com/gospacex/gpx/internal/generator"
+	"github.com/gospacex/gpx/internal/generator/scriptcenter"
 	"github.com/gospacex/gpx/internal/variables"
 	"github.com/spf13/cobra"
 )
@@ -81,7 +81,7 @@ func runScriptCenter(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Creating script project in %s...\n", scOutputDir)
 
-	gen := generator.NewScriptCenterGenerator(cfg)
+	gen := scriptcenter.NewScriptCenterGenerator(cfg)
 	if err := gen.Generate(scOutputDir); err != nil {
 		return fmt.Errorf("generate project: %w", err)
 	}
